@@ -13,6 +13,13 @@ python3 -m http.server 8000
 ```
 
 Then open `http://localhost:8000`.
+# Slowroads (Lightweight Clone)
+
+This repo contains a tiny browser-based driving toy inspired by long-road cruisers.
+
+## Run
+
+Open `index.html` in your browser.
 
 ## Controls
 
@@ -26,3 +33,4 @@ Then open `http://localhost:8000`.
 If you previously saw `404` errors for files like `static/js/...` or `manifest.json`,
 that was from an old `index.html` referencing missing bundled assets. This version only
 loads `./src/game.js`, which exists in this repository.
+- `A` `D` / `←` `→`: steer
