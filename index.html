@@ -69,19 +69,17 @@
   #reloadText { color: #ffcc33; font-size: 13px; display: none; }
 
   #gunHud {
-    position: absolute; bottom: 0; right: 0; width: 260px; height: 190px;
+    position: absolute; bottom: 0; right: 0; width: 190px; height: 150px;
     pointer-events: auto; cursor: crosshair;
+    background: radial-gradient(circle at 55% 45%, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 42%, rgba(0,0,0,0.1) 70%);
+    border-radius: 28px 0 0 0;
   }
-  #gunHud svg { width: 100%; height: 100%; filter: drop-shadow(0 -4px 10px rgba(0,0,0,0.6)); transition: transform 0.06s; }
-  #gunHud.flash svg { filter: drop-shadow(0 -4px 10px rgba(0,0,0,0.6)) brightness(2.2); transform: translate(-4px, 4px) rotate(-2deg); }
-  #muzzleFlash {
-    position: absolute; opacity: 0; pointer-events: none;
-    width: 90px; height: 90px; right: 150px; bottom: 120px;
-    background: radial-gradient(circle, rgba(255,240,180,1) 0%, rgba(255,180,60,0.9) 35%, rgba(255,120,20,0) 70%);
-    border-radius: 50%;
+  #gunHud::after {
+    content: 'FIRE'; position: absolute; right: 28px; bottom: 22px;
+    color: rgba(255,255,255,0.78); font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
-  #muzzleFlash.show { animation: muzzle 0.09s ease-out; }
-  @keyframes muzzle { 0% { opacity: 1; transform: scale(0.6) rotate(10deg);} 100% { opacity: 0; transform: scale(1.3) rotate(-10deg);} }
+  #gunHud.flash { background: radial-gradient(circle at 55% 45%, rgba(255,245,180,0.42), rgba(255,150,40,0.14) 42%, rgba(0,0,0,0.1) 70%); }
 
   /* Screen flash for damage / shots */
   #screenFlash {
@@ -180,34 +178,8 @@
 
     <div id="ammoDisplay"><span id="ammoCount">30</span> / 30<div id="reloadText">RELOADING...</div></div>
 
-    <div id="muzzleFlash"></div>
-    <div id="gunHud">
-      <svg viewBox="0 0 260 190" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#5a5f66"/>
-            <stop offset="100%" stop-color="#1c1e21"/>
-          </linearGradient>
-          <linearGradient id="metal2" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#3a3d42"/>
-            <stop offset="100%" stop-color="#111214"/>
-          </linearGradient>
-        </defs>
-        <!-- grip -->
-        <rect x="150" y="95" width="34" height="90" rx="8" transform="rotate(18 150 95)" fill="url(#metal)" stroke="#000" stroke-width="2"/>
-        <!-- body -->
-        <rect x="60" y="70" width="150" height="42" rx="10" fill="url(#metal2)" stroke="#000" stroke-width="2"/>
-        <!-- barrel -->
-        <rect x="10" y="82" width="90" height="18" rx="6" fill="#0f1012" stroke="#000" stroke-width="2"/>
-        <circle cx="14" cy="91" r="8" fill="#000"/>
-        <!-- sight -->
-        <rect x="120" y="58" width="26" height="12" rx="3" fill="#222"/>
-        <!-- magazine -->
-        <rect x="120" y="112" width="24" height="55" rx="6" fill="url(#metal)" stroke="#000" stroke-width="2"/>
-        <!-- trigger guard -->
-        <path d="M100 112 Q95 145 130 148" fill="none" stroke="#111" stroke-width="8" stroke-linecap="round"/>
-      </svg>
-    </div>
+    <div id="gunHud" aria-label="Fire 3D weapon"></div>
+
 
     <button id="viewToggleBtn">⇄ VIEW (P)</button>
 
@@ -257,6 +229,7 @@
 
   const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 500);
   camera.rotation.order = 'YXZ';
+  scene.add(camera);
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth/window.innerHeight;
@@ -392,6 +365,59 @@
   const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10), new THREE.MeshStandardMaterial({color:0x2b2f38}));
   legs.position.y = 0.45; legs.castShadow = true;
   playerGroup.add(torso, head, legs);
+
+
+  // ---------- 3D weapon ----------
+  function createGunModel() {
+    const gun = new THREE.Object3D();
+    const dark = new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: 0.55, roughness: 0.34 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x40464f, metalness: 0.75, roughness: 0.28 });
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x24272d, metalness: 0.35, roughness: 0.58 });
+
+    const slide = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.18, 0.24), metal);
+    slide.position.set(0, 0.12, -0.28);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.16, 0.2), dark);
+    frame.position.set(0.06, -0.02, -0.22);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.54, 18), dark);
+    barrel.rotation.z = Math.PI / 2;
+    barrel.position.set(-0.54, 0.13, -0.28);
+    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.035, 18), dark);
+    muzzle.rotation.z = Math.PI / 2;
+    muzzle.position.set(-0.82, 0.13, -0.28);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.58, 0.18), gripMat);
+    grip.position.set(0.3, -0.36, -0.19);
+    grip.rotation.z = -0.26;
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.46, 0.16), metal);
+    mag.position.set(0.02, -0.34, -0.19);
+    mag.rotation.z = 0.08;
+    const triggerGuard = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.018, 8, 18, Math.PI * 1.35), dark);
+    triggerGuard.position.set(0.13, -0.18, -0.16);
+    triggerGuard.rotation.set(Math.PI / 2, 0, -0.52);
+    const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.04), dark);
+    frontSight.position.set(-0.35, 0.25, -0.28);
+    const rearSight = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.055, 0.05), dark);
+    rearSight.position.set(0.36, 0.25, -0.28);
+    const flash = new THREE.PointLight(0xffb347, 0, 5);
+    flash.position.set(-0.95, 0.13, -0.28);
+
+    gun.add(slide, frame, barrel, muzzle, grip, mag, triggerGuard, frontSight, rearSight, flash);
+    gun.userData.muzzleFlash = flash;
+    gun.traverse((child) => { if (child.isMesh) child.castShadow = true; });
+    return gun;
+  }
+
+  const firstPersonGun = createGunModel();
+  firstPersonGun.position.set(0.48, -0.42, -0.85);
+  firstPersonGun.rotation.set(-0.08, -Math.PI / 2 - 0.14, 0.03);
+  camera.add(firstPersonGun);
+
+  const thirdPersonGun = createGunModel();
+  thirdPersonGun.scale.setScalar(0.82);
+  thirdPersonGun.position.set(-0.38, 1.12, -0.42);
+  thirdPersonGun.rotation.set(0.02, -Math.PI / 2, -0.08);
+  playerGroup.add(thirdPersonGun);
+
+  let gunRecoil = 0;
 
   // ---------- Enemies ----------
   const ENEMY_COUNT = 8;
@@ -596,12 +622,17 @@
 
   function flashGun() {
     const gunHud = document.getElementById('gunHud');
-    const muzzle = document.getElementById('muzzleFlash');
     const sflash = document.getElementById('screenFlash');
     gunHud.classList.add('flash');
-    muzzle.classList.remove('show'); void muzzle.offsetWidth; muzzle.classList.add('show');
     sflash.classList.remove('show'); void sflash.offsetWidth; sflash.classList.add('show');
-    setTimeout(() => gunHud.classList.remove('flash'), 90);
+    gunRecoil = 1;
+    firstPersonGun.userData.muzzleFlash.intensity = 3.8;
+    thirdPersonGun.userData.muzzleFlash.intensity = 2.4;
+    setTimeout(() => {
+      gunHud.classList.remove('flash');
+      firstPersonGun.userData.muzzleFlash.intensity = 0;
+      thirdPersonGun.userData.muzzleFlash.intensity = 0;
+    }, 90);
   }
 
   function showHitMarker() {
@@ -841,22 +872,33 @@
 
   function updateCamera() {
     playerGroup.visible = (viewMode === 'third');
+    firstPersonGun.visible = (viewMode === 'first');
+    thirdPersonGun.visible = (viewMode === 'third');
+    if (gunRecoil > 0) {
+      const kick = gunRecoil * gunRecoil;
+      firstPersonGun.position.set(0.48 + kick * 0.04, -0.42 - kick * 0.035, -0.85 + kick * 0.12);
+      firstPersonGun.rotation.set(-0.08 - kick * 0.22, -Math.PI / 2 - 0.14, 0.03 + kick * 0.04);
+      thirdPersonGun.position.z = -0.42 + kick * 0.08;
+      gunRecoil = Math.max(0, gunRecoil - 0.18);
+    }
     if (viewMode === 'first') {
       camera.position.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
       camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
     } else {
       const distance = 6.5;
-      const targetY = player.pos.y + 1.5;
-      const offX = Math.sin(player.yaw) * Math.cos(player.pitch) * distance;
-      const offZ = Math.cos(player.yaw) * Math.cos(player.pitch) * distance;
-      const offY = Math.sin(player.pitch) * distance * 0.6 + 1.2;
+      const targetY = player.pos.y + 1.45;
+      const forward = getForward(player.yaw);
       const desired = new THREE.Vector3(
-        player.pos.x - offX,
-        targetY + offY,
-        player.pos.z - offZ
+        player.pos.x - forward.x * distance,
+        targetY + 1.35 + Math.sin(player.pitch) * distance * 0.45,
+        player.pos.z - forward.z * distance
       );
       camera.position.copy(desired);
-      camera.lookAt(player.pos.x, targetY, player.pos.z);
+      camera.lookAt(
+        player.pos.x + forward.x * 2.5,
+        targetY + Math.sin(player.pitch) * 2.2,
+        player.pos.z + forward.z * 2.5
+      );
     }
 
     // apply screen shake on top
