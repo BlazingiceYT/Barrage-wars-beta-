@@ -240,7 +240,16 @@
       <div><b>B</b><br>Build Wall</div>
     </div>
     <div id="loadingText">Generating world...</div>
-    <button class="bigBtn" id="startBtn" style="display:none;">DROP IN</button>
+    <button class="bigBtn" id="startBtn" style="display:none;">BOARD PLANE</button>
+  </div>
+
+  <div id="dropOverlay" style="position:absolute; inset:0; pointer-events:none; z-index:15; display:none;">
+    <div id="dropPrompt" style="position:absolute; top:40%; left:50%; transform:translate(-50%,-50%); color:#fff; text-align:center; text-shadow:0 2px 8px rgba(0,0,0,0.9);">
+      <div style="font-size:15px; letter-spacing:2px; color:#ffdd55; margin-bottom:8px;">FALLING</div>
+      <div style="font-size:13px; opacity:0.9;">Tap / Press SPACE to open parachute</div>
+    </div>
+    <div id="altitudeReadout" style="position:absolute; top:16px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,0.4); padding:6px 14px; border-radius:20px; font-size:13px;">ALT: 900m</div>
+    <button id="deployChuteBtn" style="position:absolute; bottom:60px; left:50%; transform:translateX(-50%); pointer-events:auto; background:linear-gradient(180deg,#3ba1ff,#1a5fbf); border:none; color:#fff; font-size:16px; font-weight:bold; padding:14px 34px; border-radius:40px; box-shadow:0 6px 16px rgba(30,100,200,0.5); display:none;">DEPLOY PARACHUTE</button>
   </div>
 
   <div class="overlayScreen" id="deathScreen" style="display:none;">
@@ -648,6 +657,125 @@
   fpAxe.rotation.set(0.3, Math.PI, 0);
   fpWeaponRig.add(fpGun, fpAxe);
 
+  // ---------- Drop plane ----------
+  const planeGroup = new THREE.Object3D();
+  (function buildPlane(){
+    const fuselageMat = new THREE.MeshStandardMaterial({ color: 0x555f66, roughness: 0.5, metalness: 0.4 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd8402f, roughness: 0.5 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, roughness: 0.2, metalness: 0.6 });
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.4, 22, 12), fuselageMat);
+    fuselage.rotation.z = Math.PI/2;
+    planeGroup.add(fuselage);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(2, 5, 12), fuselageMat);
+    nose.rotation.z = -Math.PI/2;
+    nose.position.x = -13.3;
+    planeGroup.add(nose);
+    const stripe = new THREE.Mesh(new THREE.CylinderGeometry(2.05, 2.45, 22, 12, 1, true, 0, Math.PI*0.5), stripeMat);
+    stripe.rotation.z = Math.PI/2;
+    stripe.rotation.x = Math.PI/2 + 0.3;
+    planeGroup.add(stripe);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(28, 0.5, 4), fuselageMat);
+    wing.position.set(0, -0.5, 0);
+    planeGroup.add(wing);
+    const tailWing = new THREE.Mesh(new THREE.BoxGeometry(7, 0.4, 2.4), fuselageMat);
+    tailWing.position.set(10, 1.5, 0);
+    planeGroup.add(tailWing);
+    const tailFin = new THREE.Mesh(new THREE.BoxGeometry(3.5, 4, 0.4), fuselageMat);
+    tailFin.position.set(10.5, 3, 0);
+    planeGroup.add(tailFin);
+    const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1.7, 10, 8), glassMat);
+    cockpit.scale.set(1.3, 0.9, 0.9);
+    cockpit.position.set(-10, 0.6, 0);
+    planeGroup.add(cockpit);
+    planeGroup.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+    scene.add(planeGroup);
+    planeGroup.visible = false;
+  })();
+
+  const drop = {
+    active: false,
+    t: 0,
+    speed: 42,
+    startX: -WORLD_SIZE*0.6,
+    z: 0,
+    altitude: 900
+  };
+
+  function beginPlaneIntro() {
+    drop.active = true;
+    drop.t = 0;
+    drop.z = (Math.random()-0.5) * WORLD_SIZE * 0.5;
+    player.falling = false;
+    player.chuteOpen = false;
+    planeGroup.visible = true;
+    planeGroup.position.set(drop.startX, 130, drop.z);
+    player.pos.set(drop.startX, 130, drop.z);
+    player.velY = 0;
+    viewMode = 'third';
+    document.getElementById('viewModeLabel').textContent = 'View: Third Person';
+    document.getElementById('dropOverlay').style.display = 'block';
+    document.getElementById('dropPrompt').style.display = 'block';
+    document.getElementById('deployChuteBtn').style.display = 'none';
+  }
+
+  function jumpFromPlane() {
+    if (!drop.active || player.falling) return;
+    player.falling = true;
+    player.chuteOpen = false;
+    player.pos.copy(planeGroup.position);
+    player.velY = -2;
+    document.getElementById('deployChuteBtn').style.display = 'inline-block';
+  }
+
+  function deployParachute() {
+    if (!player.falling || player.chuteOpen) return;
+    player.chuteOpen = true;
+    document.getElementById('dropPrompt').style.display = 'none';
+    document.getElementById('deployChuteBtn').style.display = 'none';
+  }
+
+  function endDrop() {
+    drop.active = false;
+    player.falling = false;
+    player.chuteOpen = false;
+    planeGroup.visible = false;
+    document.getElementById('dropOverlay').style.display = 'none';
+  }
+
+  function updateDrop(dt) {
+    if (!drop.active) return;
+    drop.t += dt;
+    planeGroup.position.x = drop.startX + drop.speed * drop.t;
+    planeGroup.position.z = drop.z;
+    if (!player.falling) {
+      // still riding the plane
+      player.pos.copy(planeGroup.position);
+      // auto-jump once the plane crosses near the map center so the player always lands in-bounds
+      if (planeGroup.position.x > 0) jumpFromPlane();
+      return;
+    }
+    // free fall / parachute physics
+    const fallSpeed = player.chuteOpen ? 5 : 32;
+    player.velY = -fallSpeed;
+    player.pos.y += player.velY * dt;
+    // gentle forward drift while parachuting, controllable with normal movement input
+    const alt = Math.max(0, player.pos.y);
+    document.getElementById('altitudeReadout').textContent = 'ALT: ' + Math.round(alt) + 'm';
+
+    const floorY = groundHeightAt(player.pos.x, player.pos.z, player.pos.y + 0.5);
+    if (player.pos.y <= floorY + 0.05) {
+      player.pos.y = floorY;
+      player.velY = 0;
+      endDrop();
+    }
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && drop.active && player.falling && !player.chuteOpen) deployParachute();
+  });
+  document.getElementById('deployChuteBtn').addEventListener('click', deployParachute);
+  document.getElementById('deployChuteBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); deployParachute(); }, {passive:false});
+  canvas.addEventListener('touchstart', () => { if (drop.active && player.falling && !player.chuteOpen) deployParachute(); });
+
   // ---------- Player ----------
   const player = {
     pos: new THREE.Vector3(0, 0, 0),
@@ -669,7 +797,9 @@
     wood: 0,
     weapon: 'gun', // 'gun' | 'axe'
     buildMode: false,
-    isPlayer: true
+    isPlayer: true,
+    falling: false,
+    chuteOpen: false
   };
 
   const playerGroup = new THREE.Object3D();
@@ -808,6 +938,7 @@
   }
 
   const raycaster = new THREE.Raycaster();
+  const losRaycaster = new THREE.Raycaster();
   const ENGAGE_RANGE = 24;
 
   function damageBot(bot, amount) {
@@ -816,23 +947,41 @@
     if (bot.health <= 0) killBot(bot, false);
   }
 
-  // find the closest alive combatant (player or another bot) to this bot, within engage range
+  // true line-of-sight check: cast from shooter's chest/eye toward target's chest,
+  // blocked if a wall/house/build-wall is in the way before reaching the target
+  function hasLineOfSight(fromPos, toPos) {
+    const from = new THREE.Vector3(fromPos.x, fromPos.y + 1.4, fromPos.z);
+    const to = new THREE.Vector3(toPos.x, toPos.y + 1.4, toPos.z);
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const dist = dir.length();
+    if (dist < 0.01) return true;
+    dir.normalize();
+    losRaycaster.set(from, dir);
+    losRaycaster.far = dist - 0.3;
+    losRaycaster.near = 0.05;
+    const hits = losRaycaster.intersectObjects(collisionMeshes, false);
+    return hits.length === 0;
+  }
+
+  // find the closest alive combatant (player or another bot) to this bot, within
+  // engage range AND with a clear line of sight (no wall/house in the way)
   function findNearestTarget(bot) {
     let best = null, bestDist = ENGAGE_RANGE;
     if (player.alive) {
       const d = bot.pos.distanceTo(player.pos);
-      if (d < bestDist) { bestDist = d; best = player; }
+      if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
     }
     for (const other of bots) {
       if (other === bot || !other.alive) continue;
       const d = bot.pos.distanceTo(other.pos);
-      if (d < bestDist) { bestDist = d; best = other; }
+      if (d < bestDist && hasLineOfSight(bot.pos, other.pos)) { bestDist = d; best = other; }
     }
     return { target: best, dist: bestDist };
   }
 
   function botShootAtTarget(bot, target, dist) {
-    // line-of-sight-ish chance based on distance, plus small damage
+    // only fires if there's still a clear line of sight at the moment of the shot
+    if (!hasLineOfSight(bot.pos, target.pos)) return;
     const hitChance = Math.max(0.15, 0.55 - dist/60);
     if (Math.random() < hitChance) {
       const dmg = 4 + Math.random()*5;
@@ -915,7 +1064,7 @@
       playShotSound();
       const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
       raycaster.set(camera.position, dir); raycaster.far = 250;
-      const targets = bots.filter(b=>b.alive).flatMap(b=>b.hitMeshes);
+      const targets = bots.filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(collisionMeshes);
       const hits = raycaster.intersectObjects(targets, false);
       if (hits.length > 0) {
         const hit = hits[0].object;
@@ -1178,10 +1327,12 @@
     document.getElementById('startScreen').style.display = 'none';
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
     if (!audioCtx) { try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+    beginPlaneIntro();
   });
   document.getElementById('restartBtn').addEventListener('click', () => {
     respawnPlayer();
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
+    beginPlaneIntro();
   });
   document.getElementById('loadingText').style.display = 'none';
   document.getElementById('startBtn').style.display = 'inline-block';
@@ -1192,6 +1343,37 @@
 
   function updateMovement(dt) {
     if (!player.alive) return;
+    if (drop.active) {
+      // while riding the plane / free-falling / parachuting, normal ground movement
+      // and gravity are suspended; updateDrop() handles vertical motion. We still let
+      // the player steer sideways with WASD/joystick once the parachute is open.
+      let inputX = 0, inputZ = 0;
+      if (player.chuteOpen && !invOpen) {
+        if (keys['KeyW']) inputZ += 1;
+        if (keys['KeyS']) inputZ -= 1;
+        if (keys['KeyD']) inputX += 1;
+        if (keys['KeyA']) inputX -= 1;
+        if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
+      }
+      const len = Math.hypot(inputX, inputZ);
+      if (len > 0.001) {
+        if (len > 1) { inputX /= len; inputZ /= len; }
+        const forward = getForward(player.yaw);
+        const right = getRight(player.yaw);
+        const move = new THREE.Vector3();
+        move.addScaledVector(forward, inputZ);
+        move.addScaledVector(right, inputX);
+        if (move.lengthSq() > 0) move.normalize();
+        player.pos.x += move.x * player.speed * 0.7 * dt;
+        player.pos.z += move.z * player.speed * 0.7 * dt;
+        playerGroup.rotation.y = player.yaw;
+      }
+      const half = WORLD_SIZE/2 - 3;
+      player.pos.x = Math.max(-half, Math.min(half, player.pos.x));
+      player.pos.z = Math.max(-half, Math.min(half, player.pos.z));
+      playerGroup.position.set(player.pos.x, player.pos.y, player.pos.z);
+      return;
+    }
     let inputX = 0, inputZ = 0;
     if (!invOpen) {
       if (keys['KeyW']) inputZ += 1;
@@ -1293,11 +1475,14 @@
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, clock.getDelta());
 
-    if (firing && player.weapon === 'gun') primaryAction();
+    if (firing && player.weapon === 'gun' && !drop.active) primaryAction();
 
+    updateDrop(dt);
     updateMovement(dt);
-    updateAmmoCratePickups();
-    for (const bot of bots) updateBot(bot, dt);
+    if (!drop.active) {
+      updateAmmoCratePickups();
+      for (const bot of bots) updateBot(bot, dt);
+    }
     updateCamera();
     updateWeaponAnim(dt);
 
