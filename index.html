@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Open World Arena</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="3D open world fighting and shooting game"></canvas>
+
+    <div id="hud">
+      <div id="status">
+        <strong>Open World Arena</strong>
+        <span id="score">Score: 0</span>
+        <span id="health">Health: 100</span>
+      </div>
+      <div id="crosshair">+</div>
+      <div id="message">WASD or joystick to move. Drag to look. Press SHOOT.</div>
+    </div>
+
+    <div id="joystick" aria-label="movement joystick">
+      <div id="stick"></div>
+    </div>
+
+    <button id="shootButton" type="button" aria-label="shoot weapon">SHOOT</button>
+
+    <div id="gun" aria-hidden="true">
+      <div class="muzzle"></div>
+      <div class="barrel"></div>
+      <div class="slide"></div>
+      <div class="grip"></div>
+      <div class="trigger"></div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

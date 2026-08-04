@@ -1,0 +1,209 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #080b12;
+  color: white;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  touch-action: none;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(#82c6ff 0 45%, #54752d 45% 100%);
+}
+
+body.shake #game,
+body.shake #hud,
+body.shake #gun {
+  animation: screen-shake 120ms steps(2, end) 2;
+}
+
+@keyframes screen-shake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(8px, -5px) rotate(0.25deg); }
+  50% { transform: translate(-7px, 6px) rotate(-0.2deg); }
+  75% { transform: translate(5px, 4px) rotate(0.15deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
+}
+
+#status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(9, 12, 19, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 34px;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+#message {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  max-width: 320px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(9, 12, 19, 0.45);
+  text-align: right;
+}
+
+#joystick {
+  position: fixed;
+  left: 28px;
+  bottom: 28px;
+  width: 140px;
+  height: 140px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.2), rgba(255,255,255,0.06));
+  box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.13), 0 8px 24px rgba(0, 0, 0, 0.35);
+  touch-action: none;
+}
+
+#stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #f5f8ff, #8297b8);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+}
+
+#shootButton {
+  position: fixed;
+  right: 34px;
+  bottom: 210px;
+  width: 112px;
+  height: 112px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fffbdb, #ff5a2c 52%, #971616);
+  color: white;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45), inset 0 -8px 14px rgba(0, 0, 0, 0.24);
+  touch-action: none;
+}
+
+#shootButton:active {
+  transform: scale(0.94);
+}
+
+#gun {
+  position: fixed;
+  right: 34px;
+  bottom: -8px;
+  width: 280px;
+  height: 190px;
+  transform-origin: 80% 80%;
+  filter: drop-shadow(-10px 15px 14px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+
+#gun.flash {
+  animation: recoil 140ms ease-out;
+}
+
+#gun .muzzle {
+  position: absolute;
+  right: 206px;
+  top: 38px;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-top: 28px solid transparent;
+  border-bottom: 28px solid transparent;
+  border-right: 82px solid rgba(255, 218, 60, 0.95);
+  filter: blur(1px) drop-shadow(0 0 16px #ff8a00);
+}
+
+#gun.flash .muzzle {
+  opacity: 1;
+}
+
+#gun .barrel,
+#gun .slide,
+#gun .grip,
+#gun .trigger {
+  position: absolute;
+  background: linear-gradient(145deg, #2e3442, #10141d);
+  border: 2px solid #596172;
+}
+
+#gun .barrel {
+  right: 58px;
+  top: 48px;
+  width: 178px;
+  height: 46px;
+  border-radius: 12px 7px 7px 12px;
+}
+
+#gun .slide {
+  right: 30px;
+  top: 82px;
+  width: 138px;
+  height: 52px;
+  border-radius: 8px;
+}
+
+#gun .grip {
+  right: 40px;
+  top: 112px;
+  width: 58px;
+  height: 96px;
+  transform: skew(-12deg);
+  border-radius: 8px 8px 18px 18px;
+}
+
+#gun .trigger {
+  right: 106px;
+  top: 124px;
+  width: 38px;
+  height: 34px;
+  border-radius: 0 0 20px 20px;
+  background: transparent;
+}
+
+@keyframes recoil {
+  0% { transform: rotate(0deg) translate(0, 0); }
+  35% { transform: rotate(-6deg) translate(18px, 16px); }
+  100% { transform: rotate(0deg) translate(0, 0); }
+}
+
+@media (max-width: 700px) {
+  #gun { width: 230px; transform: scale(0.82); right: 0; bottom: -24px; }
+  #shootButton { right: 22px; bottom: 170px; width: 96px; height: 96px; }
+  #joystick { width: 124px; height: 124px; }
+}
