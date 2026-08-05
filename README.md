@@ -20,3 +20,15 @@ No more respawning enemies — killed bots stay dead. The "Alive" counter will n
 Enemies drop from the plane — bots now spawn high in the sky with their own parachute, free-fall, pop their chute at a randomized altitude, and glide down to their spot on the ground — timed to happen right as the match actually starts.
 Smarter enemies — bots now strafe unpredictably side-to-side while fighting instead of walking straight at you, react and shoot faster (cooldown down from ~0.9–1.5s to ~0.65–1.15s), notice threats from further away (24m → 30m), and are a bit more accurate up close. Commited by BlazingiceYT on 5 Aug 2026
 
+Update0.15: Added a home screen with both modes:
+Mode select — after the world loads, you now get two buttons: FREE FOR ALL (unchanged, plays exactly as before) and ZOMBIE MODE, which opens a short intro screen explaining the mode before you drop in.
+Zombie Mode specifics:
+Same island, but fenced into a smaller ~130×130 area centered on your spawn (reuses the existing houses/trees inside that zone) — a visible green boundary wall marks the edge.
+You spawn straight on the ground at the center — no plane, no parachute.
+The 49 free-for-all fighters are disabled entirely in this mode; only zombies exist.
+Zombies burst up out of the ground (a rise animation) before joining the chase.
+They always know exactly where you are — no line-of-sight requirement — and sprint straight at you (faster than the FFA bots), attacking in melee when they close the distance.
+Waves increase in size each round (5, 8, 11, 14...) and slightly in toughness/speed as you go.
+A wave ends and the next one auto-starts shortly after the last zombie dies.
+SKIP WAVE button in the top-right: doesn't touch the zombies currently alive — it just throws the next wave's zombies in on top of them immediately.
+Dying and hitting RESPAWN in zombie mode puts you back on the ground mid-wave (no plane sequence), rather than restarting the whole match.
