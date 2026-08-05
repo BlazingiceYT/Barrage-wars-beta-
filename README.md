@@ -15,3 +15,8 @@ Update0.12: AI bots use raycasting, and you now launch from a parachute. Commite
 
 Update0.13: Refactor house spawning logic and added different guns, scope, sensitivity toggle. Commited by BlazingiceYT on 5 Aug 2026
 
+Update0.14: Sprint — hold Left Shift while moving to sprint at 1.65x speed. Blue stamina bar drains while sprinting and regenerates when you stop or run dry. You'll also see a slight FOV widen and a subtle speed-lines/vignette effect while running.
+No more respawning enemies — killed bots stay dead. The "Alive" counter will now actually count down over the course of a match instead of holding steady.
+Enemies drop from the plane — bots now spawn high in the sky with their own parachute, free-fall, pop their chute at a randomized altitude, and glide down to their spot on the ground — timed to happen right as the match actually starts.
+Smarter enemies — bots now strafe unpredictably side-to-side while fighting instead of walking straight at you, react and shoot faster (cooldown down from ~0.9–1.5s to ~0.65–1.15s), notice threats from further away (24m → 30m), and are a bit more accurate up close. Commited by BlazingiceYT on 5 Aug 2026
+
