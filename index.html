@@ -50,6 +50,26 @@
   #healthBarBg { width: 100%; height: 14px; background: #331111; border-radius: 4px; overflow: hidden; }
   #healthBar { height: 100%; width: 100%; background: linear-gradient(90deg,#ff3b3b,#ff8a3b); transition: width 0.15s ease-out; }
 
+  #staminaWrap { margin-top: 8px; }
+  #staminaLabel { color: #ddd; font-size: 11px; letter-spacing: 1px; margin-bottom: 3px; text-transform: uppercase; }
+  #staminaBarBg { width: 100%; height: 10px; background: #101c33; border-radius: 4px; overflow: hidden; }
+  #staminaBar { height: 100%; width: 100%; background: linear-gradient(90deg,#2b7fff,#5fd0ff); transition: width 0.12s ease-out; }
+  #staminaBarBg.depleted #staminaBar { background: linear-gradient(90deg,#555,#888); }
+
+  #speedVignette {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(90,180,255,0) 60%, rgba(90,180,255,0.22) 100%);
+    transition: opacity 0.2s ease-out;
+  }
+  #speedVignette.show { opacity: 1; }
+  #speedLines { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s ease-out; }
+  #speedLines.show { opacity: 0.5; }
+  #speedLines .line {
+    position: absolute; top: 50%; left: 50%; height: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.6));
+    transform-origin: left center;
+  }
+
   #statsTop {
     position: absolute; top: 16px; right: 16px; text-align: right;
     color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.9); font-size: 13px;
@@ -230,7 +250,14 @@
     <div id="healthWrap">
       <div id="healthLabel">Health</div>
       <div id="healthBarBg"><div id="healthBar"></div></div>
+      <div id="staminaWrap">
+        <div id="staminaLabel">Stamina</div>
+        <div id="staminaBarBg"><div id="staminaBar"></div></div>
+      </div>
     </div>
+
+    <div id="speedVignette"></div>
+    <div id="speedLines"></div>
 
     <div id="statsTop">
       <div>Kills: <span id="kills">0</span></div>
@@ -893,8 +920,10 @@
   })();
 
   const drop = { active: false, t: 0, speed: 42, startX: -WORLD_SIZE*0.6, z: 0 };
+  let matchStarted = false;
 
   function beginPlaneIntro() {
+    matchStarted = true;
     drop.active = true;
     drop.t = 0;
     drop.z = (Math.random()-0.5) * WORLD_SIZE * 0.5;
@@ -970,6 +999,10 @@
     eyeHeight: 1.6,
     radius: 0.45,
     speed: 6.5,
+    sprintMult: 1.65,
+    stamina: 100,
+    maxStamina: 100,
+    sprinting: false,
     health: 100,
     maxHealth: 100,
     isReloading: false,
@@ -1075,25 +1108,48 @@
     healthSprite.position.y = 2.15;
     group.add(healthSprite);
 
+    const chuteGroup = new THREE.Object3D();
+    const canopy = new THREE.Mesh(
+      new THREE.ConeGeometry(1.1, 0.9, 10, 1, true),
+      new THREE.MeshStandardMaterial({ color: botBodyMats[idx % botBodyMats.length], side: THREE.DoubleSide, roughness: 0.8 })
+    );
+    canopy.position.y = 3.4; canopy.rotation.x = Math.PI;
+    chuteGroup.add(canopy);
+    const riserMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    for (const sx of [-0.28, 0.28]) {
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.1, 4), riserMat);
+      riser.position.set(sx, 2.35, 0);
+      riser.rotation.z = sx > 0 ? -0.25 : 0.25;
+      chuteGroup.add(riser);
+    }
+    chuteGroup.visible = false;
+    group.add(chuteGroup);
+
     let x, z;
     do {
       x = (Math.random()-0.5) * (WORLD_SIZE - 40);
       z = (Math.random()-0.5) * (WORLD_SIZE - 40);
     } while (Math.hypot(x,z) < 15);
-    group.position.set(x, 0, z);
+    const dropY = 70 + Math.random()*50;
+    group.position.set(x, dropY, z);
     scene.add(group);
 
     const bot = {
       group, hitMeshes: [eBody, eHead], gunMesh: gun,
       health: 60, maxHealth: 60,
-      pos: new THREE.Vector3(x,0,z),
+      pos: new THREE.Vector3(x,dropY,z),
       target: new THREE.Vector3(x,0,z),
       speed: 1.8 + Math.random()*1.4,
       waitTimer: 0,
       alive: true,
       attackCooldown: Math.random()*1.5,
       yaw: 0,
-      healthSprite
+      healthSprite,
+      falling: true,
+      chuteOpen: false,
+      chuteDeployAlt: 14 + Math.random()*22,
+      chuteGroup,
+      dropDelay: Math.random()*3.5
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
@@ -1108,6 +1164,8 @@
   function killBot(bot, killedByPlayer) {
     if (!bot.alive) return;
     bot.alive = false;
+    bot.falling = false;
+    if (bot.chuteGroup) bot.chuteGroup.visible = false;
     bot.group.visible = false;
     aliveBotCount--;
     document.getElementById('aliveCount').textContent = aliveBotCount + (player.alive?1:0);
@@ -1115,22 +1173,11 @@
       player.kills++;
       document.getElementById('kills').textContent = player.kills;
     }
-    setTimeout(() => {
-      bot.health = bot.maxHealth;
-      let x,z;
-      do { x=(Math.random()-0.5)*(WORLD_SIZE-40); z=(Math.random()-0.5)*(WORLD_SIZE-40); }
-      while (Math.hypot(x-player.pos.x, z-player.pos.z) < 20);
-      bot.pos.set(x,0,z); bot.group.position.set(x,0,z); bot.target.copy(bot.pos);
-      bot.alive = true; bot.group.visible = true;
-      aliveBotCount++;
-      document.getElementById('aliveCount').textContent = aliveBotCount + (player.alive?1:0);
-      updateHealthSprite(bot);
-    }, 6000);
   }
 
   const raycaster = new THREE.Raycaster();
   const losRaycaster = new THREE.Raycaster();
-  const ENGAGE_RANGE = 24;
+  const ENGAGE_RANGE = 30;
 
   function damageBot(bot, amount) {
     bot.health -= amount;
@@ -1160,7 +1207,7 @@
       if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
     }
     for (const other of bots) {
-      if (other === bot || !other.alive) continue;
+      if (other === bot || !other.alive || other.falling) continue;
       const d = bot.pos.distanceTo(other.pos);
       if (d < bestDist && hasLineOfSight(bot.pos, other.pos)) { bestDist = d; best = other; }
     }
@@ -1169,7 +1216,7 @@
 
   function botShootAtTarget(bot, target, dist) {
     if (!hasLineOfSight(bot.pos, target.pos)) return;
-    const hitChance = Math.max(0.15, 0.55 - dist/60);
+    const hitChance = Math.max(0.2, 0.65 - dist/70);
     if (Math.random() < hitChance) {
       const dmg = 4 + Math.random()*5;
       if (target.isPlayer) damagePlayer(dmg);
@@ -1179,6 +1226,33 @@
 
   function updateBot(bot, dt) {
     if (!bot.alive) return;
+
+    if (bot.falling) {
+      if (bot.dropDelay > 0) {
+        bot.dropDelay -= dt;
+        bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
+        bot.healthSprite.quaternion.copy(camera.quaternion);
+        return;
+      }
+      const floorY = groundHeightAt(bot.pos.x, bot.pos.z, bot.pos.y + 0.5);
+      const altitude = bot.pos.y - floorY;
+      if (!bot.chuteOpen && altitude <= bot.chuteDeployAlt) {
+        bot.chuteOpen = true;
+        bot.chuteGroup.visible = true;
+      }
+      const fallSpeed = bot.chuteOpen ? 5 : 32;
+      bot.pos.y -= fallSpeed * dt;
+      if (bot.pos.y <= floorY) {
+        bot.pos.y = floorY;
+        bot.falling = false;
+        bot.chuteGroup.visible = false;
+        bot.target.copy(bot.pos);
+      }
+      bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
+      bot.healthSprite.quaternion.copy(camera.quaternion);
+      return;
+    }
+
     const { target: combatTarget, dist: combatDist } = findNearestTarget(bot);
 
     if (combatTarget) {
@@ -1207,7 +1281,18 @@
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
     }
     if (combatTarget) {
+      bot.strafeTimer = (bot.strafeTimer === undefined ? 0 : bot.strafeTimer) - dt;
+      if (bot.strafeTimer <= 0) {
+        bot.strafeDir = Math.random() < 0.5 ? -1 : 1;
+        bot.strafeTimer = 0.6 + Math.random()*1.1;
+      }
       const toTarget = new THREE.Vector3().subVectors(combatTarget.pos, bot.pos); toTarget.y = 0;
+      if (toTarget.lengthSq() > 0.0001) {
+        const perp = new THREE.Vector3(-toTarget.z, 0, toTarget.x).normalize();
+        bot.pos.x += perp.x * bot.strafeDir * bot.speed * 0.55 * dt;
+        bot.pos.z += perp.z * bot.strafeDir * bot.speed * 0.55 * dt;
+        resolveCollisions(bot.pos, 0.5, bot.pos.y);
+      }
       bot.yaw = Math.atan2(toTarget.x, toTarget.z);
     }
     bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
@@ -1216,7 +1301,7 @@
 
     bot.attackCooldown -= dt;
     if (combatTarget && bot.attackCooldown <= 0) {
-      bot.attackCooldown = 0.9 + Math.random()*0.6;
+      bot.attackCooldown = 0.65 + Math.random()*0.5;
       botShootAtTarget(bot, combatTarget, combatDist);
       if (combatTarget.isPlayer) addShake(0.08);
     }
@@ -1501,6 +1586,36 @@
     if (player.health <= 0) playerDie();
   }
   function updateHealthUI() { document.getElementById('healthBar').style.width = (player.health/player.maxHealth*100) + '%'; }
+
+  function updateStaminaUI() {
+    const pct = Math.max(0, player.stamina / player.maxStamina * 100);
+    document.getElementById('staminaBar').style.width = pct + '%';
+    document.getElementById('staminaBarBg').classList.toggle('depleted', player.stamina <= 0.01);
+  }
+
+  const speedLinesEl = document.getElementById('speedLines');
+  (function initSpeedLines() {
+    for (let i = 0; i < 14; i++) {
+      const line = document.createElement('div');
+      line.className = 'line';
+      const angle = Math.random() * 360;
+      const dist = 60 + Math.random() * 30;
+      const len = 90 + Math.random() * 160;
+      line.style.width = len + 'px';
+      line.style.transform = `rotate(${angle}deg) translateX(${dist}px)`;
+      speedLinesEl.appendChild(line);
+    }
+  })();
+
+  function updateSpeedEffects(dt) {
+    const targetFov = (player.sprinting && !isScoped) ? BASE_FOV + 12 : BASE_FOV;
+    if (!isScoped) {
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 8);
+      camera.updateProjectionMatrix();
+    }
+    document.getElementById('speedVignette').classList.toggle('show', player.sprinting);
+    speedLinesEl.classList.toggle('show', player.sprinting);
+  }
   let regenAccumulator = 0;
   function playerDie() {
     player.alive = false;
@@ -1816,6 +1931,18 @@
     const len = Math.hypot(inputX, inputZ);
     if (len > 1) { inputX /= len; inputZ /= len; }
 
+    const wantsSprint = !!keys['ShiftLeft'] && len > 0.001 && !isScoped;
+    if (wantsSprint && player.stamina > 0) {
+      player.sprinting = true;
+      player.stamina = Math.max(0, player.stamina - 28 * dt);
+    } else {
+      player.sprinting = false;
+      player.stamina = Math.min(player.maxStamina, player.stamina + 16 * dt);
+    }
+    const speedMult = player.sprinting ? player.sprintMult : 1;
+    updateStaminaUI();
+    updateSpeedEffects(dt);
+
     if (len > 0.001) {
       const forward = getForward(player.yaw);
       const right = getRight(player.yaw);
@@ -1823,8 +1950,8 @@
       move.addScaledVector(forward, inputZ);
       move.addScaledVector(right, inputX);
       if (move.lengthSq() > 0) move.normalize();
-      player.pos.x += move.x * player.speed * dt;
-      player.pos.z += move.z * player.speed * dt;
+      player.pos.x += move.x * player.speed * speedMult * dt;
+      player.pos.z += move.z * player.speed * speedMult * dt;
       playerGroup.rotation.y = player.yaw;
     }
 
@@ -1918,7 +2045,7 @@
 
     updateDrop(dt);
     updateMovement(dt);
-    if (!drop.active) {
+    if (!drop.active && matchStarted) {
       updateAmmoCratePickups();
       updatePickups(dt);
       for (const bot of bots) updateBot(bot, dt);
@@ -1929,7 +2056,7 @@
 
     renderer.render(scene, camera);
   }
-  updateHealthUI(); updateAmmoUI(); updateWoodUI();
+  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI();
   animate();
 
 })();
