@@ -13,5 +13,6 @@ Dedicated FIRE button, joystick, jump button, and view-toggle button for mobile,
 
 Update0.12: AI bots use raycasting, and you now launch from a parachute. Commited by BlazingiceYT on 5 Aug 2026
 
+Update0.13: Refactor house spawning logic
 Update0.13: Added different guns, scope, sensitivity toggle. Commited by BlazingiceYT on 5 Aug 2026
 
