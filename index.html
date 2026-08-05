@@ -550,7 +550,8 @@
       floors.push({ x: cx, z: cz, hw: floorHw, hd: floorHd, y: baseY + 0.12, fl });
 
       const wallH = floorH;
-      const frontDoorWidth = 3.2;
+      const doorWidth = 3.2;
+      const sideW = (w - doorWidth)/2;
 
       const back = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, wt), wallMat);
       back.position.set(0, baseY + wallH/2, -d/2); back.castShadow = true; back.receiveShadow = true;
@@ -561,12 +562,11 @@
       const right = new THREE.Mesh(new THREE.BoxGeometry(wt, wallH, d), wallMat);
       right.position.set(w/2, baseY + wallH/2, 0); right.castShadow = true; right.receiveShadow = true;
       group.add(right);
-      const sideW = (w - frontDoorWidth)/2;
       const frontL = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
-      frontL.position.set(-(frontDoorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontL.castShadow = true; frontL.receiveShadow = true;
+      frontL.position.set(-(doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontL.castShadow = true; frontL.receiveShadow = true;
       group.add(frontL);
       const frontR = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
-      frontR.position.set((frontDoorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontR.castShadow = true; frontR.receiveShadow = true;
+      frontR.position.set((doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontR.castShadow = true; frontR.receiveShadow = true;
       group.add(frontR);
       collisionMeshes.push(back, left, right, frontL, frontR);
 
@@ -580,16 +580,23 @@
       worldSolid(0, -d/2, w/2, wt/2+0.1);
       worldSolid(-w/2, 0, wt/2+0.1, d/2);
       worldSolid(w/2, 0, wt/2+0.1, d/2);
-      worldSolid(-(frontDoorWidth/2 + sideW/2), d/2, sideW/2, wt/2+0.1);
-      worldSolid((frontDoorWidth/2 + sideW/2), d/2, sideW/2, wt/2+0.1);
+      worldSolid(-(doorWidth/2 + sideW/2), d/2, sideW/2, wt/2+0.1);
+      worldSolid((doorWidth/2 + sideW/2), d/2, sideW/2, wt/2+0.1);
 
       // stairs (ramp) up to the next floor — also registered as a climbable ramp
       // so the player's collision actually lets them walk up it
       if (fl < numFloors - 1) {
         const rampLen = floorH*1.7;
-        const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, rampLen), floorMat);
-        const rampLocalX = w/2 - 1.2;
+        // Each flight of stairs needs its own footprint. If every flight sat on
+        // the same corner (just at a different height), a 3+ floor house would
+        // have two flights' collision zones stacked exactly on top of each
+        // other, and walking near that corner on any floor could make the
+        // height calculation snap between floors. Alternating left/right per
+        // flight keeps every flight's footprint fully separate.
+        const rampSide = (fl % 2 === 0) ? 1 : -1;
+        const rampLocalX = rampSide * (w/2 - 1.2);
         const rampLocalZStart = -d/2 + 0.3;
+        const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, rampLen), floorMat);
         ramp.position.set(rampLocalX, baseY + floorH/2, rampLocalZStart + rampLen/2);
         ramp.rotation.x = -Math.atan2(floorH, rampLen);
         ramp.castShadow = true; ramp.receiveShadow = true;
@@ -1272,25 +1279,47 @@
     const targets = bots.filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(collisionMeshes);
     const hits = raycaster.intersectObjects(targets, false);
     let endPoint;
+    let hitBotRef = null, hitIsHead = false;
     if (hits.length > 0) {
       endPoint = hits[0].point.clone();
       const hitObj = hits[0].object;
-      const botRef = hitObj.userData.botRef;
-      if (botRef && botRef.alive) {
-        const isHead = hitObj.userData.isHead === true;
-        showHitMarker(isHead);
-        if (def.oneShotHeadshot && isHead) {
-          botRef.health = 0;
-        } else {
-          botRef.health -= def.dmg * (isHead ? def.headMult : 1);
-        }
-        updateHealthSprite(botRef);
-        if (botRef.health <= 0) killBot(botRef, true);
+      if (hitObj.userData.botRef && hitObj.userData.botRef.alive) {
+        hitBotRef = hitObj.userData.botRef;
+        hitIsHead = hitObj.userData.isHead === true;
       }
     } else {
       endPoint = camera.position.clone().addScaledVector(dir, 300);
     }
+
+    // The camera sits behind/above the player in third person, so its sightline
+    // can occasionally clear a corner or wall edge the character's own gun
+    // couldn't. Re-check the shot from the muzzle itself so a wall between the
+    // gun and the target still blocks the hit even if the camera had a clear view.
     const muzzleWorld = getActiveMuzzleWorldPos();
+    const muzzleDir = new THREE.Vector3().subVectors(endPoint, muzzleWorld);
+    const muzzleDist = muzzleDir.length();
+    if (muzzleDist > 0.01) {
+      muzzleDir.normalize();
+      raycaster.set(muzzleWorld, muzzleDir);
+      raycaster.far = muzzleDist - 0.05;
+      raycaster.near = 0;
+      const wallBlock = raycaster.intersectObjects(collisionMeshes, false);
+      if (wallBlock.length > 0) {
+        endPoint = wallBlock[0].point.clone();
+        hitBotRef = null; // a wall was actually in the way; no damage lands
+      }
+    }
+
+    if (hitBotRef) {
+      showHitMarker(hitIsHead);
+      if (def.oneShotHeadshot && hitIsHead) {
+        hitBotRef.health = 0;
+      } else {
+        hitBotRef.health -= def.dmg * (hitIsHead ? def.headMult : 1);
+      }
+      updateHealthSprite(hitBotRef);
+      if (hitBotRef.health <= 0) killBot(hitBotRef, true);
+    }
     spawnTracer(muzzleWorld, endPoint, def.muzzleColor);
     spawnMuzzleFlash(muzzleWorld, def.muzzleColor);
   }
