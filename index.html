@@ -117,6 +117,7 @@
     pointer-events: auto; letter-spacing: 1px;
   }
   #fireBtn.flash { background: rgba(255,220,120,0.85); }
+  #fireBtn.engaged { background: rgba(255,90,50,0.75); border-color: rgba(255,180,140,0.95); }
 
   #scopeBtn {
     position: absolute; right: 122px; bottom: 148px; width: 60px; height: 60px;
@@ -378,7 +379,7 @@
 
   // static solid obstacles (AABB): {x,z,hw,hd,minY,maxY}
   const solids = [];
-  function addSolid(x,z,hw,hd,minY,maxY){ solids.push({x,z,hw,hd,minY,maxY}); }
+  function addSolid(x,z,hw,hd,minY,maxY){ const s = {x,z,hw,hd,minY,maxY}; solids.push(s); return s; }
   // meshes the third-person camera / bullets / line-of-sight should not pass through
   const collisionMeshes = [];
 
@@ -543,10 +544,13 @@
       slab.position.set(0, baseY, 0);
       slab.receiveShadow = true;
       group.add(slab);
-      floors.push({ x: cx, z: cz, hw: w/2, hd: d/2, y: baseY + 0.12, fl });
+      const cosR90 = Math.cos(rotY||0), sinR90 = Math.sin(rotY||0);
+      const floorHw = Math.abs(w/2*cosR90) + Math.abs(d/2*sinR90);
+      const floorHd = Math.abs(w/2*sinR90) + Math.abs(d/2*cosR90);
+      floors.push({ x: cx, z: cz, hw: floorHw, hd: floorHd, y: baseY + 0.12, fl });
 
       const wallH = floorH;
-      const frontDoorWidth = 2.2;
+      const frontDoorWidth = 3.2;
 
       const back = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, wt), wallMat);
       back.position.set(0, baseY + wallH/2, -d/2); back.castShadow = true; back.receiveShadow = true;
@@ -619,13 +623,13 @@
   const houseSpawnPoints = [];
   function generateHouses() {
     let placed = 0, attempts = 0;
-    while (placed < 14 && attempts < 300) {
+    while (placed < 22 && attempts < 500) {
       attempts++;
       const x = (Math.random()-0.5) * (WORLD_SIZE - 60);
       const z = (Math.random()-0.5) * (WORLD_SIZE - 60);
-      if (Math.hypot(x,z) < 18) continue;
+      if (Math.hypot(x,z) < 12) continue;
       let tooClose = false;
-      for (const p of houseSpawnPoints) if (Math.hypot(p.x-x,p.z-z) < 22) { tooClose = true; break; }
+      for (const p of houseSpawnPoints) if (Math.hypot(p.x-x,p.z-z) < 20) { tooClose = true; break; }
       if (tooClose) continue;
       const w = 9 + Math.random()*4, d = 9 + Math.random()*4;
       const floorsN = 1 + Math.floor(Math.random()*3);
@@ -693,6 +697,7 @@
 
   // ---------- Buildable walls ----------
   const buildWallMat = new THREE.MeshStandardMaterial({ color: 0xc4924f, roughness: 0.95 });
+  const builtWalls = [];
   function placeWall(pos, yaw) {
     const w = 2.4, h = 2.2, t = 0.3;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), buildWallMat);
@@ -704,7 +709,19 @@
     const cosR = Math.cos(yaw), sinR = Math.sin(yaw);
     const eff_hw = Math.abs(w/2*cosR) + Math.abs(t/2*sinR);
     const eff_hd = Math.abs(w/2*sinR) + Math.abs(t/2*cosR);
-    addSolid(pos.x, pos.z, eff_hw, eff_hd, 0, h);
+    const solidRef = addSolid(pos.x, pos.z, eff_hw, eff_hd, 0, h);
+    builtWalls.push({ mesh, solidRef, health: 60 });
+  }
+  // destroy a built wall (used by the axe so players can never get permanently
+  // blocked by a wall they placed themselves)
+  function breakBuiltWall(entry) {
+    scene.remove(entry.mesh);
+    const cmIdx = collisionMeshes.indexOf(entry.mesh);
+    if (cmIdx !== -1) collisionMeshes.splice(cmIdx, 1);
+    const sIdx = solids.indexOf(entry.solidRef);
+    if (sIdx !== -1) solids.splice(sIdx, 1);
+    const bIdx = builtWalls.indexOf(entry);
+    if (bIdx !== -1) builtWalls.splice(bIdx, 1);
   }
 
   // ---------- Weapon defs ----------
@@ -1295,6 +1312,15 @@
         const treeRef = hit.userData.treeRef;
         if (treeRef && treeRef.alive) { chopTree(treeRef); showHitMarker(false); }
       } else {
+        const wallHits = raycaster.intersectObjects(builtWalls.map(b=>b.mesh), false);
+        if (wallHits.length > 0) {
+          const entry = builtWalls.find(b => b.mesh === wallHits[0].object);
+          if (entry) {
+            entry.health -= 30;
+            showHitMarker(false);
+            if (entry.health <= 0) breakBuiltWall(entry);
+          }
+        } else {
         const botTargets = bots.filter(b=>b.alive).flatMap(b=>b.hitMeshes);
         const bh = raycaster.intersectObjects(botTargets, false);
         if (bh.length > 0) {
@@ -1306,6 +1332,7 @@
             showHitMarker(isHead);
             if (botRef.health <= 0) killBot(botRef, true);
           }
+        }
         }
       }
       return;
@@ -1448,6 +1475,8 @@
   let regenAccumulator = 0;
   function playerDie() {
     player.alive = false;
+    firing = false;
+    document.getElementById('fireBtn').classList.remove('engaged');
     endScope();
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('finalKills').textContent = player.kills;
@@ -1536,6 +1565,9 @@
     document.getElementById('scopeBtn').classList.remove('active');
     document.getElementById('crosshair').style.display = 'block';
   }
+  function toggleScope() {
+    if (isScoped) endScope(); else startScope();
+  }
 
   // ---------- Equip slot clicks ----------
   document.getElementById('slotAxe').addEventListener('click', () => setWeapon('axe'));
@@ -1549,6 +1581,8 @@
   function setWeapon(w) {
     if (w === 'primary' && !player.primaryType) return;
     player.weapon = w;
+    firing = false;
+    document.getElementById('fireBtn').classList.remove('engaged');
     endScope();
     updateWeaponVisibility();
     updateAmmoUI();
@@ -1656,16 +1690,19 @@
   const fireBtnEl = document.getElementById('fireBtn');
   function fireStart(e) { e.preventDefault(); firing = true; primaryAction(); }
   function fireEnd() { firing = false; }
-  fireBtnEl.addEventListener('touchstart', fireStart, {passive:false});
-  fireBtnEl.addEventListener('touchend', fireEnd);
+  function toggleFiring(e) {
+    e.preventDefault();
+    firing = !firing;
+    fireBtnEl.classList.toggle('engaged', firing);
+    if (firing) primaryAction();
+  }
+  fireBtnEl.addEventListener('touchstart', toggleFiring, {passive:false});
   fireBtnEl.addEventListener('mousedown', fireStart);
   fireBtnEl.addEventListener('mouseup', fireEnd);
 
   const scopeBtnEl = document.getElementById('scopeBtn');
-  scopeBtnEl.addEventListener('touchstart', (e) => { e.preventDefault(); startScope(); }, {passive:false});
-  scopeBtnEl.addEventListener('touchend', (e) => { e.preventDefault(); endScope(); });
-  scopeBtnEl.addEventListener('mousedown', startScope);
-  scopeBtnEl.addEventListener('mouseup', endScope);
+  scopeBtnEl.addEventListener('touchstart', (e) => { e.preventDefault(); toggleScope(); }, {passive:false});
+  scopeBtnEl.addEventListener('mousedown', (e) => { e.preventDefault(); toggleScope(); });
 
   // ---------- Start / Restart ----------
   document.getElementById('startBtn').addEventListener('click', () => {
@@ -1791,12 +1828,9 @@
       const targetY = player.pos.y + 1.5;
       const offX = Math.sin(player.yaw) * Math.cos(player.pitch) * distance;
       const offZ = Math.cos(player.yaw) * Math.cos(player.pitch) * distance;
-      // NOTE: negative sign here — pitch up should move the camera BELOW the
-      // pivot so looking at the fixed pivot point reads as "looking up"
-      // (matches first-person feel instead of inverting it)
       const offY = -Math.sin(player.pitch) * distance * 0.6 + 1.2;
       camPivot.set(player.pos.x, targetY, player.pos.z);
-      camDesired.set(player.pos.x - offX, targetY + offY, player.pos.z - offZ);
+      camDesired.set(player.pos.x + offX, targetY + offY, player.pos.z + offZ);
 
       camDir.subVectors(camDesired, camPivot);
       const fullDist = camDir.length();
