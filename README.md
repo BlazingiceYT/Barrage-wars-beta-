@@ -12,3 +12,5 @@ Building: 5 wood = 1 wall, placed in front of you facing your direction (B key, 
 Dedicated FIRE button, joystick, jump button, and view-toggle button for mobile, all alongside WASD/mouse/P on desktop, commited on 4 AUG 2026 by BlazingiceYT
 
 Update0.12: AI bots use raycasting, and you now launch from a parachute. Commited by BlazingiceYT on 5 Aug 2026
+
+Update0.13: Added different guns, scope, sensi
