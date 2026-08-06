@@ -355,6 +355,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 (function(){
   "use strict";
@@ -898,6 +899,51 @@
     tpWeaponRig.add(tp.group);
     tpMeshes[type] = tp;
   }
+
+  // ---------- GLB gun models (replace the blocky placeholders once loaded) ----------
+  // Drop pistol.glb, ak-47.glb, minigun.glb and sniper.glb next to this HTML file
+  // (or edit the "url" values below to point wherever you host them). Each model
+  // is expected to be built with the barrel pointing down -Z and the grip near
+  // the origin, matching the placeholder rig; tweak modelRotationY / muzzleLocal
+  // per-weapon below if your model's authoring orientation differs.
+  const gltfLoader = new THREE.GLTFLoader();
+  const MODEL_WEAPON_CONFIG = {
+    pistol:  { url: 'pistol.glb',  scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
+    ak47:    { url: 'ak-47.glb',   scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
+    minigun: { url: 'minigun.glb', scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
+    sniper:  { url: 'sniper.glb',  scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
+  };
+
+  function applyLoadedModel(entry, gltfScene, cfg, rigScale) {
+    // clear the procedural placeholder pieces
+    while (entry.group.children.length) entry.group.remove(entry.group.children[0]);
+    const model = gltfScene;
+    model.rotation.y = cfg.modelRotationY;
+    model.scale.setScalar(cfg.scale);
+    model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    entry.group.add(model);
+    entry.muzzleLocal = cfg.muzzleLocal.clone().multiplyScalar(rigScale);
+    if (cfg.barrelClusterName) {
+      entry.barrelCluster = model.getObjectByName(cfg.barrelClusterName) || entry.barrelCluster || null;
+    }
+  }
+
+  function loadWeaponModel(type) {
+    const cfg = MODEL_WEAPON_CONFIG[type];
+    if (!cfg) return;
+    gltfLoader.load(
+      cfg.url,
+      (gltf) => {
+        applyLoadedModel(fpMeshes[type], gltf.scene, cfg, 1);
+        applyLoadedModel(tpMeshes[type], gltf.scene.clone(true), cfg, 1.15);
+      },
+      undefined,
+      (err) => {
+        console.warn(`[weapons] Could not load ${cfg.url}, keeping placeholder model.`, err);
+      }
+    );
+  }
+  for (const type of Object.keys(MODEL_WEAPON_CONFIG)) loadWeaponModel(type);
 
   // ---------- Drop plane ----------
   const planeGroup = new THREE.Object3D();
@@ -2254,8 +2300,8 @@
     const targetSpeed = (isMinigunActive && firing) ? 42 : 0;
     minigunSpinSpeed += (targetSpeed - minigunSpinSpeed) * Math.min(1, dt*4);
     minigunRotation += minigunSpinSpeed * dt;
-    fpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
-    tpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
+    if (fpMeshes.minigun.barrelCluster) fpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
+    if (tpMeshes.minigun.barrelCluster) tpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
   }
 
   // ---------- Main loop ----------
