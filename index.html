@@ -111,14 +111,15 @@
   #scopeOverlay .reticleDot { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); }
 
   #topRightBtns { position: absolute; top: 100px; right: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  #viewToggleBtn, #settingsBtn, #homeSettingsBtn {
+  #viewToggleBtn, #settingsBtn, #homeSettingsBtn, #homeCreditsBtn {
     pointer-events: auto;
     background: rgba(20,20,20,0.55); border: 2px solid rgba(255,255,255,0.3); color: #fff;
     border-radius: 8px; padding: 8px 12px; font-size: 12px; letter-spacing: 0.5px;
     cursor: pointer; text-align: center;
   }
-  #viewToggleBtn:active, #settingsBtn:active, #homeSettingsBtn:active { background: rgba(255,255,255,0.25); }
+  #viewToggleBtn:active, #settingsBtn:active, #homeSettingsBtn:active, #homeCreditsBtn:active { background: rgba(255,255,255,0.25); }
   #homeSettingsBtn { position: absolute; top: 16px; right: 16px; z-index: 21; }
+  #homeCreditsBtn { position: absolute; top: 60px; right: 16px; z-index: 21; }
 
   #joystickZone { position: absolute; left: 24px; bottom: 24px; width: 130px; height: 130px; pointer-events: auto; }
   #joystickBase { width: 100%; height: 100%; border-radius: 50%; background: rgba(255,255,255,0.08); border: 3px solid rgba(255,255,255,0.35); position: relative; }
@@ -208,6 +209,19 @@
   #settingsPanel input[type=range] { width: 140px; }
   #settingsPanel .val { color: #ffdd55; font-size: 12px; min-width: 32px; text-align: right; }
   #customizeControlsBtn { display: block; width: 100%; margin: 4px 0 10px; }
+
+  #creditsPanel {
+    position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,10,15,0.92); border: 2px solid rgba(255,255,255,0.25); border-radius: 12px;
+    padding: 16px 20px; color: #fff; display: none; pointer-events: auto; min-width: 270px;
+    max-width: 340px; max-height: 60vh; overflow-y: auto; text-align: center; z-index: 30;
+  }
+  #creditsPanel h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ffdd55; }
+  #creditsContent {
+    text-align: left; font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; line-height: 1.6;
+    color: #cfd8dc; white-space: pre-wrap; word-break: break-word; margin: 0 0 14px;
+  }
+  #creditsClose { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 
   #layoutEditBar {
     position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
@@ -350,8 +364,15 @@
     <button id="settingsClose">Close</button>
   </div>
 
+  <div id="creditsPanel">
+    <h3>CREDITS</h3>
+    <pre id="creditsContent">Loading…</pre>
+    <button id="creditsClose">Close</button>
+  </div>
+
   <div class="overlayScreen" id="startScreen">
     <button id="homeSettingsBtn">⚙ SETTINGS</button>
+    <button id="homeCreditsBtn">ℹ CREDITS</button>
     <h1>OPEN WORLD COMBAT</h1>
     <p>Drop into a huge island with 49 other fighters. Chop trees for wood, build walls for cover, loot guns from houses and survive.</p>
     <div class="controlsGrid">
@@ -2303,10 +2324,36 @@
   let settingsOpen = false;
   function toggleSettings() {
     if (invOpen) toggleInventory();
+    if (creditsOpen) toggleCredits();
     settingsOpen = !settingsOpen;
     settingsPanel.style.display = settingsOpen ? 'block' : 'none';
     if (settingsOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
+
+  // ---------- Credits panel (home screen only) ----------
+  const creditsPanel = document.getElementById('creditsPanel');
+  const creditsContent = document.getElementById('creditsContent');
+  let creditsOpen = false;
+  let creditsLoaded = false;
+  function loadCredits() {
+    if (creditsLoaded) return;
+    creditsLoaded = true;
+    fetch('credits.txt')
+      .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.text(); })
+      .then(text => { creditsContent.textContent = text; })
+      .catch(err => {
+        creditsLoaded = false;
+        creditsContent.textContent = 'Could not load credits.txt (' + err.message + ').';
+      });
+  }
+  function toggleCredits() {
+    if (settingsOpen) toggleSettings();
+    creditsOpen = !creditsOpen;
+    creditsPanel.style.display = creditsOpen ? 'block' : 'none';
+    if (creditsOpen) loadCredits();
+  }
+  document.getElementById('homeCreditsBtn').addEventListener('click', toggleCredits);
+  document.getElementById('creditsClose').addEventListener('click', toggleCredits);
   document.getElementById('settingsBtn').addEventListener('click', toggleSettings);
   document.getElementById('homeSettingsBtn').addEventListener('click', toggleSettings);
   document.getElementById('settingsClose').addEventListener('click', toggleSettings);
@@ -2676,6 +2723,8 @@
 
   // ---------- Start / Restart ----------
   document.getElementById('startBtnFFA').addEventListener('click', () => {
+    if (creditsOpen) toggleCredits();
+    if (settingsOpen) toggleSettings();
     gameMode = 'ffa';
     document.getElementById('startScreen').style.display = 'none';
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
@@ -2683,6 +2732,8 @@
     beginPlaneIntro();
   });
   document.getElementById('startBtnZombie').addEventListener('click', () => {
+    if (creditsOpen) toggleCredits();
+    if (settingsOpen) toggleSettings();
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('zombieIntroScreen').style.display = 'flex';
   });
