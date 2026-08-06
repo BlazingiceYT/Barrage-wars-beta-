@@ -40,3 +40,5 @@ If a file fails to load (missing/404), it logs a warning and just keeps the exis
 Guarded the minigun's barrel-spin animation so it won't error if a loaded model doesn't have a barrelCluster node.+ Mini patch Commited by BlazingiceYT on 6 Aug 2026
 
 Update0.17: Added ability to customize button layout through settings menu
+
+Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses
