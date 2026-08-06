@@ -160,6 +160,14 @@
     border-radius: 8px; padding: 6px 10px; font-size: 11px; pointer-events: auto;
   }
 
+  #dropBtn {
+    position: absolute; right: 20px; bottom: 345px;
+    background: rgba(90,20,20,0.55); border: 2px solid rgba(255,120,100,0.5); color: #fff;
+    border-radius: 8px; padding: 6px 10px; font-size: 11px; pointer-events: auto;
+  }
+  #dropBtn:active { background: rgba(255,80,60,0.55); }
+  #dropBtn.disabled { opacity: 0.35; pointer-events: none; }
+
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -270,11 +278,12 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:150px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | 1/2/3=Weapon | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | 1/2/3=Weapon | G=Drop | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
     <button id="weaponSwitchBtn">SWITCH</button>
+    <button id="dropBtn" class="disabled">DROP<br>(G)</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="fireBtn">FIRE</button>
@@ -321,6 +330,7 @@
       <div><b>P</b><br>Toggle View</div>
       <div><b>Space</b><br>Jump</div>
       <div><b>R</b><br>Reload</div>
+      <div><b>G</b><br>Drop Weapon</div>
       <div><b>Tab</b><br>Inventory</div>
       <div><b>B</b><br>Build Wall</div>
     </div>
@@ -451,8 +461,8 @@
   // world-space height contributed by a ramp at (x,z), or null if outside it
   function rampHeightAt(ramp, x, z) {
     const dx = x - ramp.cx, dz = z - ramp.cz;
-    const localX = dx*ramp.cosR + dz*ramp.sinR;
-    const localZ = -dx*ramp.sinR + dz*ramp.cosR;
+    const localX = dx*ramp.cosR - dz*ramp.sinR;
+    const localZ = dx*ramp.sinR + dz*ramp.cosR;
     if (Math.abs(localX - ramp.localX) > ramp.halfWidth) return null;
     if (localZ < ramp.zStart || localZ > ramp.zStart + ramp.len) return null;
     const t = (localZ - ramp.zStart) / ramp.len;
@@ -529,7 +539,7 @@
 
   // ---------- Weapon pickups (declared before houses so makeHouse can spawn them) ----------
   const pickups = [];
-  function spawnWeaponPickup(type, x, y, z) {
+  function spawnWeaponPickup(type, x, y, z, delayActive) {
     const built = WEAPON_BUILDERS[type](1.3);
     const group = built.group;
     group.rotation.z = Math.PI/2.3;
@@ -540,7 +550,12 @@
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
     scene.add(ring);
-    pickups.push({ group, ring, type, x, y, z, active: true });
+    const p = { group, ring, type, x, y, z, active: !delayActive };
+    pickups.push(p);
+    // dropped weapons start non-collectible for a moment so the player who just
+    // dropped it (standing right on top of it) doesn't instantly re-pick it up
+    if (delayActive) setTimeout(() => { p.active = true; }, 900);
+    return p;
   }
   function updatePickups(dt) {
     for (const p of pickups) {
@@ -614,8 +629,8 @@
       collisionMeshes.push(back, left, right, frontL, frontR);
 
       function worldSolid(lx, lz, hw, hd) {
-        const wx = cx + lx*cosR - lz*sinR;
-        const wz = cz + lx*sinR + lz*cosR;
+        const wx = cx + lx*cosR + lz*sinR;
+        const wz = cz - lx*sinR + lz*cosR;
         const eff_hw = Math.abs(hw*cosR) + Math.abs(hd*sinR);
         const eff_hd = Math.abs(hw*sinR) + Math.abs(hd*cosR);
         addSolid(wx, wz, eff_hw, eff_hd, baseY, baseY+wallH);
@@ -1770,6 +1785,7 @@
       primaryTagEl.textContent = '';
       slotPrimaryEl.classList.add('emptySlot');
     }
+    document.getElementById('dropBtn').classList.toggle('disabled', !player.primaryType);
   }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
@@ -1984,6 +2000,27 @@
     updateAmmoUI();
   }
 
+  // ---------- Drop weapon ----------
+  document.getElementById('dropBtn').addEventListener('click', dropWeapon);
+  function dropWeapon() {
+    if (!player.alive || drop.active || !player.primaryType) return;
+    const type = player.primaryType;
+    const def = WEAPON_DEFS[type];
+    const forward = getForward(player.yaw);
+    const dropX = player.pos.x + forward.x * 1.6;
+    const dropZ = player.pos.z + forward.z * 1.6;
+    spawnWeaponPickup(type, dropX, player.pos.y, dropZ, true);
+
+    player.primaryType = null;
+    player.ammoState.primary = { mag: 0, reserve: 0 };
+    if (player.weapon === 'primary') setWeapon('pistol');
+    firing = false;
+    document.getElementById('fireBtn').classList.remove('engaged');
+    updateWeaponVisibility();
+    updateAmmoUI();
+    showPickupToast('DROPPED: ' + def.name);
+  }
+
   // ---------- View mode ----------
   let viewMode = 'third';
   function toggleView() {
@@ -2003,6 +2040,7 @@
     if (e.code === 'Digit2') setWeapon('pistol');
     if (e.code === 'Digit3') setWeapon('primary');
     if (e.code === 'KeyB') tryBuildWall();
+    if (e.code === 'KeyG') dropWeapon();
     if (e.code === 'Tab') { toggleInventory(); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2084,17 +2122,28 @@
   document.getElementById('jumpBtn').addEventListener('mousedown', tryJump);
 
   const fireBtnEl = document.getElementById('fireBtn');
-  function fireStart(e) { e.preventDefault(); firing = true; primaryAction(); }
-  function fireEnd() { firing = false; }
-  function toggleFiring(e) {
+  // Press-and-hold firing, unified for mouse and touch via Pointer Events.
+  // (Previously touch used a toggle — tap to start, tap again to stop — which
+  // meant every other tap did nothing and looked like the button needed two
+  // clicks to register a shot. Now every press fires immediately, exactly
+  // like the desktop canvas click does, and holding continues auto weapons.)
+  function fireStart(e) {
     e.preventDefault();
-    firing = !firing;
-    fireBtnEl.classList.toggle('engaged', firing);
-    if (firing) primaryAction();
+    if (firing) return; // ignore duplicate pointerdown (e.g. extra touch point)
+    firing = true;
+    fireBtnEl.classList.add('engaged');
+    primaryAction();
   }
-  fireBtnEl.addEventListener('touchstart', toggleFiring, {passive:false});
-  fireBtnEl.addEventListener('mousedown', fireStart);
-  fireBtnEl.addEventListener('mouseup', fireEnd);
+  function fireEnd(e) {
+    if (e) e.preventDefault();
+    firing = false;
+    fireBtnEl.classList.remove('engaged');
+  }
+  fireBtnEl.addEventListener('pointerdown', fireStart);
+  fireBtnEl.addEventListener('pointerup', fireEnd);
+  fireBtnEl.addEventListener('pointercancel', fireEnd);
+  fireBtnEl.addEventListener('pointerleave', fireEnd);
+  fireBtnEl.style.touchAction = 'none';
 
   const scopeBtnEl = document.getElementById('scopeBtn');
   scopeBtnEl.addEventListener('touchstart', (e) => { e.preventDefault(); toggleScope(); }, {passive:false});
