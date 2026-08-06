@@ -977,16 +977,20 @@
 
   // ---------- GLB gun models (replace the blocky placeholders once loaded) ----------
   // Drop pistol.glb, ak-47.glb, minigun.glb and sniper.glb next to this HTML file
-  // (or edit the "url" values below to point wherever you host them). Each model
-  // is expected to be built with the barrel pointing down -Z and the grip near
-  // the origin, matching the placeholder rig; tweak modelRotationY / muzzleLocal
-  // per-weapon below if your model's authoring orientation differs.
+  // (or edit the "url" values below to point wherever you host them). Downloaded
+  // models rarely share the same authoring scale as each other (a Sketchfab pistol
+  // and a Sketchfab AK-47 can use completely different real-world-to-unit ratios),
+  // so "scale: 1" alone isn't reliable — autoFit measures each model's actual
+  // bounding box after loading and rescales it to a target real-world size (in
+  // meters) instead of trusting a single hardcoded number. Set autoFit to null to
+  // fall back to using "scale" literally (that's what minigun.glb was already
+  // sized correctly with, so it's left alone).
   const gltfLoader = new THREE.GLTFLoader();
   const MODEL_WEAPON_CONFIG = {
-    pistol:  { url: 'pistol.glb',  scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
-    ak47:    { url: 'ak-47.glb',   scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
-    minigun: { url: 'minigun.glb', scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
-    sniper:  { url: 'sniper.glb',  scale: 1, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
+    pistol:  { url: 'pistol.glb',  scale: 1, autoFit: 0.28, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
+    ak47:    { url: 'ak-47.glb',   scale: 1, autoFit: 0.9,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
+    minigun: { url: 'minigun.glb', scale: 1, autoFit: null, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
+    sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.1,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
   };
 
   function applyLoadedModel(entry, gltfScene, cfg, rigScale) {
@@ -994,7 +998,21 @@
     while (entry.group.children.length) entry.group.remove(entry.group.children[0]);
     const model = gltfScene;
     model.rotation.y = cfg.modelRotationY;
-    model.scale.setScalar(cfg.scale);
+
+    if (cfg.autoFit) {
+      // Measure the model's real bounding box (at its native, unmodified scale)
+      // and rescale it so its largest dimension matches the target size, instead
+      // of trusting the raw export units.
+      model.scale.setScalar(1);
+      const box = new THREE.Box3().setFromObject(model);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      model.scale.setScalar(maxDim > 0 && isFinite(maxDim) ? (cfg.autoFit / maxDim) * cfg.scale : cfg.scale);
+    } else {
+      model.scale.setScalar(cfg.scale);
+    }
+
     model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     entry.group.add(model);
     entry.muzzleLocal = cfg.muzzleLocal.clone().multiplyScalar(rigScale);
