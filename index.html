@@ -205,6 +205,26 @@
   #invClose, #settingsClose { margin-top: 10px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
   #settingsPanel input[type=range] { width: 140px; }
   #settingsPanel .val { color: #ffdd55; font-size: 12px; min-width: 32px; text-align: right; }
+  #customizeControlsBtn { display: block; width: 100%; margin: 4px 0 10px; }
+
+  #layoutEditBar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,10,15,0.94); border: 2px solid rgba(255,221,85,0.65); border-radius: 12px;
+    padding: 12px 18px; color: #fff; display: none; pointer-events: auto; z-index: 55;
+    text-align: center; min-width: 250px;
+  }
+  #layoutEditBar p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; }
+  #layoutEditBar button {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.35); color: #fff;
+    border-radius: 8px; padding: 7px 14px; font-size: 12px; margin: 0 4px; cursor: pointer;
+  }
+  #layoutResetBtn { border-color: rgba(255,120,100,0.6) !important; }
+  #layoutDoneBtn { border-color: rgba(140,255,140,0.6) !important; }
+
+  .dragHandle {
+    position: fixed; border: 2px dashed #ffdd55; border-radius: 10px;
+    background: rgba(255,221,85,0.14); z-index: 56; touch-action: none; box-sizing: border-box;
+  }
 
   #pickupToast {
     position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%);
@@ -314,7 +334,14 @@
       <h3>SETTINGS</h3>
       <div class="row"><span>Look Sensitivity</span><input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"><span class="val" id="sensVal">1.0</span></div>
       <div class="row"><span>Scope Sensitivity</span><input type="range" id="scopeSensSlider" min="0.1" max="1" step="0.05" value="0.35"><span class="val" id="scopeSensVal">0.35</span></div>
+      <button id="customizeControlsBtn">↕ Customize Control Positions</button>
       <button id="settingsClose">Close</button>
+    </div>
+
+    <div id="layoutEditBar">
+      <p>Drag any highlighted control to move it.<br>Switch weapons/modes first if a control you want isn't visible.</p>
+      <button id="layoutResetBtn">Reset Positions</button>
+      <button id="layoutDoneBtn">Done</button>
     </div>
   </div>
 
@@ -2286,6 +2313,125 @@
     settings.scopeSensMult = parseFloat(scopeSensSlider.value);
     document.getElementById('scopeSensVal').textContent = settings.scopeSensMult.toFixed(2);
   });
+
+  // ---------- Customizable control positions ----------
+  // Every draggable control is repositioned by converting its rendered
+  // position (however it's normally anchored — left/right/bottom/transform)
+  // into a plain fixed left/top, then saving that as a % of the screen so it
+  // still makes sense if the page is reopened at a different window size.
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','buildBtn','weaponSwitchBtn','dropBtn','equipBar','topRightBtns','skipWaveBtn'];
+  let controlLayout = {};
+  try { controlLayout = JSON.parse(localStorage.getItem('blazingice_controlLayout') || '{}'); } catch(e) { controlLayout = {}; }
+
+  function applySavedLayout() {
+    for (const id of LAYOUT_IDS) {
+      const saved = controlLayout[id];
+      const el = document.getElementById(id);
+      if (!el || !saved) continue;
+      el.style.left = (saved.leftPct/100*window.innerWidth) + 'px';
+      el.style.top = (saved.topPct/100*window.innerHeight) + 'px';
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      el.style.transform = 'none';
+    }
+  }
+  applySavedLayout();
+
+  let layoutEditMode = false;
+  const dragHandles = {};
+  const layoutEditBar = document.getElementById('layoutEditBar');
+
+  function enterLayoutEdit() {
+    if (layoutEditMode) return;
+    layoutEditMode = true;
+    settingsPanel.style.display = 'none';
+    settingsOpen = false;
+    layoutEditBar.style.display = 'block';
+
+    for (const id of LAYOUT_IDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue; // not currently visible, skip its handle
+
+      el.style.pointerEvents = 'none'; // hand all input for this control over to its handle instead
+
+      const handle = document.createElement('div');
+      handle.className = 'dragHandle';
+      handle.style.left = rect.left + 'px';
+      handle.style.top = rect.top + 'px';
+      handle.style.width = rect.width + 'px';
+      handle.style.height = rect.height + 'px';
+      document.body.appendChild(handle);
+      dragHandles[id] = handle;
+
+      let dragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        const r = el.getBoundingClientRect();
+        el.style.left = r.left + 'px'; el.style.top = r.top + 'px';
+        el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.transform = 'none';
+        origLeft = r.left; origTop = r.top;
+        handle.setPointerCapture(e.pointerId);
+      });
+      handle.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        const w = handle.offsetWidth, h = handle.offsetHeight;
+        const nl = Math.max(0, Math.min(window.innerWidth - w, origLeft + dx));
+        const nt = Math.max(0, Math.min(window.innerHeight - h, origTop + dy));
+        handle.style.left = nl + 'px'; handle.style.top = nt + 'px';
+        el.style.left = nl + 'px'; el.style.top = nt + 'px';
+      });
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        controlLayout[id] = {
+          leftPct: (parseFloat(el.style.left) / window.innerWidth) * 100,
+          topPct: (parseFloat(el.style.top) / window.innerHeight) * 100
+        };
+        localStorage.setItem('blazingice_controlLayout', JSON.stringify(controlLayout));
+      };
+      handle.addEventListener('pointerup', endDrag);
+      handle.addEventListener('pointercancel', endDrag);
+    }
+  }
+
+  function exitLayoutEdit() {
+    layoutEditMode = false;
+    layoutEditBar.style.display = 'none';
+    for (const id of LAYOUT_IDS) {
+      const el = document.getElementById(id);
+      if (el) el.style.pointerEvents = '';
+      const handle = dragHandles[id];
+      if (handle) handle.remove();
+      delete dragHandles[id];
+    }
+  }
+
+  function resetLayout() {
+    controlLayout = {};
+    localStorage.removeItem('blazingice_controlLayout');
+    for (const id of LAYOUT_IDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.style.left = ''; el.style.top = ''; el.style.right = ''; el.style.bottom = ''; el.style.transform = '';
+      const handle = dragHandles[id];
+      if (handle) {
+        const rect = el.getBoundingClientRect();
+        handle.style.left = rect.left + 'px';
+        handle.style.top = rect.top + 'px';
+        handle.style.width = rect.width + 'px';
+        handle.style.height = rect.height + 'px';
+      }
+    }
+  }
+
+  document.getElementById('customizeControlsBtn').addEventListener('click', enterLayoutEdit);
+  document.getElementById('layoutDoneBtn').addEventListener('click', exitLayoutEdit);
+  document.getElementById('layoutResetBtn').addEventListener('click', resetLayout);
 
   // ---------- Scope / ADS ----------
   let isScoped = false;
