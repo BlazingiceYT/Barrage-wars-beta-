@@ -32,3 +32,9 @@ Waves increase in size each round (5, 8, 11, 14...) and slightly in toughness/sp
 A wave ends and the next one auto-starts shortly after the last zombie dies.
 SKIP WAVE button in the top-right: doesn't touch the zombies currently alive — it just throws the next wave's zombies in on top of them immediately.
 Dying and hitting RESPAWN in zombie mode puts you back on the ground mid-wave (no plane sequence), rather than restarting the whole match.
+
+Update0.16: Added the r128-matching GLTFLoader script tag alongside the existing three.js include.
+Added a MODEL_WEAPON_CONFIG block that points at pistol.glb, ak-47.glb, minigun.glb, and sniper.glb, plus per-weapon muzzle offsets and (for the minigun) the barrel-cluster node name used for the spin animation.
+Added loadWeaponModel/applyLoadedModel, which loads each .glb, swaps it in for the blocky placeholder mesh in both the first-person and third-person rigs once it's ready, and updates muzzleLocal for bullet spawn positions. The axe stays procedural since no axe.glb was requested.
+If a file fails to load (missing/404), it logs a warning and just keeps the existing placeholder gun — nothing crashes.
+Guarded the minigun's barrel-spin animation so it won't error if a loaded model doesn't have a barrelCluster node. Commited by BlazingiceYT on 6 Aug 2026
