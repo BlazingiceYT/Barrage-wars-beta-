@@ -111,13 +111,14 @@
   #scopeOverlay .reticleDot { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); }
 
   #topRightBtns { position: absolute; top: 100px; right: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  #viewToggleBtn, #settingsBtn {
+  #viewToggleBtn, #settingsBtn, #homeSettingsBtn {
     pointer-events: auto;
     background: rgba(20,20,20,0.55); border: 2px solid rgba(255,255,255,0.3); color: #fff;
     border-radius: 8px; padding: 8px 12px; font-size: 12px; letter-spacing: 0.5px;
     cursor: pointer; text-align: center;
   }
-  #viewToggleBtn:active, #settingsBtn:active { background: rgba(255,255,255,0.25); }
+  #viewToggleBtn:active, #settingsBtn:active, #homeSettingsBtn:active { background: rgba(255,255,255,0.25); }
+  #homeSettingsBtn { position: absolute; top: 16px; right: 16px; z-index: 21; }
 
   #joystickZone { position: absolute; left: 24px; bottom: 24px; width: 130px; height: 130px; pointer-events: auto; }
   #joystickBase { width: 100%; height: 100%; border-radius: 50%; background: rgba(255,255,255,0.08); border: 3px solid rgba(255,255,255,0.35); position: relative; }
@@ -195,6 +196,7 @@
     background: rgba(10,10,15,0.92); border: 2px solid rgba(255,255,255,0.25); border-radius: 12px;
     padding: 16px 20px; color: #fff; display: none; pointer-events: auto; min-width: 270px; text-align: center;
   }
+  #settingsPanel { z-index: 30; }
   #invPanel h3, #settingsPanel h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ffdd55; }
   #invPanel .row, #settingsPanel .row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; font-size: 13px; gap: 10px; }
   #invPanel button, #settingsPanel button {
@@ -224,6 +226,9 @@
   .dragHandle {
     position: fixed; border: 2px dashed #ffdd55; border-radius: 10px;
     background: rgba(255,221,85,0.14); z-index: 56; touch-action: none; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    color: #fff; font-size: 11px; font-weight: bold; letter-spacing: 0.5px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9); padding: 4px; overflow: hidden;
   }
 
   #pickupToast {
@@ -330,14 +335,6 @@
       <button id="invClose">Close</button>
     </div>
 
-    <div id="settingsPanel">
-      <h3>SETTINGS</h3>
-      <div class="row"><span>Look Sensitivity</span><input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"><span class="val" id="sensVal">1.0</span></div>
-      <div class="row"><span>Scope Sensitivity</span><input type="range" id="scopeSensSlider" min="0.1" max="1" step="0.05" value="0.35"><span class="val" id="scopeSensVal">0.35</span></div>
-      <button id="customizeControlsBtn">↕ Customize Control Positions</button>
-      <button id="settingsClose">Close</button>
-    </div>
-
     <div id="layoutEditBar">
       <p>Drag any highlighted control to move it.<br>Switch weapons/modes first if a control you want isn't visible.</p>
       <button id="layoutResetBtn">Reset Positions</button>
@@ -345,7 +342,16 @@
     </div>
   </div>
 
+  <div id="settingsPanel">
+    <h3>SETTINGS</h3>
+    <div class="row"><span>Look Sensitivity</span><input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"><span class="val" id="sensVal">1.0</span></div>
+    <div class="row"><span>Scope Sensitivity</span><input type="range" id="scopeSensSlider" min="0.1" max="1" step="0.05" value="0.35"><span class="val" id="scopeSensVal">0.35</span></div>
+    <button id="customizeControlsBtn">↕ Customize Control Positions</button>
+    <button id="settingsClose">Close</button>
+  </div>
+
   <div class="overlayScreen" id="startScreen">
+    <button id="homeSettingsBtn">⚙ SETTINGS</button>
     <h1>OPEN WORLD COMBAT</h1>
     <p>Drop into a huge island with 49 other fighters. Chop trees for wood, build walls for cover, loot guns from houses and survive.</p>
     <div class="controlsGrid">
@@ -699,8 +705,8 @@
         });
       }
 
-      // chance to spawn a looted primary weapon on any floor above the ground floor
-      if (fl >= 1 && Math.random() < 0.55) {
+      // chance to spawn a looted primary weapon on any floor of any house
+      if (Math.random() < 0.55) {
         const roll = Math.random();
         const type = roll < 0.5 ? 'ak47' : (roll < 0.78 ? 'minigun' : 'sniper');
         const px = cx + (Math.random()-0.5) * (w - 3);
@@ -2302,6 +2308,7 @@
     if (settingsOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
   document.getElementById('settingsBtn').addEventListener('click', toggleSettings);
+  document.getElementById('homeSettingsBtn').addEventListener('click', toggleSettings);
   document.getElementById('settingsClose').addEventListener('click', toggleSettings);
   const sensSlider = document.getElementById('sensSlider');
   const scopeSensSlider = document.getElementById('scopeSensSlider');
@@ -2320,6 +2327,18 @@
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
   const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','buildBtn','weaponSwitchBtn','dropBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_LABELS = {
+    joystickZone: 'MOVE',
+    jumpBtn: 'JUMP',
+    fireBtn: 'FIRE',
+    scopeBtn: 'SCOPE',
+    buildBtn: 'BUILD WALL',
+    weaponSwitchBtn: 'SWITCH WEAPON',
+    dropBtn: 'DROP WEAPON',
+    equipBar: 'WEAPON SLOTS',
+    topRightBtns: 'VIEW / SETTINGS',
+    skipWaveBtn: 'SKIP WAVE'
+  };
   let controlLayout = {};
   try { controlLayout = JSON.parse(localStorage.getItem('blazingice_controlLayout') || '{}'); } catch(e) { controlLayout = {}; }
 
@@ -2358,6 +2377,7 @@
 
       const handle = document.createElement('div');
       handle.className = 'dragHandle';
+      handle.textContent = LAYOUT_LABELS[id] || id;
       handle.style.left = rect.left + 'px';
       handle.style.top = rect.top + 'px';
       handle.style.width = rect.width + 'px';
