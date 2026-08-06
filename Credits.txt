@@ -1,0 +1,14 @@
+This work uses the following 3D models, licensed under CC Attribution (CC-BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+"Minigun" by TWORKS (trbrick)
+https://sketchfab.com/3d-models/minigun-9f0d4c65f1284914a8a8f9de76896b21
+
+"Sci-fi pistol" by Eugen Vahrushin (eugen_vahrushin)
+https://sketchfab.com/3d-models/sci-fi-pistol-c23394d709d14772adf355da84408edc
+
+"Ak-47" by _Alexandr (a_l_e_x_a_n_d_e_r)
+https://sketchfab.com/3d-models/ak-47-933b9c9665de40eba6b2f2e10d927ff4
+
+"Sniper" by DJMaesen (bumstrum)
+https://sketchfab.com/3d-models/sniper-cdefd833b4b5407ba32c53c9e7f50cae
