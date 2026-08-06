@@ -398,7 +398,8 @@
   setTimeout(()=>{ document.getElementById('instructions').style.opacity = '0'; }, 8000);
 
   // ---------- Lighting ----------
-  scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75));
+  const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75);
+  scene.add(hemiLight);
   const sun = new THREE.DirectionalLight(0xfff2d8, 1.15);
   sun.position.set(80, 120, 40);
   sun.castShadow = true;
@@ -407,9 +408,14 @@
   sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
   sun.shadow.camera.far = 300;
   scene.add(sun);
+  scene.add(sun.target);
 
   // ---------- World ----------
   const WORLD_SIZE = 400;
+  // Movement is clamped to a square centered on (boundCenterX, boundCenterZ).
+  // FFA uses the big green map at the origin; zombie mode swaps these to the
+  // separate city far away so players can't wander off its edge either.
+  let boundCenterX = 0, boundCenterZ = 0, boundHalf = WORLD_SIZE/2 - 2;
 
   function makeGroundTexture() {
     const size = 512;
@@ -450,9 +456,9 @@
         pos.z += (dz/dist) * push;
       }
     }
-    const half = WORLD_SIZE/2 - 2;
-    pos.x = Math.max(-half, Math.min(half, pos.x));
-    pos.z = Math.max(-half, Math.min(half, pos.z));
+    const half = boundHalf;
+    pos.x = Math.max(boundCenterX - half, Math.min(boundCenterX + half, pos.x));
+    pos.z = Math.max(boundCenterZ - half, Math.min(boundCenterZ + half, pos.z));
   }
 
   const floors = []; // {x,z,hw,hd,y,fl}
@@ -998,8 +1004,14 @@
   const drop = { active: false, t: 0, speed: 42, startX: -WORLD_SIZE*0.6, z: 0 };
   let matchStarted = false;
   let gameMode = 'ffa';
-  const ZOMBIE_HALF = 65;
-  let zombieWallsBuilt = false;
+  // The zombie map is a separate, dark abandoned city placed far from the
+  // FFA map so the two never overlap or become visible to each other (both
+  // camera.far and the fog distance are well short of the gap between them).
+  const CITY_CX = 0, CITY_CZ = -900;
+  const CITY_HALF = 65;
+  const CITY_SIZE = 170;
+  const ZOMBIE_HALF = CITY_HALF;
+  let cityBuilt = false;
   const zombies = [];
   let waveNumber = 0;
   let zombiesAliveCount = 0;
@@ -1257,22 +1269,223 @@
     }
   }
 
-  // ---------- Zombie Mode ----------
+  // ---------- Zombie Mode: abandoned city map ----------
   function activeEnemies() { return gameMode === 'zombie' ? zombies : bots; }
 
-  function buildZombieBoundary() {
-    if (zombieWallsBuilt) return;
-    zombieWallsBuilt = true;
-    const h = 4;
-    const zMat = new THREE.MeshStandardMaterial({ color: 0x2f6b1f, roughness: 0.9 });
+  function makeCityGroundTexture() {
+    const size = 512;
+    const cnv = document.createElement('canvas'); cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    ctx.fillStyle = '#23262b'; ctx.fillRect(0,0,size,size);
+    for (let i=0;i<2200;i++){
+      const v = 15 + Math.random()*25;
+      ctx.fillStyle = `rgba(${v},${v+2},${v+4},0.55)`;
+      ctx.fillRect(Math.random()*size, Math.random()*size, 2, 2);
+    }
+    // cracks
+    ctx.strokeStyle = 'rgba(5,5,6,0.5)';
+    for (let i=0;i<26;i++){
+      ctx.beginPath();
+      let x = Math.random()*size, y = Math.random()*size;
+      ctx.moveTo(x,y);
+      for (let s=0;s<5;s++){ x += (Math.random()-0.5)*60; y += (Math.random()-0.5)*60; ctx.lineTo(x,y); }
+      ctx.lineWidth = 1 + Math.random()*1.5;
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(cnv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(26,26);
+    return tex;
+  }
+
+  function makeCityWindowTexture() {
+    const size = 256;
+    const cnv = document.createElement('canvas'); cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    ctx.fillStyle = '#1a1c20'; ctx.fillRect(0,0,size,size);
+    const cell = 32;
+    for (let y=8; y<size-8; y+=cell) {
+      for (let x=8; x<size-8; x+=cell) {
+        const broken = Math.random() < 0.35;
+        const lit = !broken && Math.random() < 0.12;
+        ctx.fillStyle = lit ? 'rgba(255,196,110,0.9)' : (broken ? 'rgba(8,8,9,0.9)' : 'rgba(60,68,78,0.55)');
+        ctx.fillRect(x, y, cell-10, cell-14);
+      }
+    }
+    const tex = new THREE.CanvasTexture(cnv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+  const cityWindowBaseTex = makeCityWindowTexture();
+  const cityBuildingColors = [0x33342f, 0x2b2d2f, 0x393530, 0x2f302c, 0x363330];
+
+  function makeCityBuilding(lx, lz, w, d, h) {
+    const x = CITY_CX + lx, z = CITY_CZ + lz;
+    const tex = cityWindowBaseTex.clone();
+    tex.needsUpdate = true;
+    tex.repeat.set(Math.max(1, Math.round(w/2.4)), Math.max(1, Math.round(h/3)));
+    const mat = new THREE.MeshStandardMaterial({
+      color: cityBuildingColors[Math.floor(Math.random()*cityBuildingColors.length)],
+      map: tex, roughness: 0.95
+    });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    box.position.set(x, h/2, z);
+    box.castShadow = true; box.receiveShadow = true;
+    scene.add(box);
+    collisionMeshes.push(box);
+    addSolid(x, z, w/2, d/2, 0, h);
+
+    // jagged rooftop debris for a damaged skyline silhouette
+    const debrisMat = new THREE.MeshStandardMaterial({ color: 0x201f1d, roughness: 1 });
+    const debrisCount = 1 + Math.floor(Math.random()*3);
+    for (let i=0;i<debrisCount;i++) {
+      const dw = 0.6 + Math.random()*1.4, dh = 0.4 + Math.random()*1.6, dd = 0.6 + Math.random()*1.4;
+      const db = new THREE.Mesh(new THREE.BoxGeometry(dw, dh, dd), debrisMat);
+      db.position.set(x + (Math.random()-0.5)*(w-2), h + dh/2, z + (Math.random()-0.5)*(d-2));
+      db.rotation.y = Math.random()*Math.PI;
+      db.castShadow = true;
+      scene.add(db);
+    }
+    return box;
+  }
+
+  const cityLamps = [];
+  function makeStreetlamp(lx, lz) {
+    const x = CITY_CX + lx, z = CITY_CZ + lz;
+    const group = new THREE.Object3D();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.7, metalness: 0.4 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 4.2, 6), poleMat);
+    pole.position.y = 2.1; pole.castShadow = true;
+    group.add(pole);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.06), poleMat);
+    arm.position.set(0.35, 4.15, 0);
+    group.add(arm);
+    const lampMat = new THREE.MeshStandardMaterial({ color: 0xffcf7a, emissive: 0xffaa33, emissiveIntensity: 1.2 });
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), lampMat);
+    lamp.position.set(0.68, 4.05, 0);
+    group.add(lamp);
+    group.position.set(x, 0, z);
+    scene.add(group);
+
+    const light = new THREE.PointLight(0xffaa55, 1.1, 14, 2);
+    light.position.set(x + 0.68, 4.05, z);
+    scene.add(light);
+
+    cityLamps.push({ light, lampMat, base: 1.1 });
+  }
+
+  function makeCarHusk(lx, lz, rotY) {
+    const x = CITY_CX + lx, z = CITY_CZ + lz;
+    const group = new THREE.Object3D();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a2018, roughness: 1 });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x241511, roughness: 1 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.6, 4.0), bodyMat);
+    body.position.y = 0.45; body.castShadow = true; body.receiveShadow = true;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 2.0), cabinMat);
+    cabin.position.set(0, 0.9, -0.2); cabin.castShadow = true;
+    group.add(body, cabin);
+    group.position.set(x, 0, z);
+    group.rotation.y = rotY || 0;
+    scene.add(group);
+    collisionMeshes.push(body);
+    const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
+    const hw = Math.abs(0.95*cosR) + Math.abs(2.0*sinR);
+    const hd = Math.abs(0.95*sinR) + Math.abs(2.0*cosR);
+    addSolid(x, z, hw, hd, 0, 1.2);
+  }
+
+  function makeRubblePile(lx, lz) {
+    const x = CITY_CX + lx, z = CITY_CZ + lz;
+    const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28, roughness: 1 });
+    const n = 3 + Math.floor(Math.random()*3);
+    for (let i=0;i<n;i++) {
+      const s = 0.3 + Math.random()*0.6;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(s, s*0.7, s), rubbleMat);
+      b.position.set(x + (Math.random()-0.5)*1.6, s*0.35, z + (Math.random()-0.5)*1.6);
+      b.rotation.y = Math.random()*Math.PI;
+      b.castShadow = true; b.receiveShadow = true;
+      scene.add(b);
+    }
+  }
+
+  function updateStreetlamps(dt) {
+    if (cityLamps.length === 0) return;
+    const t = performance.now() * 0.001;
+    for (const l of cityLamps) {
+      let mult = 0.85 + Math.sin(t*3 + l.base*10) * 0.1;
+      if (Math.random() < 0.01) mult *= 0.25; // occasional flicker-out
+      l.light.intensity = l.base * mult;
+      l.lampMat.emissiveIntensity = 1.0 * mult;
+    }
+  }
+
+  function buildZombieCity() {
+    if (cityBuilt) return;
+    cityBuilt = true;
+
+    // dark cracked-asphalt ground, separate from and far away from the FFA map
+    const cityGround = new THREE.Mesh(
+      new THREE.PlaneGeometry(CITY_SIZE, CITY_SIZE),
+      new THREE.MeshStandardMaterial({ map: makeCityGroundTexture(), roughness: 1 })
+    );
+    cityGround.rotation.x = -Math.PI/2;
+    cityGround.position.set(CITY_CX, 0, CITY_CZ);
+    cityGround.receiveShadow = true;
+    scene.add(cityGround);
+
+    // grid of abandoned tower blocks with streets between them; the center
+    // cell is left open as a spawn plaza, and a few random cells are skipped
+    // for rubble-filled gaps so the grid doesn't feel too uniform
+    const spacing = 24, cells = 5, half = Math.floor(cells/2);
+    for (let i = -half; i <= half; i++) {
+      for (let j = -half; j <= half; j++) {
+        const lx = i*spacing, lz = j*spacing;
+        if (i === 0 && j === 0) continue; // spawn plaza
+        if (Math.random() < 0.15) { makeRubblePile(lx, lz); continue; }
+        const w = 10 + Math.random()*4, d = 10 + Math.random()*4;
+        const h = 6 + Math.floor(Math.random()*4) * 3.2;
+        makeCityBuilding(lx, lz, w, d, h);
+      }
+    }
+
+    // streetlamps along the grid lines
+    for (let i = -half; i <= half; i++) {
+      makeStreetlamp(i*spacing + 6, -half*spacing - 8);
+      makeStreetlamp(i*spacing + 6, half*spacing + 8);
+    }
+    makeStreetlamp(6, 6);
+    makeStreetlamp(-10, -6);
+
+    // wrecked cars scattered along the streets for cover and atmosphere
+    for (let k=0;k<10;k++) {
+      const lx = (Math.random()-0.5) * (CITY_HALF*2 - 20);
+      const lz = (Math.random()-0.5) * (CITY_HALF*2 - 20);
+      if (Math.hypot(lx,lz) < 10) continue;
+      makeCarHusk(lx, lz, Math.random()*Math.PI*2);
+    }
+    for (let k=0;k<8;k++) {
+      const lx = (Math.random()-0.5) * (CITY_HALF*2 - 16);
+      const lz = (Math.random()-0.5) * (CITY_HALF*2 - 16);
+      makeRubblePile(lx, lz);
+    }
+
+    // rubble/barricade boundary wall around the city
+    const h = 3.4;
+    const barricadeMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38, roughness: 1 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0x7a5a1f, roughness: 0.9 });
     for (const sign of [-1,1]) {
-      const g1 = new THREE.Mesh(new THREE.BoxGeometry(ZOMBIE_HALF*2, h, 1), zMat);
-      g1.position.set(0, h/2, sign*ZOMBIE_HALF); g1.castShadow = true; scene.add(g1);
-      addSolid(0, sign*ZOMBIE_HALF, ZOMBIE_HALF, 0.5, 0, h);
+      const g1 = new THREE.Mesh(new THREE.BoxGeometry(CITY_HALF*2, h, 1), barricadeMat);
+      g1.position.set(CITY_CX, h/2, CITY_CZ + sign*CITY_HALF); g1.castShadow = true; scene.add(g1);
+      const s1 = new THREE.Mesh(new THREE.BoxGeometry(CITY_HALF*2, 0.3, 1.05), stripeMat);
+      s1.position.set(CITY_CX, h - 0.3, CITY_CZ + sign*CITY_HALF); scene.add(s1);
+      addSolid(CITY_CX, CITY_CZ + sign*CITY_HALF, CITY_HALF, 0.5, 0, h);
       collisionMeshes.push(g1);
-      const g2 = new THREE.Mesh(new THREE.BoxGeometry(1, h, ZOMBIE_HALF*2), zMat);
-      g2.position.set(sign*ZOMBIE_HALF, h/2, 0); g2.castShadow = true; scene.add(g2);
-      addSolid(sign*ZOMBIE_HALF, 0, 0.5, ZOMBIE_HALF, 0, h);
+
+      const g2 = new THREE.Mesh(new THREE.BoxGeometry(1, h, CITY_HALF*2), barricadeMat);
+      g2.position.set(CITY_CX + sign*CITY_HALF, h/2, CITY_CZ); g2.castShadow = true; scene.add(g2);
+      const s2 = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.3, CITY_HALF*2), stripeMat);
+      s2.position.set(CITY_CX + sign*CITY_HALF, h - 0.3, CITY_CZ); scene.add(s2);
+      addSolid(CITY_CX + sign*CITY_HALF, CITY_CZ, 0.5, CITY_HALF, 0, h);
       collisionMeshes.push(g2);
     }
   }
@@ -1410,8 +1623,8 @@
   }
 
   function spawnZombiePlayer() {
-    const floorY = groundHeightAt(0, 0, 5);
-    player.pos.set(0, floorY, 0);
+    const floorY = groundHeightAt(CITY_CX, CITY_CZ, 5);
+    player.pos.set(CITY_CX, floorY, CITY_CZ);
     player.velY = 0; player.grounded = true;
     player.health = player.maxHealth; player.alive = true;
     player.falling = false; player.chuteOpen = false;
@@ -1438,7 +1651,22 @@
     for (const b of bots) { b.alive = false; b.falling = false; if (b.chuteGroup) b.chuteGroup.visible = false; b.group.visible = false; }
     aliveBotCount = 0;
 
-    buildZombieBoundary();
+    // Swap the whole scene mood over to a dark, abandoned city instead of
+    // the bright green FFA map. The city itself lives far away in world
+    // space, so movement bounds and the sun's shadow target both need to
+    // shift there too.
+    scene.background = new THREE.Color(0x05070b);
+    scene.fog = new THREE.Fog(0x05070b, 16, 100);
+    hemiLight.color.setHex(0x26344a);
+    hemiLight.groundColor.setHex(0x08080a);
+    hemiLight.intensity = 0.4;
+    sun.color.setHex(0x8fa8c8);
+    sun.intensity = 0.4;
+    sun.position.set(CITY_CX + 80, 120, CITY_CZ + 40);
+    sun.target.position.set(CITY_CX, 0, CITY_CZ);
+    boundCenterX = CITY_CX; boundCenterZ = CITY_CZ; boundHalf = CITY_HALF - 2;
+
+    buildZombieCity();
 
     document.getElementById('aliveRow').style.display = 'none';
     document.getElementById('waveRow').style.display = 'block';
@@ -1491,6 +1719,7 @@
 
   function botShootAtTarget(bot, target, dist) {
     if (!hasLineOfSight(bot.pos, target.pos)) return;
+    playGunshot('ak47', bot.pos.distanceTo(player.pos));
     const hitChance = Math.max(0.2, 0.65 - dist/70);
     if (Math.random() < hitChance) {
       const dmg = 4 + Math.random()*5;
@@ -1738,7 +1967,7 @@
     updateAmmoUI();
     flashFire();
     addShake(player.weapon === 'primary' && player.primaryType === 'sniper' ? 0.85 : (player.primaryType === 'minigun' ? 0.22 : 0.5));
-    playShotSound(currentMeshType());
+    playGunshot(currentMeshType());
     fireBullet(def);
     if (st.mag === 0) reload();
   }
@@ -1754,11 +1983,13 @@
     const st = player.ammoState[player.weapon];
     if (st.mag === def.maxMag) return;
     if (st.reserve <= 0) {
+      playDryFire();
       document.getElementById('noAmmoText').style.display = 'block';
       setTimeout(() => document.getElementById('noAmmoText').style.display = 'none', 1000);
       return;
     }
     player.isReloading = true;
+    playReloadClack(1500);
     document.getElementById('reloadText').style.display = 'block';
     setTimeout(() => {
       const needed = def.maxMag - st.mag;
@@ -1767,6 +1998,7 @@
       player.isReloading = false;
       document.getElementById('reloadText').style.display = 'none';
       updateAmmoUI();
+      playReloadClack(900);
     }, def.reloadTime || 1200);
   }
 
@@ -1801,27 +2033,121 @@
     document.getElementById('buildFromInvBtn').disabled = player.wood < 5;
   }
 
+  // ---------- Audio: layered gunshot synthesis ----------
   let audioCtx = null;
-  const SOUND_CFG = {
-    pistol:  { f0: 260, f1: 90,  dur: 0.09, gain: 0.13, type: 'square' },
-    ak47:    { f0: 210, f1: 55,  dur: 0.10, gain: 0.17, type: 'square' },
-    minigun: { f0: 300, f1: 120, dur: 0.05, gain: 0.11, type: 'square' },
-    sniper:  { f0: 140, f1: 30,  dur: 0.22, gain: 0.24, type: 'sawtooth' }
-  };
-  function playShotSound(type) {
+  let noiseBuffer = null;
+  function ensureAudio() {
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const cfg = SOUND_CFG[type] || SOUND_CFG.pistol;
-      const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-      o.type = cfg.type;
-      o.frequency.setValueAtTime(cfg.f0, audioCtx.currentTime);
-      o.frequency.exponentialRampToValueAtTime(cfg.f1, audioCtx.currentTime + cfg.dur);
-      g.gain.setValueAtTime(cfg.gain, audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + cfg.dur + 0.02);
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(); o.stop(audioCtx.currentTime + cfg.dur + 0.03);
-    } catch(e) {}
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (!noiseBuffer) {
+        const len = Math.floor(audioCtx.sampleRate * 0.5);
+        noiseBuffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      }
+      return audioCtx;
+    } catch(e) { return null; }
   }
+
+  // Each weapon gets a distinct "personality": a sharp filtered-noise crack
+  // (the snap), a lowpass noise tail (the boom/echo), and a low sine punch
+  // (the felt thump), layered together instead of a single beepy tone.
+  const GUN_CFG = {
+    pistol:  { crackHz: 2400, crackQ: 0.8, crackDur: 0.045, tailHz: 900,  tailDur: 0.09,  punchHz: 140, punchDur: 0.05, gain: 0.55 },
+    ak47:    { crackHz: 1700, crackQ: 0.7, crackDur: 0.06,  tailHz: 600,  tailDur: 0.16,  punchHz: 95,  punchDur: 0.08, gain: 0.65 },
+    minigun: { crackHz: 2600, crackQ: 0.9, crackDur: 0.032, tailHz: 1100, tailDur: 0.06,  punchHz: 160, punchDur: 0.035,gain: 0.42 },
+    sniper:  { crackHz: 950,  crackQ: 0.5, crackDur: 0.09,  tailHz: 350,  tailDur: 0.42,  punchHz: 60,  punchDur: 0.13, gain: 0.85 }
+  };
+
+  // distance: optional, in world units. Omit (or 0) for the local player's
+  // own weapon; pass a real distance (bot-to-player) to get volume/muffle falloff.
+  function playGunshot(type, distance) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const cfg = GUN_CFG[type] || GUN_CFG.pistol;
+    const t = ctx.currentTime;
+
+    let vol = 1, muffle = 1;
+    if (distance && distance > 0) {
+      vol = Math.max(0, 1 - distance / 65);
+      if (vol <= 0.015) return;
+      muffle = Math.max(0.18, 1 - distance / 90);
+    }
+    const jitter = 0.94 + Math.random() * 0.12;
+
+    // Crack: bandpassed noise burst — the sharp transient
+    const crackSrc = ctx.createBufferSource();
+    crackSrc.buffer = noiseBuffer;
+    crackSrc.playbackRate.value = jitter;
+    const crackFilter = ctx.createBiquadFilter();
+    crackFilter.type = 'bandpass';
+    crackFilter.frequency.value = cfg.crackHz * muffle;
+    crackFilter.Q.value = cfg.crackQ;
+    const crackGain = ctx.createGain();
+    crackGain.gain.setValueAtTime(cfg.gain * vol, t);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, t + cfg.crackDur);
+    crackSrc.connect(crackFilter); crackFilter.connect(crackGain); crackGain.connect(ctx.destination);
+    crackSrc.start(t); crackSrc.stop(t + cfg.crackDur + 0.02);
+
+    // Tail: lowpassed noise decay — the boom/echo body of the shot
+    const tailSrc = ctx.createBufferSource();
+    tailSrc.buffer = noiseBuffer;
+    tailSrc.playbackRate.value = jitter * 0.9;
+    const tailFilter = ctx.createBiquadFilter();
+    tailFilter.type = 'lowpass';
+    tailFilter.frequency.value = cfg.tailHz * muffle;
+    const tailGain = ctx.createGain();
+    tailGain.gain.setValueAtTime(cfg.gain * 0.5 * vol, t + 0.004);
+    tailGain.gain.exponentialRampToValueAtTime(0.001, t + cfg.tailDur);
+    tailSrc.connect(tailFilter); tailFilter.connect(tailGain); tailGain.connect(ctx.destination);
+    tailSrc.start(t + 0.004); tailSrc.stop(t + cfg.tailDur + 0.02);
+
+    // Punch: short low sine — felt thump for weight
+    const punchOsc = ctx.createOscillator();
+    punchOsc.type = 'sine';
+    punchOsc.frequency.setValueAtTime(cfg.punchHz, t);
+    punchOsc.frequency.exponentialRampToValueAtTime(cfg.punchHz * 0.5, t + cfg.punchDur);
+    const punchGain = ctx.createGain();
+    punchGain.gain.setValueAtTime(cfg.gain * 0.6 * vol, t);
+    punchGain.gain.exponentialRampToValueAtTime(0.001, t + cfg.punchDur);
+    punchOsc.connect(punchGain); punchGain.connect(ctx.destination);
+    punchOsc.start(t); punchOsc.stop(t + cfg.punchDur + 0.02);
+  }
+
+  // Dry-fire click when trying to shoot/reload with no ammo left
+  function playDryFire() {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(1400, t);
+    o.frequency.exponentialRampToValueAtTime(700, t + 0.03);
+    g.gain.setValueAtTime(0.14, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t); o.stop(t + 0.05);
+  }
+
+  // Mechanical clack for magazine out / magazine in during reload
+  function playReloadClack(pitchHz) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = pitchHz || 1500;
+    filter.Q.value = 4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    src.connect(filter); filter.connect(g); g.connect(ctx.destination);
+    src.start(t); src.stop(t + 0.07);
+  }
+
   function playAxeSound() {
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2411,6 +2737,7 @@
     updateCamera();
     updateWeaponAnim(dt);
     updateFX(dt);
+    updateStreetlamps(dt);
 
     renderer.render(scene, camera);
   }
