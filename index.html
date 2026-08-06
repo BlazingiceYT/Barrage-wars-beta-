@@ -1419,6 +1419,14 @@
     viewMode = 'third';
     document.getElementById('viewModeLabel').textContent = 'View: Third Person';
     updateHealthUI();
+
+    // Zombie mode always starts you geared up with an AK-47 that never runs
+    // dry — the mag still needs reloading, but the reserve never depletes.
+    player.primaryType = 'ak47';
+    player.ammoState.primary = { mag: WEAPON_DEFS.ak47.maxMag, reserve: Infinity };
+    player.weapon = 'primary';
+    updateWeaponVisibility();
+    updateAmmoUI();
   }
 
   function beginZombieMode() {
@@ -1770,7 +1778,7 @@
       const def = currentWeaponDef();
       document.getElementById('weaponNameTag').textContent = def ? def.name.toUpperCase() : '';
       document.getElementById('ammoCount').textContent = st.mag;
-      document.getElementById('ammoReserve').textContent = st.reserve;
+      document.getElementById('ammoReserve').textContent = (st.reserve === Infinity) ? '∞' : st.reserve;
     }
     document.getElementById('pistolAmmoTag').textContent = player.ammoState.pistol.mag;
     const primaryLabelEl = document.getElementById('primaryLabel');
@@ -2127,22 +2135,47 @@
   // meant every other tap did nothing and looked like the button needed two
   // clicks to register a shot. Now every press fires immediately, exactly
   // like the desktop canvas click does, and holding continues auto weapons.)
+  //
+  // Dragging while holding: once a touch/press starts on this button, the
+  // browser keeps routing that pointer's move/up events to this element
+  // (implicit pointer capture) no matter where the finger travels next — so
+  // the canvas's own look-drag listeners never see it. We track that same
+  // drag here and feed it into the same yaw/pitch rotation the canvas drag
+  // uses, so you can hold FIRE and drag with that same finger to aim.
+  const fireDragState = { active: false, id: null, lastX: 0, lastY: 0 };
   function fireStart(e) {
     e.preventDefault();
+    fireDragState.active = true;
+    fireDragState.id = e.pointerId;
+    fireDragState.lastX = e.clientX;
+    fireDragState.lastY = e.clientY;
     if (firing) return; // ignore duplicate pointerdown (e.g. extra touch point)
     firing = true;
     fireBtnEl.classList.add('engaged');
     primaryAction();
   }
+  function fireMove(e) {
+    if (!fireDragState.active || e.pointerId !== fireDragState.id) return;
+    if (document.pointerLockElement === canvas) return; // desktop mouse-look already handles this
+    const dx = e.clientX - fireDragState.lastX, dy = e.clientY - fireDragState.lastY;
+    const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
+    player.yaw -= dx * TOUCH_SENS * mult;
+    player.pitch -= dy * TOUCH_SENS * mult;
+    player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+    fireDragState.lastX = e.clientX;
+    fireDragState.lastY = e.clientY;
+  }
   function fireEnd(e) {
     if (e) e.preventDefault();
     firing = false;
+    fireDragState.active = false;
+    fireDragState.id = null;
     fireBtnEl.classList.remove('engaged');
   }
   fireBtnEl.addEventListener('pointerdown', fireStart);
+  fireBtnEl.addEventListener('pointermove', fireMove);
   fireBtnEl.addEventListener('pointerup', fireEnd);
   fireBtnEl.addEventListener('pointercancel', fireEnd);
-  fireBtnEl.addEventListener('pointerleave', fireEnd);
   fireBtnEl.style.touchAction = 'none';
 
   const scopeBtnEl = document.getElementById('scopeBtn');
