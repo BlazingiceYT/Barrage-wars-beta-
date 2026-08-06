@@ -38,3 +38,5 @@ Added a MODEL_WEAPON_CONFIG block that points at pistol.glb, ak-47.glb, minigun.
 Added loadWeaponModel/applyLoadedModel, which loads each .glb, swaps it in for the blocky placeholder mesh in both the first-person and third-person rigs once it's ready, and updates muzzleLocal for bullet spawn positions. The axe stays procedural since no axe.glb was requested.
 If a file fails to load (missing/404), it logs a warning and just keeps the existing placeholder gun — nothing crashes.
 Guarded the minigun's barrel-spin animation so it won't error if a loaded model doesn't have a barrelCluster node.+ Mini patch Commited by BlazingiceYT on 6 Aug 2026
+
+Update0.17: Added ability to customize button layout through settings menu
