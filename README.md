@@ -42,3 +42,5 @@ Guarded the minigun's barrel-spin animation so it won't error if a loaded model 
 Update0.17: Added ability to customize button layout through settings menu. commited by BlazingiceYT on 6 Aug 2026
 
 Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses and added credits. Commited by BlazingiceYT on 6 Aug 2026
+
+Patch0.19: Fixed supersized guns. Commited by BlazingiceYT on 6 Aug 2026
