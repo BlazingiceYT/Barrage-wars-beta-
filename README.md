@@ -54,3 +54,8 @@ Patch0.22: Fixed inaccurate fps counter. Commited by BlazingiceYT on 7 Aug 2026
 Patch0.23: Fixed sizing errors when playing on port 8000. Commited by BlazingiceYT on 7 Aug 2026
 
 Update0.24: You can now click settings while walking. Commited by BlazingiceYT on 7 Aug 2026
+
+Optimization0.25: 
+#1 — Tracers/muzzle flashes no longer get created and destroyed every shot. Instead there's a pool of 48 pre-built tracer shapes and 48 flash shapes that just get recycled. If somehow every single one is busy at once (basically impossible with 50 characters), it reuses the oldest one instantly rather than skipping — so a tracer will always appear for every shot fired, nothing vanishes mid-air.
+#2 — Bots/zombies now share their body shape only, not their life or color. Each bot is still its own separate object with its own health, alive/dead state, and position — killing one has zero effect on the others (I checked: death just hides that one character, nothing gets shared-deleted). Colors also stay distinct: each bot's body color and each zombie's skin tone still get their own individual material, since those actually vary per-character. Only things that were already identical across all of them (the shape, and colors that never change like heads/legs) got shared. Trees and streetlamps got the same treatment.
+#3 — Distant characters and trees quietly stop casting shadows past ~45m (characters) / ~60m (trees), checked about 10x a second. At that distance you can't tell the shadow is gone, but it's one less shadow render for the GPU during big firefights.
