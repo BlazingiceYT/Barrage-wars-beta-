@@ -981,16 +981,22 @@
   // models rarely share the same authoring scale as each other (a Sketchfab pistol
   // and a Sketchfab AK-47 can use completely different real-world-to-unit ratios),
   // so "scale: 1" alone isn't reliable — autoFit measures each model's actual
-  // bounding box after loading and rescales it to a target real-world size (in
-  // meters) instead of trusting a single hardcoded number. Set autoFit to null to
-  // fall back to using "scale" literally (that's what minigun.glb was already
-  // sized correctly with, so it's left alone).
+  // bounding box after loading and rescales it to a target size instead of trusting
+  // a single hardcoded number. It also recenters the model on its own bounding-box
+  // center, since an imported model's origin point is rarely at its geometric
+  // center — without that, a correctly-*sized* gun can still render tiny and
+  // floating off in the distance because its origin (what the rig actually
+  // positions) sits far from the visible mesh. Set autoFit to null to fall back
+  // to using "scale" literally (minigun.glb was already sized/centered correctly,
+  // so it's left alone). Targets below are sized a bit larger than real-world gun
+  // dimensions on purpose — FPS view-models are almost always exaggerated for
+  // on-screen readability, not modeled true-to-life.
   const gltfLoader = new THREE.GLTFLoader();
   const MODEL_WEAPON_CONFIG = {
-    pistol:  { url: 'pistol.glb',  scale: 1, autoFit: 0.28, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
-    ak47:    { url: 'ak-47.glb',   scale: 1, autoFit: 0.9,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
+    pistol:  { url: 'pistol.glb',  scale: 1, autoFit: 0.42, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
+    ak47:    { url: 'ak-47.glb',   scale: 1, autoFit: 1.2,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
     minigun: { url: 'minigun.glb', scale: 1, autoFit: null, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
-    sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.1,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
+    sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.4,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
   };
 
   function applyLoadedModel(entry, gltfScene, cfg, rigScale) {
@@ -998,6 +1004,7 @@
     while (entry.group.children.length) entry.group.remove(entry.group.children[0]);
     const model = gltfScene;
     model.rotation.y = cfg.modelRotationY;
+    model.position.set(0, 0, 0);
 
     if (cfg.autoFit) {
       // Measure the model's real bounding box (at its native, unmodified scale)
@@ -1009,6 +1016,15 @@
       box.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
       model.scale.setScalar(maxDim > 0 && isFinite(maxDim) ? (cfg.autoFit / maxDim) * cfg.scale : cfg.scale);
+
+      // Recenter: shift the model so its own bounding-box center sits at the
+      // local origin — the origin is exactly what the FP/TP rig positions,
+      // so if it's off from the visible mesh the gun appears to float away
+      // from where it's supposed to be held.
+      const box2 = new THREE.Box3().setFromObject(model);
+      const center = new THREE.Vector3();
+      box2.getCenter(center);
+      model.position.sub(center);
     } else {
       model.scale.setScalar(cfg.scale);
     }
