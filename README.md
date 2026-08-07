@@ -52,3 +52,5 @@ Update0.21: Added more dynamic joystick and fps counter. Commited by BlazingiceY
 Patch0.22: Fixed inaccurate fps counter. Commited by BlazingiceYT on 7 Aug 2026
 
 Patch0.23: Fixed sizing errors when playing on port 8000. Commited by BlazingiceYT on 7 Aug 2026
+
+Update0.24: You can now click settings while walking. Commited by BlazingiceYT on 7 Aug 2026
