@@ -55,3 +55,6 @@ Settings can now be opened while walking.
 **Object pooling:** Tracers and muzzle flashes are now pre-allocated in a pool of 48 each and recycled, eliminating per-shot creation/destruction. If the pool is exhausted, the oldest entry is reused instantly — every shot always produces a visible tracer.
 **Shared geometry:** Bots and zombies now share body geometry only — health, alive/dead state, position, and varied colors (body/skin tones) remain fully individual. Killing one bot has zero effect on others. Trees and streetlamps received the same treatment.
 **Distance-based shadow culling:** Characters beyond ~45m and trees beyond ~60m stop casting shadows (checked ~10× per second), reducing GPU load during large firefights without any visible impact.
+
+**Update0.26** - *Committed by BlazingiceYT on 7 Aug 2026*
+**Added reload button**
