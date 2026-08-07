@@ -3061,13 +3061,15 @@
 
   // ---------- FPS counter ----------
   const fpsCounterEl = document.getElementById('fpsCounter');
-  let fpsSmoothed = 60;
   let fpsAccum = 0, fpsFrames = 0;
   function updateFpsCounter(dt) {
-    if (dt > 0) fpsSmoothed += (1/dt - fpsSmoothed) * 0.1; // smooth per-frame estimate
+    // frames-per-real-second over a window, not an average of per-frame
+    // 1/dt readings — averaging reciprocals skews high whenever frame
+    // times jitter even slightly (Jensen's inequality), which is why the
+    // old version read ~66 on a locked 60Hz display.
     fpsAccum += dt; fpsFrames++;
-    if (fpsAccum >= 0.25) { // refresh the on-screen text a few times a second
-      const fps = Math.round(fpsSmoothed);
+    if (fpsAccum >= 0.5) { // refresh the on-screen text twice a second
+      const fps = Math.round(fpsFrames / fpsAccum);
       fpsCounterEl.textContent = fps + ' FPS';
       fpsCounterEl.classList.toggle('low', fps < 30);
       fpsAccum = 0; fpsFrames = 0;
@@ -3078,8 +3080,9 @@
   const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
-    const dt = Math.min(0.05, clock.getDelta());
-    updateFpsCounter(dt);
+    const rawDt = clock.getDelta();
+    const dt = Math.min(0.05, rawDt);
+    updateFpsCounter(rawDt);
 
     if (firing && !drop.active) {
       const def = currentWeaponDef();
