@@ -1998,8 +1998,18 @@
     // Muzzle position is only used as the tracer/flash's visual starting
     // point (so it still looks like it comes from the gun) — it no longer
     // re-checks or overrides where the shot actually lands.
+    // Muzzle flash still shows at the actual gun (a brief flash point, not a
+    // line, so it doesn't create a misleading trajectory). The tracer LINE,
+    // though, starts from right along the crosshair's own sightline instead
+    // of the true muzzle position — a tracer drawn muzzle-to-target always
+    // looks like it's arriving from off to the side at close range (the gun
+    // sits off-center from the camera, but the crosshair is dead-center),
+    // which is exactly what made shots look like they flew in "above" the
+    // crosshair against close-range zombies. Starting it on the aim ray
+    // itself guarantees it visually travels the crosshair line the whole way.
     const muzzleWorld = getActiveMuzzleWorldPos();
-    spawnTracer(muzzleWorld, endPoint, def.muzzleColor);
+    const tracerStart = camera.position.clone().addScaledVector(dir, 0.35);
+    spawnTracer(tracerStart, endPoint, def.muzzleColor);
     spawnMuzzleFlash(muzzleWorld, def.muzzleColor);
   }
 
