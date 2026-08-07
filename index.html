@@ -1025,13 +1025,26 @@
       const center = new THREE.Vector3();
       box2.getCenter(center);
       model.position.sub(center);
+
+      // Derive the muzzle point from the model's own (now correctly sized
+      // and centered) geometry instead of trusting a fixed guessed offset.
+      // The guessed muzzleLocal values were tuned for the old placeholder
+      // gun shapes; once swapped for a real imported model with completely
+      // different proportions, that guess can land well off the actual
+      // barrel — which is what made shots look like they started from
+      // (and visually flew in from) the wrong spot, most noticeable at the
+      // close range zombies fight at. This takes the forward-most point
+      // (-Z, matching this rig's forward convention) at the model's own
+      // vertical/horizontal center instead.
+      const box3 = new THREE.Box3().setFromObject(model);
+      entry.muzzleLocal = new THREE.Vector3((box3.min.x + box3.max.x) / 2, (box3.min.y + box3.max.y) / 2, box3.min.z);
     } else {
       model.scale.setScalar(cfg.scale);
+      entry.muzzleLocal = cfg.muzzleLocal.clone().multiplyScalar(rigScale);
     }
 
     model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     entry.group.add(model);
-    entry.muzzleLocal = cfg.muzzleLocal.clone().multiplyScalar(rigScale);
     if (cfg.barrelClusterName) {
       entry.barrelCluster = model.getObjectByName(cfg.barrelClusterName) || entry.barrelCluster || null;
     }
