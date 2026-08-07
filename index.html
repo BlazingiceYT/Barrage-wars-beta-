@@ -1052,17 +1052,17 @@
   // on-screen readability, not modeled true-to-life.
   const gltfLoader = new THREE.GLTFLoader();
   const MODEL_WEAPON_CONFIG = {
-    pistol:  { url: 'pistol.glb',  scale: 1, autoFit: 0.42, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
-    ak47:    { url: 'ak-47.glb',   scale: 1, autoFit: 1.2,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
+    pistol:  { url: 'pistol.glb',  scale: 1, autoFit: 0.42, modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.06, -0.16), muzzleLocal: new THREE.Vector3(0, 0.01, -0.3) },
+    ak47:    { url: 'ak-47.glb',   scale: 1, autoFit: 1.2,  modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.34), muzzleLocal: new THREE.Vector3(0, 0.02, -0.72) },
     minigun: { url: 'minigun.glb', scale: 1, autoFit: null, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
-    sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.4,  modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
+    sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.4,  modelRotationX: 0, modelRotationY: Math.PI, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.52), muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
   };
 
   function applyLoadedModel(entry, gltfScene, cfg, rigScale) {
     // clear the procedural placeholder pieces
     while (entry.group.children.length) entry.group.remove(entry.group.children[0]);
     const model = gltfScene;
-    model.rotation.y = cfg.modelRotationY;
+    model.rotation.set(cfg.modelRotationX || 0, cfg.modelRotationY || 0, cfg.modelRotationZ || 0);
     model.position.set(0, 0, 0);
 
     if (cfg.autoFit) {
@@ -1084,6 +1084,7 @@
       const center = new THREE.Vector3();
       box2.getCenter(center);
       model.position.sub(center);
+      if (cfg.modelOffset) model.position.add(cfg.modelOffset.clone().multiplyScalar(rigScale));
 
       // Derive the muzzle point from the model's own (now correctly sized
       // and centered) geometry instead of trusting a fixed guessed offset.
@@ -1099,6 +1100,7 @@
       entry.muzzleLocal = new THREE.Vector3((box3.min.x + box3.max.x) / 2, (box3.min.y + box3.max.y) / 2, box3.min.z);
     } else {
       model.scale.setScalar(cfg.scale);
+      if (cfg.modelOffset) model.position.add(cfg.modelOffset.clone().multiplyScalar(rigScale));
       entry.muzzleLocal = cfg.muzzleLocal.clone().multiplyScalar(rigScale);
     }
 
