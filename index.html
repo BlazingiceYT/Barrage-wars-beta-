@@ -1964,12 +1964,15 @@
   let firing = false;
 
   function fireBullet(def) {
-    // The crosshair is always screen-center, which is exactly what
-    // camera.getWorldDirection() points along — so this single raycast is
-    // the one source of truth for both what gets hit AND where the tracer
-    // ends, guaranteeing bullets land exactly where the crosshair is aimed.
-    const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-    raycaster.set(camera.position, dir); raycaster.far = 300;
+    // The crosshair is always screen-center, which is exactly what the
+    // pre-shake aim ray points along — so this single raycast is the one
+    // source of truth for both what gets hit AND where the tracer ends,
+    // guaranteeing bullets land exactly where the crosshair is aimed.
+    // We use aimOrigin/aimDir (captured before camera shake is applied)
+    // rather than the live camera, so recoil/shake is purely a visual
+    // effect and never throws off actual aim.
+    const dir = aimDir.clone();
+    raycaster.set(aimOrigin, dir); raycaster.far = 300;
     const targets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(collisionMeshes);
     const hits = raycaster.intersectObjects(targets, false);
     let endPoint;
@@ -1982,7 +1985,7 @@
         hitIsHead = hitObj.userData.isHead === true;
       }
     } else {
-      endPoint = camera.position.clone().addScaledVector(dir, 300);
+      endPoint = aimOrigin.clone().addScaledVector(dir, 300);
     }
 
     if (hitBotRef) {
@@ -2008,7 +2011,7 @@
     // crosshair against close-range zombies. Starting it on the aim ray
     // itself guarantees it visually travels the crosshair line the whole way.
     const muzzleWorld = getActiveMuzzleWorldPos();
-    const tracerStart = camera.position.clone().addScaledVector(dir, 0.35);
+    const tracerStart = aimOrigin.clone().addScaledVector(dir, 0.35);
     spawnTracer(tracerStart, endPoint, def.muzzleColor);
     spawnMuzzleFlash(muzzleWorld, def.muzzleColor);
   }
@@ -2021,8 +2024,8 @@
       lastActionTime = now;
       swingAxe();
       addShake(0.2);
-      const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-      raycaster.set(camera.position, dir); raycaster.far = 3.2;
+      const dir = aimDir.clone();
+      raycaster.set(aimOrigin, dir); raycaster.far = 3.2;
       const treeMeshes = trees.filter(t=>t.alive).flatMap(t=>t.group.children);
       const hits = raycaster.intersectObjects(treeMeshes, false);
       if (hits.length > 0) {
@@ -2277,6 +2280,12 @@
 
   let shakeTrauma = 0;
   function addShake(amount) { shakeTrauma = Math.min(1, shakeTrauma + amount); }
+  // The "true" aim ray, captured each frame BEFORE camera shake is applied.
+  // All hit-detection raycasts use this instead of the live camera, so
+  // recoil/shake is purely a visual wobble and never throws off where
+  // shots actually land.
+  const aimOrigin = new THREE.Vector3();
+  const aimDir = new THREE.Vector3(0, 0, -1);
 
   function damagePlayer(amount) {
     if (!player.alive) return;
@@ -2947,6 +2956,10 @@
       }
       camera.lookAt(camPivot);
     }
+    // Snapshot the true, unshaken aim ray for hit-detection use — must
+    // happen before the shake offset below is applied to the camera.
+    aimOrigin.copy(camera.position);
+    camera.getWorldDirection(aimDir);
     if (shakeTrauma > 0) {
       const s = shakeTrauma * shakeTrauma;
       camera.position.x += (Math.random()*2-1) * s * 0.35;
