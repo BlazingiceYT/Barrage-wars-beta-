@@ -49,4 +49,6 @@ Patch0.20: Fixed gun bullet not shooting accurately. Commited by BlazingiceYT on
 
 Update0.21: Added more dynamic joystick and fps counter. Commited by BlazingiceYT on 7 Aug 2026.
 
-Patch0.22: Fixed inaccurate fps counter
+Patch0.22: Fixed inaccurate fps counter. Commited by BlazingiceYT on 7 Aug 2026
+
+Patch0.23: Fixed sizing errors when playing on port 8000. Commited by BlazingiceYT on 7 Aug 2026
