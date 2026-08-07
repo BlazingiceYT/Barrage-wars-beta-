@@ -602,15 +602,21 @@
   const trees = [];
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.9 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e6b2e, roughness: 0.85 });
+  // One shared geometry per shape, reused by every tree (stretched with .scale
+  // instead of each tree building its own copy) - cuts tree memory/setup cost
+  // a lot with no visual difference, since only the scale changes per tree.
+  const trunkUnitGeo = new THREE.CylinderGeometry(0.28, 0.36, 1, 7);
+  const leafUnitGeo = new THREE.IcosahedronGeometry(1, 0);
   function makeTree(x, z) {
     const group = new THREE.Object3D();
     const h = 3 + Math.random()*2.5;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, h, 7), trunkMat);
+    const trunk = new THREE.Mesh(trunkUnitGeo, trunkMat);
+    trunk.scale.y = h;
     trunk.position.y = h/2; trunk.castShadow = true; trunk.receiveShadow = true;
     const leafScale = 1.6 + Math.random()*0.9;
-    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(leafScale, 0), leafMat);
+    const leaves = new THREE.Mesh(leafUnitGeo, leafMat);
     leaves.position.y = h + leafScale*0.6; leaves.castShadow = true;
-    leaves.scale.y = 1.2;
+    leaves.scale.set(leafScale, leafScale*1.2, leafScale);
     group.add(trunk, leaves);
     group.position.set(x, 0, z);
     scene.add(group);
@@ -1265,16 +1271,24 @@
     chuteOpen: false
   };
 
+  // Shared body-shape geometry for the player AND every bot/zombie (they're
+  // all the same torso/head/legs shapes). Each character still gets its own
+  // MATERIAL (so colors stay independent) and its own Mesh/health/alive-state
+  // (so killing one never touches any other) - only the shape data is reused.
+  const humanoidTorsoGeo = new THREE.CylinderGeometry(0.32, 0.4, 1.0, 10);
+  const humanoidHeadGeo = new THREE.SphereGeometry(0.28, 12, 12);
+  const humanoidLegsGeo = new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10);
+
   const playerGroup = new THREE.Object3D();
   scene.add(playerGroup);
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3d7dd6, roughness: 0.6 });
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0b088, roughness: 0.7 });
   const legMat = new THREE.MeshStandardMaterial({color:0x2b2f38});
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 1.0, 10), bodyMat);
+  const torso = new THREE.Mesh(humanoidTorsoGeo, bodyMat);
   torso.position.y = 1.0; torso.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), skinMat);
+  const head = new THREE.Mesh(humanoidHeadGeo, skinMat);
   head.position.y = 1.65; head.castShadow = true;
-  const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10), legMat);
+  const legs = new THREE.Mesh(humanoidLegsGeo, legMat);
   legs.position.y = 0.45; legs.castShadow = true;
   playerGroup.add(torso, head, legs);
 
@@ -1333,15 +1347,23 @@
   }
 
   const botBodyMats = [0xc4453d,0xd68a3d,0x9a4dc4,0x4dc48a,0xc4c14d,0x4d8ac4];
+  // Head/leg color is identical on every bot and never changes, so those two
+  // materials are shared across all bots. The body color DOES differ per bot,
+  // so each bot still gets its own body material - colors stay distinct and
+  // killing one bot has no effect on any other (each bot is its own Mesh/Object3D
+  // with its own health, alive-state and position; only the shared shape data
+  // and these two identical-looking materials are reused).
+  const botHeadMat = new THREE.MeshStandardMaterial({color:0xe0b088});
+  const botLegsMat = new THREE.MeshStandardMaterial({color:0x241010});
   function spawnBot(idx) {
     const group = new THREE.Object3D();
     const colorHex = botBodyMats[idx % botBodyMats.length];
-    const eBody = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 1.0, 10), new THREE.MeshStandardMaterial({color:colorHex, roughness:0.6}));
+    const eBody = new THREE.Mesh(humanoidTorsoGeo, new THREE.MeshStandardMaterial({color:colorHex, roughness:0.6}));
     eBody.position.y = 1.0; eBody.castShadow = true;
-    const eHead = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), new THREE.MeshStandardMaterial({color:0xe0b088}));
+    const eHead = new THREE.Mesh(humanoidHeadGeo, botHeadMat);
     eHead.position.y = 1.65; eHead.castShadow = true;
     eHead.userData.isHead = true;
-    const eLegs = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10), new THREE.MeshStandardMaterial({color:0x241010}));
+    const eLegs = new THREE.Mesh(humanoidLegsGeo, botLegsMat);
     eLegs.position.y = 0.45; eLegs.castShadow = true;
     group.add(eBody, eHead, eLegs);
 
@@ -1383,7 +1405,7 @@
     scene.add(group);
 
     const bot = {
-      group, hitMeshes: [eBody, eHead], gunMesh: gun,
+      group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs], gunMesh: gun,
       health: 60, maxHealth: 60,
       pos: new THREE.Vector3(x,dropY,z),
       target: new THREE.Vector3(x,0,z),
@@ -1504,18 +1526,25 @@
   }
 
   const cityLamps = [];
+  // Pole/arm/lamp shapes are identical for every streetlamp, so the geometry
+  // is shared. poleMat is also shared since it never changes. lampMat is kept
+  // PER-LAMP (not shared) because each lamp's glow flickers independently -
+  // sharing that material would make every lamp flicker in sync.
+  const lampPoleGeo = new THREE.CylinderGeometry(0.06, 0.08, 4.2, 6);
+  const lampArmGeo = new THREE.BoxGeometry(0.7, 0.06, 0.06);
+  const lampBulbGeo = new THREE.SphereGeometry(0.13, 8, 8);
+  const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.7, metalness: 0.4 });
   function makeStreetlamp(lx, lz) {
     const x = CITY_CX + lx, z = CITY_CZ + lz;
     const group = new THREE.Object3D();
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.7, metalness: 0.4 });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 4.2, 6), poleMat);
+    const pole = new THREE.Mesh(lampPoleGeo, lampPoleMat);
     pole.position.y = 2.1; pole.castShadow = true;
     group.add(pole);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.06), poleMat);
+    const arm = new THREE.Mesh(lampArmGeo, lampPoleMat);
     arm.position.set(0.35, 4.15, 0);
     group.add(arm);
     const lampMat = new THREE.MeshStandardMaterial({ color: 0xffcf7a, emissive: 0xffaa33, emissiveIntensity: 1.2 });
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), lampMat);
+    const lamp = new THREE.Mesh(lampBulbGeo, lampMat);
     lamp.position.set(0.68, 4.05, 0);
     group.add(lamp);
     group.position.set(x, 0, z);
@@ -1646,15 +1675,20 @@
 
   let zombieIdCounter = 0;
   const zombieSkinColors = [0x6b8f4e, 0x5a7a42, 0x7a9a5e, 0x4f6b3a];
+  // Same sharing pattern as the bots: body/leg colors never vary between
+  // zombies so those materials are shared; head skin tone DOES vary, so each
+  // zombie keeps its own head material. Shape geometry is shared by all.
+  const zombieBodyMat = new THREE.MeshStandardMaterial({ color: 0x2c2a26, roughness: 0.9 });
+  const zombieLegsMat = new THREE.MeshStandardMaterial({ color: 0x201f1c });
   function spawnZombieAt(x, z) {
     const skin = zombieSkinColors[zombieIdCounter++ % zombieSkinColors.length];
     const group = new THREE.Object3D();
-    const eBody = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 1.0, 10), new THREE.MeshStandardMaterial({ color: 0x2c2a26, roughness: 0.9 }));
+    const eBody = new THREE.Mesh(humanoidTorsoGeo, zombieBodyMat);
     eBody.position.y = 1.0; eBody.castShadow = true;
-    const eHead = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.9 }));
+    const eHead = new THREE.Mesh(humanoidHeadGeo, new THREE.MeshStandardMaterial({ color: skin, roughness: 0.9 }));
     eHead.position.y = 1.65; eHead.castShadow = true;
     eHead.userData.isHead = true;
-    const eLegs = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10), new THREE.MeshStandardMaterial({ color: 0x201f1c }));
+    const eLegs = new THREE.Mesh(humanoidLegsGeo, zombieLegsMat);
     eLegs.position.y = 0.45; eLegs.castShadow = true;
     group.add(eBody, eHead, eLegs);
 
@@ -1668,7 +1702,7 @@
     const hp = 28 + waveNumber*5;
     const zom = {
       kind: 'zombie',
-      group, hitMeshes: [eBody, eHead],
+      group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs],
       health: hp, maxHealth: hp,
       pos: new THREE.Vector3(x, -2, z),
       speed: 4.0 + Math.random()*1.3 + Math.min(2.2, waveNumber*0.08),
@@ -1966,40 +2000,77 @@
   }
 
   // ---------- Bullet tracers & muzzle flashes ----------
-  const activeFX = [];
+  // Pooled so we never create/destroy geometry mid-fight (that caused stutter).
+  // A fixed unit-length tracer mesh is stretched with scale to match each shot's
+  // distance instead of building a brand new geometry every time.
+  const TRACER_POOL_SIZE = 48;
+  const FLASH_POOL_SIZE = 48;
+  const tracerUnitGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 5);
+  const flashGeo = new THREE.SphereGeometry(0.09, 6, 6);
+
+  function buildFxPool(size, geo) {
+    const pool = [];
+    for (let i = 0; i < size; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;
+      scene.add(mesh);
+      pool.push({ mesh, mat, life: 0, maxLife: 1, active: false });
+    }
+    return pool;
+  }
+  const tracerPool = buildFxPool(TRACER_POOL_SIZE, tracerUnitGeo);
+  const flashPool = buildFxPool(FLASH_POOL_SIZE, flashGeo);
+  let tracerCursor = 0, flashCursor = 0;
+
+  // Always hands back a slot: if every slot is busy it recycles the oldest one
+  // so a tracer/flash never silently fails to appear, even under heavy fire.
+  function takeFxSlot(pool, cursorRef) {
+    const slot = pool[cursorRef.i];
+    cursorRef.i = (cursorRef.i + 1) % pool.length;
+    slot.active = true;
+    slot.mesh.visible = true;
+    return slot;
+  }
+  const tracerCursorRef = { i: 0 }, flashCursorRef = { i: 0 };
+
   function spawnTracer(start, end, colorHex) {
     const dist = start.distanceTo(end);
     if (dist < 0.05) return;
-    const geo = new THREE.CylinderGeometry(0.012, 0.012, dist, 5);
-    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.95 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(start).lerp(end, 0.5);
+    const slot = takeFxSlot(tracerPool, tracerCursorRef);
+    slot.mesh.position.copy(start).lerp(end, 0.5);
+    slot.mesh.scale.set(1, dist, 1);
     const dir = new THREE.Vector3().subVectors(end, start).normalize();
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
-    scene.add(mesh);
-    activeFX.push({ mesh, mat, life: 0.09, maxLife: 0.09 });
+    slot.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+    slot.mat.color.setHex(colorHex);
+    slot.mat.opacity = 0.95;
+    slot.life = 0.09; slot.maxLife = 0.09;
   }
   function spawnMuzzleFlash(pos, colorHex) {
-    const geo = new THREE.SphereGeometry(0.09, 6, 6);
-    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 1 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(pos);
-    scene.add(mesh);
-    activeFX.push({ mesh, mat, life: 0.06, maxLife: 0.06 });
+    const slot = takeFxSlot(flashPool, flashCursorRef);
+    slot.mesh.position.copy(pos);
+    slot.mesh.scale.set(1, 1, 1);
+    slot.mat.color.setHex(colorHex);
+    slot.mat.opacity = 1;
+    slot.life = 0.06; slot.maxLife = 0.06;
   }
-  function updateFX(dt) {
-    for (let i = activeFX.length - 1; i >= 0; i--) {
-      const fx = activeFX[i];
+  function updateFxPool(pool, dt, maxOpacity) {
+    for (let i = 0; i < pool.length; i++) {
+      const fx = pool[i];
+      if (!fx.active) continue;
       fx.life -= dt;
       if (fx.life <= 0) {
-        scene.remove(fx.mesh);
-        fx.mesh.geometry.dispose();
-        fx.mat.dispose();
-        activeFX.splice(i, 1);
+        fx.active = false;
+        fx.mesh.visible = false;
+        fx.mat.opacity = 0;
       } else {
-        fx.mat.opacity = Math.max(0, fx.life / fx.maxLife);
+        fx.mat.opacity = Math.max(0, fx.life / fx.maxLife) * maxOpacity;
       }
     }
+  }
+  function updateFX(dt) {
+    updateFxPool(tracerPool, dt, 0.95);
+    updateFxPool(flashPool, dt, 1);
   }
   function getActiveMuzzleWorldPos() {
     const type = currentMeshType();
@@ -3112,6 +3183,33 @@
 
   // ---------- Main loop ----------
   const clock = new THREE.Clock();
+  // ---------- Shadow LOD ----------
+  // Characters/trees far from the camera are visually tiny, so whether they
+  // cast a shadow is imperceptible from that distance. Turning shadows off
+  // past these ranges saves GPU work in big fights without changing how
+  // anything looks up close. Checked ~10x/sec (not every frame) since
+  // distances don't need to be perfectly up to the millisecond.
+  const CHAR_SHADOW_RANGE_SQ = 90 * 90;
+  const TREE_SHADOW_RANGE_SQ = 120 * 120;
+  let shadowLodTick = 0;
+  function updateShadowLOD() {
+    shadowLodTick++;
+    if (shadowLodTick % 6 !== 0) return;
+    const camPos = camera.position;
+    for (const c of activeEnemies()) {
+      if (!c.alive || !c.shadowMeshes) continue;
+      const dx = c.group.position.x - camPos.x, dz = c.group.position.z - camPos.z;
+      const near = (dx*dx + dz*dz) < CHAR_SHADOW_RANGE_SQ;
+      for (const m of c.shadowMeshes) m.castShadow = near;
+    }
+    for (const t of trees) {
+      if (!t.alive) continue;
+      const dx = t.x - camPos.x, dz = t.z - camPos.z;
+      const near = (dx*dx + dz*dz) < TREE_SHADOW_RANGE_SQ;
+      t.group.traverse(o => { if (o.isMesh) o.castShadow = near; });
+    }
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     const rawDt = clock.getDelta();
@@ -3138,6 +3236,7 @@
     updateWeaponAnim(dt);
     updateFX(dt);
     updateStreetlamps(dt);
+    updateShadowLOD();
 
     renderer.render(scene, camera);
   }
