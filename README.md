@@ -1,61 +1,57 @@
-UPDATE LOG 
 
-Update0.1: Create a basic 3d shooter game using three.js and HTML. Commited by BlazingiceYT on 4 Aug 2026 
 
-Update0.11: Bigger world (400×400) with 160 trees, scattered grass, and 14 multi-floor houses (1–3 floors) with open doorways, interior floors, and ramps you can walk up/through.
-Blocky 3D held weapons — a chunky low-poly gun and axe, visible in both first-person (view model) and third-person (held in the character's hand).
-49 bots spawn with you (50 total players), each carrying a gun and shooting back at you when in range, with individual health bars.
-Axe: chop trees (raycast-based) → get 5 wood each, or melee bots for heavy damage.
-Equipment slots at the bottom (Axe = 1, Gun = 2) — click a slot or press the number to switch.
-Inventory: click the bag icon between the slots (or press Tab) to open a panel showing wood count and a "Build Wall" button.
-Building: 5 wood = 1 wall, placed in front of you facing your direction (B key, in-world Build button, or from inventory).
-Dedicated FIRE button, joystick, jump button, and view-toggle button for mobile, all alongside WASD/mouse/P on desktop, commited on 4 Aug 2026 by BlazingiceYT
+**UPDATE LOG**
 
-Update0.12: AI bots use raycasting, and you now launch from a parachute. Commited by BlazingiceYT on 5 Aug 2026
+**Update 0.1** — *Committed by BlazingiceYT on 4 Aug 2026*
+Created a basic 3D shooter using Three.js and HTML.
 
-Update0.13: Refactor house spawning logic and added different guns, scope, sensitivity toggle. Commited by BlazingiceYT on 5 Aug 2026
+**Update 0.11** — *Committed by BlazingiceYT on 4 Aug 2026*
+Expanded the world to 400×400 with 160 trees, scattered grass, and 14 multi-floor houses (1–3 floors) featuring open doorways, interior floors, and walkable ramps. Added blocky first-person and third-person held weapons (gun and axe). 49 AI bots spawn alongside you (50 total), each armed and shooting back when in range, with individual health bars. Axe doubles as a tree-chopping tool (raycast, 5 wood per tree) and a heavy melee weapon. Equipment slots at the bottom (Axe = 1, Gun = 2) — click or press number keys to switch. Inventory system: bag icon or Tab opens a panel showing wood count and a "Build Wall" button. Spend 5 wood to place a wall in front of you (B key, build button, or from inventory). Added full mobile support: dedicated fire button, joystick, jump, and view-toggle, alongside desktop WASD/mouse/P controls.
 
-Update0.14: Sprint — hold Left Shift while moving to sprint at 1.65x speed. Blue stamina bar drains while sprinting and regenerates when you stop or run dry. You'll also see a slight FOV widen and a subtle speed-lines/vignette effect while running.
-No more respawning enemies — killed bots stay dead. The "Alive" counter will now actually count down over the course of a match instead of holding steady.
-Enemies drop from the plane — bots now spawn high in the sky with their own parachute, free-fall, pop their chute at a randomized altitude, and glide down to their spot on the ground — timed to happen right as the match actually starts.
-Smarter enemies — bots now strafe unpredictably side-to-side while fighting instead of walking straight at you, react and shoot faster (cooldown down from ~0.9–1.5s to ~0.65–1.15s), notice threats from further away (24m → 30m), and are a bit more accurate up close. Commited by BlazingiceYT on 5 Aug 2026
+**Update 0.12** — *Committed by BlazingiceYT on 5 Aug 2026*
+Bots now use raycasting. Players launch from a parachute at match start.
 
-Update0.15: Added a home screen with both modes:
-Mode select — after the world loads, you now get two buttons: FREE FOR ALL (unchanged, plays exactly as before) and ZOMBIE MODE, which opens a short intro screen explaining the mode before you drop in.
-Zombie Mode specifics:
-Same island, but fenced into a smaller ~130×130 area centered on your spawn (reuses the existing houses/trees inside that zone) — a visible green boundary wall marks the edge.
-You spawn straight on the ground at the center — no plane, no parachute.
-The 49 free-for-all fighters are disabled entirely in this mode; only zombies exist.
-Zombies burst up out of the ground (a rise animation) before joining the chase.
-They always know exactly where you are — no line-of-sight requirement — and sprint straight at you (faster than the FFA bots), attacking in melee when they close the distance.
-Waves increase in size each round (5, 8, 11, 14...) and slightly in toughness/speed as you go.
-A wave ends and the next one auto-starts shortly after the last zombie dies.
-SKIP WAVE button in the top-right: doesn't touch the zombies currently alive — it just throws the next wave's zombies in on top of them immediately.
-Dying and hitting RESPAWN in zombie mode puts you back on the ground mid-wave (no plane sequence), rather than restarting the whole match.
+**Update 0.13** — *Committed by BlazingiceYT on 5 Aug 2026*
+Refactored house spawning logic. Added multiple gun types, a scope, and a sensitivity toggle.
 
-Update0.16: Added the r128-matching GLTFLoader script tag alongside the existing three.js include.
-Added a MODEL_WEAPON_CONFIG block that points at pistol.glb, ak-47.glb, minigun.glb, and sniper.glb, plus per-weapon muzzle offsets and (for the minigun) the barrel-cluster node name used for the spin animation.
-Added loadWeaponModel/applyLoadedModel, which loads each .glb, swaps it in for the blocky placeholder mesh in both the first-person and third-person rigs once it's ready, and updates muzzleLocal for bullet spawn positions. The axe stays procedural since no axe.glb was requested.
-If a file fails to load (missing/404), it logs a warning and just keeps the existing placeholder gun — nothing crashes.
-Guarded the minigun's barrel-spin animation so it won't error if a loaded model doesn't have a barrelCluster node.+ Mini patch Commited by BlazingiceYT on 6 Aug 2026
+**Update 0.14** — *Committed by BlazingiceYT on 5 Aug 2026*
+**Sprint system:** Hold Left Shift to sprint at 1.65× speed. A blue stamina bar drains while sprinting and regenerates when you stop or run dry. Sprinting also triggers a slight FOV widen and subtle speed-lines/vignette effect.
+**Permanent kills:** Killed bots no longer respawn — the "Alive" counter now actually counts down over the match.
+**Aerial spawns:** Bots now drop from the sky with their own parachutes, free-falling and deploying at randomized altitudes before gliding to the ground, timed to match the player's drop.
+**Smarter AI:** Bots now strafe unpredictably while fighting, react and shoot faster (cooldown reduced from ~0.9–1.5s to ~0.65–1.15s), detect threats from further away (24m → 30m), and are more accurate at close range.
 
-Update0.17: Added ability to customize button layout through settings menu. commited by BlazingiceYT on 6 Aug 2026.
+**Update 0.15** — *Committed by BlazingiceYT on 5 Aug 2026*
+**Home screen with mode select:** After the world loads, players choose between FREE FOR ALL (unchanged) and ZOMBIE MODE (opens a brief intro screen before dropping in).
+**Zombie Mode specifics:** Same island, but fenced into a ~130×130 area with a visible green boundary wall. Players spawn on the ground at center — no plane or parachute. FFA bots are disabled. Zombies burst out of the ground with a rise animation, then sprint directly at the player (no line-of-sight needed, faster than FFA bots) and attack in melee. Waves escalate in size (5, 8, 11, 14...) and slightly in toughness/speed. Next wave auto-starts shortly after the last zombie dies. A SKIP WAVE button in the top-right immediately adds the next wave without clearing current zombies. Respawning puts you back on the ground mid-wave with no plane sequence.
 
-Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses and added credits. Commited by BlazingiceYT on 6 Aug 2026.
+**Update 0.16** — *Committed by BlazingiceYT on 6 Aug 2026*
+Added the r128-matched GLTFLoader script. Introduced MODEL_WEAPON_CONFIG pointing at pistol.glb, ak-47.glb, minigun.glb, and sniper.glb, plus per-weapon muzzle offsets and the minigun's barrel-cluster node for spin animation. Added model loading that swaps .glb weapons in for blocky placeholders in both first-person and third-person views, updating muzzle positions accordingly. The axe remains procedural. Missing files are handled gracefully with a warning and fallback to placeholders. Guarded the minigun barrel-spin animation against missing barrel cluster nodes. *(Mini patch applied.)*
 
-Patch0.19: Fixed supersized guns. Commited by BlazingiceYT on 6 Aug 2026.
+**Update 0.17** — *Committed by BlazingiceYT on 6 Aug 2026*
+Added customizable button layout via the settings menu.
 
-Patch0.20: Fixed gun bullet not shooting accurately. Commited by BlazingiceYT on 7 Aug 2026.
+**Patch 0.18** — *Committed by BlazingiceYT on 6 Aug 2026*
+Fixed settings menu not appearing on the home screen. Fixed guns spawning in only some houses. Added credits.
 
-Update0.21: Added more dynamic joystick and fps counter. Commited by BlazingiceYT on 7 Aug 2026.
+**Patch 0.19** — *Committed by BlazingiceYT on 6 Aug 2026*
+Fixed oversized gun models.
 
-Patch0.22: Fixed inaccurate fps counter. Commited by BlazingiceYT on 7 Aug 2026
+**Patch 0.20** — *Committed by BlazingiceYT on 7 Aug 2026*
+Fixed inaccurate bullet trajectory.
 
-Patch0.23: Fixed sizing errors when playing on port 8000. Commited by BlazingiceYT on 7 Aug 2026
+**Update 0.21** — *Committed by BlazingiceYT on 7 Aug 2026*
+Added a more dynamic joystick and an FPS counter.
 
-Update0.24: You can now click settings while walking. Commited by BlazingiceYT on 7 Aug 2026
+**Patch 0.22** — *Committed by BlazingiceYT on 7 Aug 2026*
+Fixed inaccurate FPS counter.
 
-Optimization0.25: 
-#1 — Tracers/muzzle flashes no longer get created and destroyed every shot. Instead there's a pool of 48 pre-built tracer shapes and 48 flash shapes that just get recycled. If somehow every single one is busy at once (basically impossible with 50 characters), it reuses the oldest one instantly rather than skipping — so a tracer will always appear for every shot fired, nothing vanishes mid-air.
-#2 — Bots/zombies now share their body shape only, not their life or color. Each bot is still its own separate object with its own health, alive/dead state, and position — killing one has zero effect on the others (I checked: death just hides that one character, nothing gets shared-deleted). Colors also stay distinct: each bot's body color and each zombie's skin tone still get their own individual material, since those actually vary per-character. Only things that were already identical across all of them (the shape, and colors that never change like heads/legs) got shared. Trees and streetlamps got the same treatment.
-#3 — Distant characters and trees quietly stop casting shadows past ~45m (characters) / ~60m (trees), checked about 10x a second. At that distance you can't tell the shadow is gone, but it's one less shadow render for the GPU during big firefights.
+**Patch 0.23** — *Committed by BlazingiceYT on 7 Aug 2026*
+Fixed sizing errors when playing on port 8000.
+
+**Update 0.24** — *Committed by BlazingiceYT on 7 Aug 2026*
+Settings can now be opened while walking.
+
+**Optimization 0.25** — *Committed by BlazingiceYT on 7 Aug 2026*
+**Object pooling:** Tracers and muzzle flashes are now pre-allocated in a pool of 48 each and recycled, eliminating per-shot creation/destruction. If the pool is exhausted, the oldest entry is reused instantly — every shot always produces a visible tracer.
+**Shared geometry:** Bots and zombies now share body geometry only — health, alive/dead state, position, and varied colors (body/skin tones) remain fully individual. Killing one bot has zero effect on others. Trees and streetlamps received the same treatment.
+**Distance-based shadow culling:** Characters beyond ~45m and trees beyond ~60m stop casting shadows (checked ~10× per second), reducing GPU load during large firefights without any visible impact.
