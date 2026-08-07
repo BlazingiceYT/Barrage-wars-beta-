@@ -44,3 +44,5 @@ Update0.17: Added ability to customize button layout through settings menu. comm
 Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses and added credits. Commited by BlazingiceYT on 6 Aug 2026
 
 Patch0.19: Fixed supersized guns. Commited by BlazingiceYT on 6 Aug 2026
+
+Patch0.20: Fixed gun bullet not shooting accurately. Commited by BlazingiceYT on 7 Aug 2026
