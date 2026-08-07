@@ -70,6 +70,14 @@
     transform-origin: left center;
   }
 
+  #fpsCounter {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    color: #9fffb0; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;
+    background: rgba(0,0,0,0.35); border-radius: 6px; padding: 3px 10px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9); pointer-events: none;
+  }
+  #fpsCounter.low { color: #ff8a5f; }
+
   #statsTop {
     position: absolute; top: 16px; right: 16px; text-align: right;
     color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.9); font-size: 13px;
@@ -121,7 +129,8 @@
   #homeSettingsBtn { position: absolute; top: 16px; right: 16px; z-index: 21; }
   #homeCreditsBtn { position: absolute; top: 60px; right: 16px; z-index: 21; }
 
-  #joystickZone { position: absolute; left: 24px; bottom: 24px; width: 130px; height: 130px; pointer-events: auto; }
+  #moveTouchZone { position: absolute; left: 0; bottom: 0; width: 52vw; height: 58vh; pointer-events: auto; }
+  #joystickZone { position: absolute; left: 24px; bottom: 24px; width: 130px; height: 130px; pointer-events: none; transition: left 0.12s ease-out, top 0.12s ease-out, bottom 0.12s ease-out, opacity 0.15s ease-out; }
   #joystickBase { width: 100%; height: 100%; border-radius: 50%; background: rgba(255,255,255,0.08); border: 3px solid rgba(255,255,255,0.35); position: relative; }
   #joystickKnob { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.8); top: 50%; left: 50%; transform: translate(-50%,-50%); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
 
@@ -133,13 +142,20 @@
   #jumpBtn:active { background: rgba(255,255,255,0.3); }
 
   #fireBtn {
-    position: absolute; right: 30px; bottom: 130px; width: 84px; height: 84px;
-    border-radius: 50%; background: rgba(220,40,30,0.35); border: 3px solid rgba(255,120,100,0.7);
-    color: #fff; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center;
-    pointer-events: auto; letter-spacing: 1px;
+    position: absolute; right: 12px; bottom: 112px; width: 120px; height: 120px;
+    border-radius: 50%; background: transparent; border: none; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto;
   }
-  #fireBtn.flash { background: rgba(255,220,120,0.85); }
-  #fireBtn.engaged { background: rgba(255,90,50,0.75); border-color: rgba(255,180,140,0.95); }
+  #fireBtnVisual {
+    width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(220,40,30,0.35); border: 3px solid rgba(255,120,100,0.7);
+    color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; transition: background 0.08s, border-color 0.08s;
+  }
+  #fireBtn.flash #fireBtnVisual { background: rgba(255,220,120,0.85); }
+  #fireBtn.engaged #fireBtnVisual { background: rgba(255,90,50,0.75); border-color: rgba(255,180,140,0.95); }
 
   #scopeBtn {
     position: absolute; right: 122px; bottom: 148px; width: 60px; height: 60px;
@@ -307,6 +323,8 @@
     <div id="speedVignette"></div>
     <div id="speedLines"></div>
 
+    <div id="fpsCounter">-- FPS</div>
+
     <div id="statsTop">
       <div>Kills: <span id="kills">0</span></div>
       <div id="aliveRow">Alive: <span id="aliveCount">50</span></div>
@@ -325,13 +343,14 @@
     <button id="dropBtn" class="disabled">DROP<br>(G)</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
-    <button id="fireBtn">FIRE</button>
+    <button id="fireBtn"><span id="fireBtnVisual">FIRE</span></button>
 
     <div id="topRightBtns">
       <button id="viewToggleBtn">⇄ VIEW (P)</button>
       <button id="settingsBtn">⚙ SETTINGS</button>
     </div>
 
+    <div id="moveTouchZone"></div>
     <div id="joystickZone"><div id="joystickBase"><div id="joystickKnob"></div></div></div>
     <div id="jumpBtn">⤴</div>
 
@@ -2531,6 +2550,7 @@
       if (handle) handle.remove();
       delete dragHandles[id];
     }
+    if (typeof captureJoyHome === 'function') captureJoyHome();
   }
 
   function resetLayout() {
@@ -2549,6 +2569,7 @@
         handle.style.height = rect.height + 'px';
       }
     }
+    if (typeof captureJoyHome === 'function') captureJoyHome();
   }
 
   document.getElementById('customizeControlsBtn').addEventListener('click', enterLayoutEdit);
@@ -2677,10 +2698,45 @@
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // ---------- Joystick ----------
+  // Brawl-Stars style: touching anywhere in the larger moveTouchZone starts
+  // the joystick right under your thumb (the visual base/knob jump to that
+  // spot), instead of requiring a precise tap on the small base graphic.
+  // The zone is much bigger than the visible joystick, and the knob's own
+  // radius is generous, so a slightly-off touch or drag still registers as
+  // a full, clean movement input rather than being ignored or clipped.
   const joyState = { active: false, id: null, x: 0, y: 0 };
+  const moveTouchZone = document.getElementById('moveTouchZone');
   const joyZone = document.getElementById('joystickZone');
   const joyKnob = document.getElementById('joystickKnob');
-  const JOY_RADIUS = 45;
+  const JOY_RADIUS = 52;
+  const JOY_HALF = 65; // half of joystickZone's 130px size
+  // Home position the joystick springs back to on release. Read from
+  // whatever position is actually on screen (default CSS, or a saved
+  // custom layout from the control-position editor) rather than a
+  // hardcoded value, so custom layouts aren't overwritten.
+  let joyHomeLeft = null, joyHomeTop = null;
+  function captureJoyHome() {
+    const r = joyZone.getBoundingClientRect();
+    joyHomeLeft = r.left;
+    joyHomeTop = r.top;
+  }
+  captureJoyHome();
+  function positionJoystickAt(clientX, clientY) {
+    joyZone.style.transition = 'none';
+    let left = clientX - JOY_HALF;
+    let top = clientY - JOY_HALF;
+    left = Math.max(6, Math.min(window.innerWidth - 130 - 6, left));
+    top = Math.max(80, Math.min(window.innerHeight - 130 - 6, top));
+    joyZone.style.left = left + 'px';
+    joyZone.style.top = top + 'px';
+    joyZone.style.bottom = 'auto';
+  }
+  function resetJoystickPosition() {
+    joyZone.style.transition = 'left 0.12s ease-out, top 0.12s ease-out';
+    joyZone.style.left = joyHomeLeft + 'px';
+    joyZone.style.top = joyHomeTop + 'px';
+    joyZone.style.bottom = 'auto';
+  }
   function joyMove(clientX, clientY) {
     const rect = joyZone.getBoundingClientRect();
     const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
@@ -2690,10 +2746,25 @@
     joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     joyState.x = dx / JOY_RADIUS; joyState.y = dy / JOY_RADIUS;
   }
-  function joyEnd() { joyState.active = false; joyState.id = null; joyState.x = 0; joyState.y = 0; joyKnob.style.transform = 'translate(-50%,-50%)'; }
-  joyZone.addEventListener('touchstart', (e) => { e.preventDefault(); const t=e.changedTouches[0]; joyState.active=true; joyState.id=t.identifier; joyMove(t.clientX,t.clientY); }, {passive:false});
-  joyZone.addEventListener('touchmove', (e) => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier===joyState.id) joyMove(t.clientX,t.clientY); }, {passive:false});
-  joyZone.addEventListener('touchend', (e) => { for (const t of e.changedTouches) if (t.identifier===joyState.id) joyEnd(); });
+  function joyEnd() {
+    joyState.active = false; joyState.id = null; joyState.x = 0; joyState.y = 0;
+    joyKnob.style.transform = 'translate(-50%,-50%)';
+    resetJoystickPosition();
+  }
+  moveTouchZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (joyState.active) return; // already tracking a finger
+    const t = e.changedTouches[0];
+    joyState.active = true; joyState.id = t.identifier;
+    positionJoystickAt(t.clientX, t.clientY);
+    joyMove(t.clientX, t.clientY);
+  }, {passive:false});
+  moveTouchZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) if (t.identifier===joyState.id) joyMove(t.clientX,t.clientY);
+  }, {passive:false});
+  moveTouchZone.addEventListener('touchend', (e) => { for (const t of e.changedTouches) if (t.identifier===joyState.id) joyEnd(); });
+  moveTouchZone.addEventListener('touchcancel', (e) => { for (const t of e.changedTouches) if (t.identifier===joyState.id) joyEnd(); });
 
   // ---------- Mobile look drag ----------
   const lookState = { active: false, id: null, lastX: 0, lastY: 0 };
@@ -2988,11 +3059,27 @@
     if (tpMeshes.minigun.barrelCluster) tpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
   }
 
+  // ---------- FPS counter ----------
+  const fpsCounterEl = document.getElementById('fpsCounter');
+  let fpsSmoothed = 60;
+  let fpsAccum = 0, fpsFrames = 0;
+  function updateFpsCounter(dt) {
+    if (dt > 0) fpsSmoothed += (1/dt - fpsSmoothed) * 0.1; // smooth per-frame estimate
+    fpsAccum += dt; fpsFrames++;
+    if (fpsAccum >= 0.25) { // refresh the on-screen text a few times a second
+      const fps = Math.round(fpsSmoothed);
+      fpsCounterEl.textContent = fps + ' FPS';
+      fpsCounterEl.classList.toggle('low', fps < 30);
+      fpsAccum = 0; fpsFrames = 0;
+    }
+  }
+
   // ---------- Main loop ----------
   const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, clock.getDelta());
+    updateFpsCounter(dt);
 
     if (firing && !drop.active) {
       const def = currentWeaponDef();
