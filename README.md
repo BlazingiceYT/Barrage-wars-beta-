@@ -39,10 +39,14 @@ Added loadWeaponModel/applyLoadedModel, which loads each .glb, swaps it in for t
 If a file fails to load (missing/404), it logs a warning and just keeps the existing placeholder gun — nothing crashes.
 Guarded the minigun's barrel-spin animation so it won't error if a loaded model doesn't have a barrelCluster node.+ Mini patch Commited by BlazingiceYT on 6 Aug 2026
 
-Update0.17: Added ability to customize button layout through settings menu. commited by BlazingiceYT on 6 Aug 2026
+Update0.17: Added ability to customize button layout through settings menu. commited by BlazingiceYT on 6 Aug 2026.
 
-Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses and added credits. Commited by BlazingiceYT on 6 Aug 2026
+Patch0.18: Fixed settings menu not appearing in home screen and guns spawning only in some houses and added credits. Commited by BlazingiceYT on 6 Aug 2026.
 
-Patch0.19: Fixed supersized guns. Commited by BlazingiceYT on 6 Aug 2026
+Patch0.19: Fixed supersized guns. Commited by BlazingiceYT on 6 Aug 2026.
 
-Patch0.20: Fixed gun bullet not shooting accurately. Commited by BlazingiceYT on 7 Aug 2026
+Patch0.20: Fixed gun bullet not shooting accurately. Commited by BlazingiceYT on 7 Aug 2026.
+
+Update0.21: Added more dynamic joystick and fps counter. Commited by BlazingiceYT on 7 Aug 2026.
+
+Patch0.22: Fixed inaccurate fps counter
