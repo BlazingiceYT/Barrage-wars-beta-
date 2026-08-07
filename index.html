@@ -492,6 +492,18 @@
     : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | 1/2/3=Weapon | P=View | Tab=Inventory";
   setTimeout(()=>{ document.getElementById('instructions').style.opacity = '0'; }, 8000);
 
+  // Buttons bound only to 'click' can miss taps when another finger is
+  // already down elsewhere (e.g. holding the move joystick while walking) —
+  // iOS Safari's synthetic click for a second simultaneous touch is
+  // unreliable in that case. touchstart fires immediately and reliably
+  // regardless, so HUD buttons that need to work mid-movement use this
+  // instead of plain 'click'.
+  function bindTap(el, handler) {
+    if (!el) return;
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); handler(e); }, {passive:false});
+    el.addEventListener('click', handler);
+  }
+
   // ---------- Lighting ----------
   const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75);
   scene.add(hemiLight);
@@ -2399,8 +2411,8 @@
     const pos = new THREE.Vector3(player.pos.x + forward.x*2, 0, player.pos.z + forward.z*2);
     placeWall(pos, player.yaw + Math.PI/2);
   }
-  document.getElementById('buildBtn').addEventListener('click', tryBuildWall);
-  document.getElementById('buildFromInvBtn').addEventListener('click', tryBuildWall);
+  bindTap(document.getElementById('buildBtn'), tryBuildWall);
+  bindTap(document.getElementById('buildFromInvBtn'), tryBuildWall);
 
   // ---------- Inventory panel ----------
   const invPanel = document.getElementById('invPanel');
@@ -2411,8 +2423,8 @@
     invPanel.style.display = invOpen ? 'block' : 'none';
     if (invOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
-  document.getElementById('invSlot').addEventListener('click', toggleInventory);
-  document.getElementById('invClose').addEventListener('click', toggleInventory);
+  bindTap(document.getElementById('invSlot'), toggleInventory);
+  bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
   const settings = { sens: 1.0, scopeSensMult: 0.35 };
@@ -2448,11 +2460,11 @@
     creditsPanel.style.display = creditsOpen ? 'block' : 'none';
     if (creditsOpen) loadCredits();
   }
-  document.getElementById('homeCreditsBtn').addEventListener('click', toggleCredits);
-  document.getElementById('creditsClose').addEventListener('click', toggleCredits);
-  document.getElementById('settingsBtn').addEventListener('click', toggleSettings);
-  document.getElementById('homeSettingsBtn').addEventListener('click', toggleSettings);
-  document.getElementById('settingsClose').addEventListener('click', toggleSettings);
+  bindTap(document.getElementById('homeCreditsBtn'), toggleCredits);
+  bindTap(document.getElementById('creditsClose'), toggleCredits);
+  bindTap(document.getElementById('settingsBtn'), toggleSettings);
+  bindTap(document.getElementById('homeSettingsBtn'), toggleSettings);
+  bindTap(document.getElementById('settingsClose'), toggleSettings);
   const sensSlider = document.getElementById('sensSlider');
   const scopeSensSlider = document.getElementById('scopeSensSlider');
   sensSlider.addEventListener('input', () => {
@@ -2605,7 +2617,7 @@
     return !!(def && def.scope);
   }
   function startScope() {
-    if (!canScope() || drop.active || invOpen || settingsOpen) return;
+    if (!canScope() || drop.active || invOpen || layoutEditMode) return;
     isScoped = true;
     camera.fov = currentWeaponDef().scopeFov;
     camera.updateProjectionMatrix();
@@ -2627,10 +2639,10 @@
   }
 
   // ---------- Equip slot clicks ----------
-  document.getElementById('slotAxe').addEventListener('click', () => setWeapon('axe'));
-  document.getElementById('slotPistol').addEventListener('click', () => setWeapon('pistol'));
-  document.getElementById('slotPrimary').addEventListener('click', () => setWeapon('primary'));
-  document.getElementById('weaponSwitchBtn').addEventListener('click', () => {
+  bindTap(document.getElementById('slotAxe'), () => setWeapon('axe'));
+  bindTap(document.getElementById('slotPistol'), () => setWeapon('pistol'));
+  bindTap(document.getElementById('slotPrimary'), () => setWeapon('primary'));
+  bindTap(document.getElementById('weaponSwitchBtn'), () => {
     if (player.weapon === 'axe') setWeapon('pistol');
     else if (player.weapon === 'pistol') setWeapon(player.primaryType ? 'primary' : 'axe');
     else setWeapon('axe');
@@ -2646,7 +2658,7 @@
   }
 
   // ---------- Drop weapon ----------
-  document.getElementById('dropBtn').addEventListener('click', dropWeapon);
+  bindTap(document.getElementById('dropBtn'), dropWeapon);
   function dropWeapon() {
     if (!player.alive || drop.active || !player.primaryType) return;
     const type = player.primaryType;
@@ -2812,7 +2824,7 @@
   canvas.addEventListener('touchend', (e) => { for (const t of e.changedTouches) if (t.identifier === lookState.id) { lookState.active=false; lookState.id=null; } });
 
   // ---------- Buttons ----------
-  document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
+  bindTap(document.getElementById('viewToggleBtn'), toggleView);
   document.getElementById('jumpBtn').addEventListener('touchstart', (e) => { e.preventDefault(); tryJump(); }, {passive:false});
   document.getElementById('jumpBtn').addEventListener('mousedown', tryJump);
 
@@ -2894,7 +2906,7 @@
     if (!audioCtx) { try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
     beginZombieMode();
   });
-  document.getElementById('skipWaveBtn').addEventListener('click', () => { skipWave(); });
+  bindTap(document.getElementById('skipWaveBtn'), () => { skipWave(); });
   document.getElementById('restartBtn').addEventListener('click', () => {
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
     if (gameMode === 'zombie') {
@@ -2939,7 +2951,7 @@
     if (!player.alive) return;
     if (drop.active) {
       let inputX = 0, inputZ = 0;
-      if (player.chuteOpen && !invOpen && !settingsOpen) {
+      if (player.chuteOpen && !invOpen && !layoutEditMode) {
         if (keys['KeyW']) inputZ += 1;
         if (keys['KeyS']) inputZ -= 1;
         if (keys['KeyD']) inputX += 1;
@@ -2966,7 +2978,7 @@
       return;
     }
     let inputX = 0, inputZ = 0;
-    if (!invOpen && !settingsOpen) {
+    if (!invOpen && !layoutEditMode) {
       if (keys['KeyW']) inputZ += 1;
       if (keys['KeyS']) inputZ -= 1;
       if (keys['KeyD']) inputX += 1;
