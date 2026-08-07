@@ -1951,6 +1951,10 @@
   let firing = false;
 
   function fireBullet(def) {
+    // The crosshair is always screen-center, which is exactly what
+    // camera.getWorldDirection() points along — so this single raycast is
+    // the one source of truth for both what gets hit AND where the tracer
+    // ends, guaranteeing bullets land exactly where the crosshair is aimed.
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
     raycaster.set(camera.position, dir); raycaster.far = 300;
     const targets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(collisionMeshes);
@@ -1968,25 +1972,6 @@
       endPoint = camera.position.clone().addScaledVector(dir, 300);
     }
 
-    // The camera sits behind/above the player in third person, so its sightline
-    // can occasionally clear a corner or wall edge the character's own gun
-    // couldn't. Re-check the shot from the muzzle itself so a wall between the
-    // gun and the target still blocks the hit even if the camera had a clear view.
-    const muzzleWorld = getActiveMuzzleWorldPos();
-    const muzzleDir = new THREE.Vector3().subVectors(endPoint, muzzleWorld);
-    const muzzleDist = muzzleDir.length();
-    if (muzzleDist > 0.01) {
-      muzzleDir.normalize();
-      raycaster.set(muzzleWorld, muzzleDir);
-      raycaster.far = muzzleDist - 0.05;
-      raycaster.near = 0;
-      const wallBlock = raycaster.intersectObjects(collisionMeshes, false);
-      if (wallBlock.length > 0) {
-        endPoint = wallBlock[0].point.clone();
-        hitBotRef = null; // a wall was actually in the way; no damage lands
-      }
-    }
-
     if (hitBotRef) {
       showHitMarker(hitIsHead);
       if (def.oneShotHeadshot && hitIsHead) {
@@ -1997,6 +1982,10 @@
       updateHealthSprite(hitBotRef);
       if (hitBotRef.health <= 0) killEnemy(hitBotRef, true);
     }
+    // Muzzle position is only used as the tracer/flash's visual starting
+    // point (so it still looks like it comes from the gun) — it no longer
+    // re-checks or overrides where the shot actually lands.
+    const muzzleWorld = getActiveMuzzleWorldPos();
     spawnTracer(muzzleWorld, endPoint, def.muzzleColor);
     spawnMuzzleFlash(muzzleWorld, def.muzzleColor);
   }
@@ -2998,4 +2987,4 @@
 })();
 </script>
 </body>
-</html>w
+</html>
