@@ -165,6 +165,14 @@
   }
   #scopeBtn.active { background: rgba(140,180,255,0.7); }
 
+  #reloadBtn {
+    position: absolute; right: 118px; bottom: 74px; width: 62px; height: 62px;
+    border-radius: 50%; background: rgba(130,100,40,0.55); border: 3px solid rgba(230,190,110,0.75);
+    color: #fff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; text-align: center; line-height: 1.05;
+  }
+  #reloadBtn:active { background: rgba(180,140,60,0.75); }
+
   #buildBtn {
     position: absolute; right: 130px; bottom: 220px; width: 56px; height: 56px;
     border-radius: 12px; background: rgba(120,90,40,0.55); border: 2px solid rgba(210,170,110,0.7);
@@ -343,6 +351,7 @@
     <button id="dropBtn" class="disabled">DROP<br>(G)</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
+    <button id="reloadBtn">RELOAD</button>
     <button id="fireBtn"><span id="fireBtnVisual">FIRE</span></button>
 
     <div id="topRightBtns">
@@ -488,8 +497,8 @@
 
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1000);
   document.getElementById('instructions').textContent = isMobile
-    ? "Left=Move | Drag=Look | FIRE=Shoot | SCOPE=Aim | Slots=Switch | Bag=Inventory"
-    : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | 1/2/3=Weapon | P=View | Tab=Inventory";
+    ? "Left=Move | Drag=Look | FIRE=Shoot | RELOAD=Reload | SCOPE=Aim | Slots=Switch | Bag=Inventory"
+    : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | R=Reload | 1/2/3=Weapon | P=View | Tab=Inventory";
   setTimeout(()=>{ document.getElementById('instructions').style.opacity = '0'; }, 8000);
 
   // Buttons bound only to 'click' can miss taps when another finger is
@@ -2486,6 +2495,7 @@
   }
   bindTap(document.getElementById('buildBtn'), tryBuildWall);
   bindTap(document.getElementById('buildFromInvBtn'), tryBuildWall);
+  bindTap(document.getElementById('reloadBtn'), reload);
 
   // ---------- Inventory panel ----------
   const invPanel = document.getElementById('invPanel');
@@ -2554,12 +2564,13 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','buildBtn','weaponSwitchBtn','dropBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
     fireBtn: 'FIRE',
     scopeBtn: 'SCOPE',
+    reloadBtn: 'RELOAD',
     buildBtn: 'BUILD WALL',
     weaponSwitchBtn: 'SWITCH WEAPON',
     dropBtn: 'DROP WEAPON',
