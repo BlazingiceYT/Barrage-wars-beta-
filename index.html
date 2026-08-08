@@ -290,6 +290,24 @@
     padding: 14px 40px; border-radius: 40px; cursor: pointer; box-shadow: 0 6px 18px rgba(255,60,20,0.4);
   }
   .overlayScreen .bigBtn:active { transform: scale(0.97); }
+
+  #winScreen h1 {
+    color: #ffe36a; text-shadow: 0 0 24px rgba(255,210,80,0.85), 0 0 48px rgba(255,180,40,0.5);
+    animation: winTitlePulse 1.6s ease-in-out infinite;
+  }
+  #winScreen .bigBtn { background: linear-gradient(180deg,#ffd25a,#ff9a1f); box-shadow: 0 6px 18px rgba(255,160,20,0.45); }
+  @keyframes winTitlePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  @keyframes winPopIn { 0% { opacity:0; transform: scale(0.7); } 60% { opacity:1; transform: scale(1.08); } 100% { transform: scale(1); } }
+  #winScreen.show > * { animation: winPopIn 0.5s cubic-bezier(.2,1.4,.4,1) both; }
+  #winScreen.show h1 { animation: winPopIn 0.5s cubic-bezier(.2,1.4,.4,1) both, winTitlePulse 1.6s ease-in-out 0.5s infinite; }
+  .confettiPiece {
+    position: absolute; top: -20px; width: 8px; height: 14px; opacity: 0.9;
+    animation: confettiFall linear forwards; pointer-events: none;
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(110vh) rotate(540deg); opacity: 0.6; }
+  }
   .controlsGrid { display: flex; gap: 18px; margin-top: 16px; flex-wrap: wrap; justify-content: center; max-width: 680px; }
   .controlsGrid div { font-size: 12px; color: #9fb2bc; }
   .controlsGrid b { color: #fff; }
@@ -444,6 +462,13 @@
     <p>Final Kills: <span id="finalKills">0</span></p>
     <button class="bigBtn" id="restartBtn">RESPAWN</button>
   </div>
+
+  <div class="overlayScreen" id="winScreen" style="display:none;">
+    <h1>👑 VICTORY ROYALE 👑</h1>
+    <p>You're the last one standing.</p>
+    <p>Final Kills: <span id="winKills">0</span></p>
+    <button class="bigBtn" id="winPlayAgainBtn">PLAY AGAIN</button>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -512,6 +537,47 @@
     el.addEventListener('touchstart', (e) => { e.preventDefault(); handler(e); }, {passive:false});
     el.addEventListener('click', handler);
   }
+
+  // ---------- Achievement announcer (Web Speech API — free, built into the browser) ----------
+  // This whole feature is wrapped defensively: some sandboxed preview
+  // environments (e.g. codespaces/app.github.dev proxy tabs) restrict or
+  // break speechSynthesis, and an uncaught error here at the top of the
+  // script would have stopped every line of setup below it from ever
+  // running — including all the real gunshot/SFX audio. try/catch keeps
+  // announcer failures fully contained to the announcer.
+  if ('speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.addEventListener('voiceschanged', () => {
+        try { window.speechSynthesis.getVoices(); } catch (e) {}
+      });
+    } catch (e) {}
+  }
+  function speakLine(text, { pitch = 1, rate = 1 } = {}) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel(); // don't let announcer lines pile up/overlap
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.pitch = pitch; utter.rate = rate; utter.volume = 1;
+      window.speechSynthesis.speak(utter);
+    } catch (e) { /* announcer is best-effort only; never let it affect gameplay/audio */ }
+  }
+  // Two distinct "characters": a deep hype announcer for kill streaks/victory,
+  // and a smug higher-pitched troll for the miss-streak taunts.
+  let playerKillStreak = 0;
+  let playerMissStreak = 0;
+  function registerPlayerKill() {
+    playerKillStreak++;
+    if (playerKillStreak === 5) speakLine('Killing spree!', { pitch: 0.85, rate: 1.1 });
+    else if (playerKillStreak === 10) speakLine('Master Slayer.', { pitch: 0.7, rate: 0.85 });
+  }
+  function registerPlayerShotResult(hit) {
+    if (hit) { playerMissStreak = 0; return; }
+    playerMissStreak++;
+    if (playerMissStreak === 5) speakLine('Skill issue.', { pitch: 1.35, rate: 0.95 });
+    else if (playerMissStreak === 10) speakLine('MAJOR skill issue.', { pitch: 1.35, rate: 0.8 });
+  }
+  function resetAchievementStreaks() { playerKillStreak = 0; playerMissStreak = 0; }
 
   // ---------- Lighting ----------
   const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75);
@@ -1454,6 +1520,7 @@
       player.kills++;
       document.getElementById('kills').textContent = player.kills;
     }
+    if (gameMode === 'ffa' && aliveBotCount <= 0 && player.alive && !matchWon) playerWin();
   }
 
   // ---------- Zombie Mode: abandoned city map ----------
@@ -1781,6 +1848,7 @@
   function killEnemy(ref, killedByPlayer) {
     if (ref.kind === 'zombie') killZombie(ref, killedByPlayer);
     else killBot(ref, killedByPlayer);
+    if (killedByPlayer) registerPlayerKill();
   }
 
   function updateZombie(zom, dt) {
@@ -2133,6 +2201,7 @@
       updateHealthSprite(hitBotRef);
       if (hitBotRef.health <= 0) killEnemy(hitBotRef, true);
     }
+    registerPlayerShotResult(!!hitBotRef);
     // Muzzle position is only used as the tracer/flash's visual starting
     // point (so it still looks like it comes from the gun) — it no longer
     // re-checks or overrides where the shot actually lands.
@@ -2152,7 +2221,7 @@
   }
 
   function primaryAction() {
-    if (!player.alive || drop.active) return;
+    if (!player.alive || drop.active || matchWon) return;
     const now = performance.now();
     if (player.weapon === 'axe') {
       if (now - lastActionTime < AXE_RATE) return;
@@ -2471,6 +2540,7 @@
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('finalKills').textContent = player.kills;
     document.getElementById('deathScreen').style.display = 'flex';
+    resetAchievementStreaks();
   }
   function respawnPlayer() {
     player.alive = true; player.health = player.maxHealth;
@@ -2482,6 +2552,56 @@
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
     document.getElementById('deathScreen').style.display = 'none';
+    resetAchievementStreaks();
+  }
+
+  // ---------- Victory ----------
+  let matchWon = false;
+  function spawnConfetti() {
+    const colors = ['#ffd25a','#ff6b6b','#6bd6ff','#8dff6b','#ff9ee0'];
+    const container = document.getElementById('winScreen');
+    for (let i=0;i<60;i++){
+      const p = document.createElement('div');
+      p.className = 'confettiPiece';
+      p.style.left = Math.random()*100 + '%';
+      p.style.background = colors[Math.floor(Math.random()*colors.length)];
+      p.style.animationDuration = (2.2 + Math.random()*1.8) + 's';
+      p.style.animationDelay = (Math.random()*0.6) + 's';
+      container.appendChild(p);
+      setTimeout(()=>{ if (p.parentNode) p.remove(); }, 4600);
+    }
+  }
+  function playerWin() {
+    if (matchWon) return;
+    matchWon = true;
+    firing = false;
+    document.getElementById('fireBtn').classList.remove('engaged');
+    endScope();
+    document.exitPointerLock && document.exitPointerLock();
+    document.getElementById('winKills').textContent = player.kills;
+    const winEl = document.getElementById('winScreen');
+    winEl.style.display = 'flex';
+    winEl.classList.remove('show'); void winEl.offsetWidth; winEl.classList.add('show');
+    spawnConfetti();
+    speakLine('Victory!', { pitch: 0.8, rate: 0.9 });
+  }
+  // Full match reset for FFA: the old restart flow only respawned the
+  // player and left every previous bot dead, so playing again (or hitting
+  // Play Again after a win) dropped you into an already-empty lobby. This
+  // clears out the old bots and spawns a fresh set alongside the player.
+  function resetFFAMatch() {
+    for (const bot of bots) scene.remove(bot.group);
+    bots.length = 0;
+    aliveBotCount = BOT_COUNT;
+    for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
+    document.getElementById('aliveCount').textContent = aliveBotCount + 1;
+    matchWon = false;
+    const winEl = document.getElementById('winScreen');
+    winEl.style.display = 'none';
+    winEl.classList.remove('show');
+    winEl.querySelectorAll('.confettiPiece').forEach(el => el.remove());
+    respawnPlayer();
+    beginPlaneIntro();
   }
 
   // ---------- Building ----------
@@ -2701,7 +2821,7 @@
     return !!(def && def.scope);
   }
   function startScope() {
-    if (!canScope() || drop.active || invOpen || layoutEditMode) return;
+    if (!canScope() || drop.active || invOpen || layoutEditMode || matchWon) return;
     isScoped = true;
     camera.fov = currentWeaponDef().scopeFov;
     camera.updateProjectionMatrix();
@@ -2997,9 +3117,12 @@
       respawnPlayer();
       spawnZombiePlayer();
     } else {
-      respawnPlayer();
-      beginPlaneIntro();
+      resetFFAMatch();
     }
+  });
+  bindTap(document.getElementById('winPlayAgainBtn'), () => {
+    if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
+    resetFFAMatch();
   });
 
   // ---------- World generation (order matters: houses before trees/crates) ----------
@@ -3032,7 +3155,7 @@
   function getRight(yaw) { return new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw); }
 
   function updateMovement(dt) {
-    if (!player.alive) return;
+    if (!player.alive || matchWon) return;
     if (drop.active) {
       let inputX = 0, inputZ = 0;
       if (player.chuteOpen && !invOpen && !layoutEditMode) {
