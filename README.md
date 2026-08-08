@@ -61,3 +61,17 @@ Settings can now be opened while walking.
 
 **Patch0.27** - *Commited by BlazingiceYT on 7 Aug 2026*
 **Fixed no sound on IOS**
+
+**Update0.28** - *Commited by BlazingiceYT on 7 Aug 2026*
+Bigger map + terrain
+Map size increased 40% per side (400 → 560)
+11 rolling hills scattered across the FFA map with smooth walkable slopes — the ground mesh itself is now deformed to match, and player/bot gravity follows the terrain naturally
+Grass nearly doubled (3,000 → ~5,200 blades, 3 shades for a lusher look), trees increased 160 → 260, houses 22 → 30, ammo crates 20 → 28 — all sitting correctly on the new terrain, with houses staying off hillsides
+Closing zone (FFA only)
+Shrinks in 4 stages after you land from the plane, each with a hold period then a shrink period, center drifting a bit each time like a real BR storm
+Purple wall + ring shows the current safe zone, white ring previews where it's shrinking to next
+Damages you (with a pulsing vignette) and bots once per second when outside it, damage increasing each stage — bots also bias their wandering to stay inside the zone so the match doesn't fizzle out
+HUD shows "Zone: Safe / Closing! / Final Zone"
+Fully inactive in Zombie Mode — resets clean on every FFA restart
+
+
