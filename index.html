@@ -86,6 +86,8 @@
   #statsTop div { margin: 2px 0; }
   #kills { color: #ffdd55; font-weight: bold; }
   #aliveCount { color: #7fffb0; font-weight: bold; }
+  #zoneText { color: #b98cff; font-weight: bold; }
+  #zoneText.danger { color: #ff6b6b; }
 
   #ammoDisplay {
     position: absolute; bottom: 210px; right: 24px; color: #fff;
@@ -106,6 +108,14 @@
     transition: opacity 0.25s ease-out;
   }
   #damageVignette.show { opacity: 1; }
+
+  #zoneVignette {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(120,60,220,0) 55%, rgba(120,60,220,0.5) 100%);
+    transition: opacity 0.4s ease-out;
+  }
+  #zoneVignette.show { opacity: 1; animation: zonePulse 1.6s ease-in-out infinite; }
+  @keyframes zonePulse { 0%,100% { opacity: 0.55; } 50% { opacity: 0.85; } }
 
   #scopeOverlay {
     position: absolute; inset: 0; display: none; pointer-events: none; z-index: 8;
@@ -359,12 +369,14 @@
 
     <div id="speedVignette"></div>
     <div id="speedLines"></div>
+    <div id="zoneVignette"></div>
 
     <div id="fpsCounter">-- FPS</div>
 
     <div id="statsTop">
       <div>Kills: <span id="kills">0</span></div>
       <div id="aliveRow">Alive: <span id="aliveCount">50</span></div>
+      <div id="zoneRow" style="display:none;">Zone: <span id="zoneText">Safe</span></div>
       <div id="waveRow" style="display:none;">Wave: <span id="waveNum">1</span></div>
       <div id="zombiesLeftRow" style="display:none;">Zombies: <span id="zombiesLeftCount">0</span></div>
       <div id="viewModeLabel">View: Third Person</div>
@@ -563,11 +575,50 @@
   scene.add(sun.target);
 
   // ---------- World ----------
-  const WORLD_SIZE = 400;
+  const WORLD_SIZE = 560;
   // Movement is clamped to a square centered on (boundCenterX, boundCenterZ).
   // FFA uses the big green map at the origin; zombie mode swaps these to the
   // separate city far away so players can't wander off its edge either.
   let boundCenterX = 0, boundCenterZ = 0, boundHalf = WORLD_SIZE/2 - 2;
+
+  // ---------- Hills ----------
+  // Gentle rolling hills scattered across the FFA map. Each hill is a smooth
+  // cosine-falloff bump (0 at its edge, full height at its center) so slopes
+  // stay walkable. terrainHeightAt() is the single source of truth for hill
+  // elevation and is used to deform the ground mesh, to sink props (grass,
+  // trees, crates) onto the slopes, and inside groundHeightAt() so player /
+  // bot gravity naturally follows the terrain.
+  const hills = [];
+  function generateHills() {
+    let placed = 0, attempts = 0;
+    const clear = WORLD_SIZE - 160; // keep hills well clear of the boundary walls
+    while (placed < 11 && attempts < 300) {
+      attempts++;
+      const x = (Math.random()-0.5) * clear;
+      const z = (Math.random()-0.5) * clear;
+      if (Math.hypot(x,z) < 30) continue; // keep the very center clear-ish
+      let tooClose = false;
+      for (const h of hills) if (Math.hypot(h.x-x, h.z-z) < 45) { tooClose = true; break; }
+      if (tooClose) continue;
+      const radius = 22 + Math.random()*24;
+      const height = 4 + Math.random()*7;
+      hills.push({ x, z, radius, height });
+      placed++;
+    }
+  }
+  generateHills();
+  function terrainHeightAt(x, z) {
+    let best = 0;
+    for (const h of hills) {
+      const d = Math.hypot(x - h.x, z - h.z);
+      if (d < h.radius) {
+        const contour = 0.5 * (1 + Math.cos(Math.PI * d / h.radius));
+        const y = contour * h.height;
+        if (y > best) best = y;
+      }
+    }
+    return best;
+  }
 
   function makeGroundTexture() {
     const size = 512;
@@ -583,7 +634,24 @@
     tex.repeat.set(60,60);
     return tex;
   }
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), new THREE.MeshStandardMaterial({ map: makeGroundTexture(), roughness: 1 }));
+  // 140 segments gives ~4 world units per vertex, plenty smooth for hills
+  // with a 22+ unit radius. Vertices are displaced with terrainHeightAt()
+  // before the plane is rotated flat, so the visual hills line up exactly
+  // with the walkable terrain height used by groundHeightAt().
+  const groundGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 140, 140);
+  {
+    const gpos = groundGeo.attributes.position;
+    for (let i = 0; i < gpos.count; i++) {
+      const lx = gpos.getX(i), ly = gpos.getY(i);
+      // PlaneGeometry is built in local XY (z=0); after rotation.x=-PI/2 below,
+      // local x stays world x, local y maps to world -z, and local z becomes
+      // world height (y). So we sample terrain at (lx, -ly).
+      gpos.setZ(i, terrainHeightAt(lx, -ly));
+    }
+    gpos.needsUpdate = true;
+    groundGeo.computeVertexNormals();
+  }
+  const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: makeGroundTexture(), roughness: 1 }));
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -630,7 +698,7 @@
   // floor height at a position (for multi-floor houses & ramps): returns highest
   // walkable surface at/under given y, so the player can climb stairs gradually
   function groundHeightAt(x, z, maxY) {
-    let best = 0;
+    let best = terrainHeightAt(x, z);
     for (const f of floors) {
       if (Math.abs(x - f.x) <= f.hw && Math.abs(z - f.z) <= f.hd) {
         if (f.y <= maxY + 0.6 && f.y > best) best = f.y;
@@ -663,7 +731,7 @@
     leaves.position.y = h + leafScale*0.6; leaves.castShadow = true;
     leaves.scale.set(leafScale, leafScale*1.2, leafScale);
     group.add(trunk, leaves);
-    group.position.set(x, 0, z);
+    group.position.set(x, terrainHeightAt(x, z), z);
     scene.add(group);
     const tree = { group, x, z, wood: 5, alive: true, radius: 0.5, h };
     trunk.userData.treeRef = tree;
@@ -681,23 +749,31 @@
   }
 
   // ---------- Grass ----------
+  // Two InstancedMeshes with slightly different blade colors/sizes so the
+  // field reads as lusher and less uniform than a single flat-colored patch.
   function scatterGrass() {
+    const GRASS_COUNT = 5200;
+    const colors = [0x4f9a4f, 0x5cae52, 0x468a42];
     const bladeGeo = new THREE.ConeGeometry(0.06, 0.5, 4);
-    const bladeMat = new THREE.MeshStandardMaterial({ color: 0x4f9a4f });
-    const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, 3000);
-    const dummy = new THREE.Object3D();
-    for (let i=0;i<3000;i++){
-      const x = (Math.random()-0.5) * (WORLD_SIZE-10);
-      const z = (Math.random()-0.5) * (WORLD_SIZE-10);
-      dummy.position.set(x, 0.22, z);
-      dummy.rotation.y = Math.random()*Math.PI;
-      const s = 0.7 + Math.random()*0.8;
-      dummy.scale.set(s,s,s);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
+    for (const color of colors) {
+      const count = Math.round(GRASS_COUNT / colors.length);
+      const bladeMat = new THREE.MeshStandardMaterial({ color });
+      const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
+      const dummy = new THREE.Object3D();
+      for (let i=0;i<count;i++){
+        const x = (Math.random()-0.5) * (WORLD_SIZE-10);
+        const z = (Math.random()-0.5) * (WORLD_SIZE-10);
+        const gy = terrainHeightAt(x, z);
+        dummy.position.set(x, gy + 0.22, z);
+        dummy.rotation.y = Math.random()*Math.PI;
+        const s = 0.7 + Math.random()*0.8;
+        dummy.scale.set(s,s,s);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.castShadow = false;
+      scene.add(mesh);
     }
-    mesh.castShadow = false;
-    scene.add(mesh);
   }
   scatterGrass();
 
@@ -852,11 +928,12 @@
   const houseSpawnPoints = [];
   function generateHouses() {
     let placed = 0, attempts = 0;
-    while (placed < 22 && attempts < 500) {
+    while (placed < 30 && attempts < 700) {
       attempts++;
       const x = (Math.random()-0.5) * (WORLD_SIZE - 60);
       const z = (Math.random()-0.5) * (WORLD_SIZE - 60);
       if (Math.hypot(x,z) < 12) continue;
+      if (terrainHeightAt(x, z) > 0.15) continue; // keep houses on flat ground, off hillsides
       let tooClose = false;
       for (const p of houseSpawnPoints) if (Math.hypot(p.x-x,p.z-z) < 20) { tooClose = true; break; }
       if (tooClose) continue;
@@ -871,7 +948,7 @@
 
   function generateTrees() {
     let attempts = 0, placed = 0;
-    while (placed < 160 && attempts < 900) {
+    while (placed < 260 && attempts < 1400) {
       attempts++;
       const x = (Math.random()-0.5) * (WORLD_SIZE - 20);
       const z = (Math.random()-0.5) * (WORLD_SIZE - 20);
@@ -895,13 +972,13 @@
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.1, 0.74), crateStripeMat);
     stripe.position.y = 0.25;
     group.add(box, stripe);
-    group.position.set(x, 0, z);
+    group.position.set(x, terrainHeightAt(x, z), z);
     scene.add(group);
     ammoCrates.push({ group, x, z, active: true, amount: 60 });
   }
   function generateAmmoCrates() {
     let placed = 0, attempts = 0;
-    while (placed < 20 && attempts < 400) {
+    while (placed < 28 && attempts < 500) {
       attempts++;
       const x = (Math.random()-0.5) * (WORLD_SIZE - 30);
       const z = (Math.random()-0.5) * (WORLD_SIZE - 30);
@@ -1281,6 +1358,7 @@
       player.pos.y = floorY;
       player.velY = 0;
       endDrop();
+      if (gameMode === 'ffa') startZone();
     }
   }
   document.addEventListener('keydown', (e) => {
@@ -1475,6 +1553,15 @@
   }
 
   function pickNewTarget(bot) {
+    // Once the FFA zone is active, bias idle wandering to stay inside the
+    // current safe circle instead of picking a fully random map point, so
+    // bots don't mindlessly wander into (and slowly die to) the storm.
+    if (zone.enabled && gameMode === 'ffa') {
+      const r = Math.random() * zone.radius * 0.85;
+      const ang = Math.random() * Math.PI * 2;
+      bot.target.set(zone.centerX + Math.cos(ang) * r, 0, zone.centerZ + Math.sin(ang) * r);
+      return;
+    }
     bot.target.set((Math.random()-0.5)*(WORLD_SIZE-40), 0, (Math.random()-0.5)*(WORLD_SIZE-40));
   }
 
@@ -1881,6 +1968,7 @@
   function beginZombieMode() {
     gameMode = 'zombie';
     matchStarted = true;
+    stopZone();
     document.getElementById('zombieIntroScreen').style.display = 'none';
     document.getElementById('startScreen').style.display = 'none';
 
@@ -2582,8 +2670,157 @@
     winEl.style.display = 'none';
     winEl.classList.remove('show');
     winEl.querySelectorAll('.confettiPiece').forEach(el => el.remove());
+    stopZone();
     respawnPlayer();
     beginPlaneIntro();
+  }
+
+  // ---------- Closing zone (FFA only) ----------
+  // Battle-royale style shrinking safe zone. Only ever enabled for FFA
+  // matches (started once the player lands from the plane, reset whenever
+  // a fresh FFA match begins). Never used in Zombie Mode.
+  const ZONE_STAGES = [
+    { holdTime: 32, shrinkTime: 26, radius: WORLD_SIZE * 0.36 },
+    { holdTime: 26, shrinkTime: 22, radius: WORLD_SIZE * 0.22 },
+    { holdTime: 20, shrinkTime: 18, radius: WORLD_SIZE * 0.11 },
+    { holdTime: 16, shrinkTime: 14, radius: 14 },
+  ];
+  const zone = {
+    enabled: false, phase: 'hold', stage: 0, timer: 0, tickTimer: 1,
+    centerX: 0, centerZ: 0, radius: WORLD_SIZE/2 - 4,
+    fromX: 0, fromZ: 0, fromRadius: 0,
+    nextX: 0, nextZ: 0, nextRadius: 0,
+  };
+  const zoneWallGeo = new THREE.CylinderGeometry(1, 1, 90, 48, 1, true);
+  const zoneWallMat = new THREE.MeshBasicMaterial({ color: 0x7c4cff, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false });
+  const zoneWall = new THREE.Mesh(zoneWallGeo, zoneWallMat);
+  zoneWall.visible = false;
+  scene.add(zoneWall);
+  const zoneRingGeo = new THREE.RingGeometry(0.965, 1, 72);
+  const zoneRingMat = new THREE.MeshBasicMaterial({ color: 0x9c6cff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+  const zoneRing = new THREE.Mesh(zoneRingGeo, zoneRingMat);
+  zoneRing.rotation.x = -Math.PI/2;
+  zoneRing.visible = false;
+  scene.add(zoneRing);
+  const nextRingGeo = new THREE.RingGeometry(0.985, 1, 72);
+  const nextRingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
+  const nextRing = new THREE.Mesh(nextRingGeo, nextRingMat);
+  nextRing.rotation.x = -Math.PI/2;
+  nextRing.visible = false;
+  scene.add(nextRing);
+
+  function pickNextZoneCenter(radius, nextRadius) {
+    const maxOffset = Math.max(0, radius - nextRadius);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * maxOffset * 0.55;
+    let x = zone.centerX + Math.cos(angle) * dist;
+    let z = zone.centerZ + Math.sin(angle) * dist;
+    const half = WORLD_SIZE/2 - 10;
+    x = Math.max(-half, Math.min(half, x));
+    z = Math.max(-half, Math.min(half, z));
+    return { x, z };
+  }
+  function computeNextZoneTarget() {
+    const stageDef = ZONE_STAGES[zone.stage];
+    const nc = pickNextZoneCenter(zone.radius, stageDef.radius);
+    zone.nextX = nc.x; zone.nextZ = nc.z; zone.nextRadius = stageDef.radius;
+  }
+  function startZone() {
+    zone.enabled = true;
+    zone.stage = 0;
+    zone.phase = 'hold';
+    zone.centerX = 0; zone.centerZ = 0;
+    zone.radius = WORLD_SIZE/2 - 4;
+    zone.tickTimer = 1;
+    computeNextZoneTarget();
+    zone.timer = ZONE_STAGES[0].holdTime;
+    document.getElementById('zoneRow').style.display = 'block';
+    document.getElementById('zoneText').textContent = 'Safe';
+    document.getElementById('zoneText').classList.remove('danger');
+    updateZoneVisual();
+  }
+  function stopZone() {
+    zone.enabled = false;
+    zoneWall.visible = false;
+    zoneRing.visible = false;
+    nextRing.visible = false;
+    document.getElementById('zoneRow').style.display = 'none';
+    document.getElementById('zoneVignette').classList.remove('show');
+  }
+  function updateZoneVisual() {
+    zoneWall.visible = true;
+    zoneRing.visible = true;
+    zoneWall.position.set(zone.centerX, 45, zone.centerZ);
+    zoneWall.scale.set(zone.radius, 1, zone.radius);
+    zoneRing.position.set(zone.centerX, 0.15, zone.centerZ);
+    zoneRing.scale.set(zone.radius, 1, zone.radius);
+    if (zone.phase === 'hold' && zone.stage < ZONE_STAGES.length) {
+      nextRing.visible = true;
+      nextRing.position.set(zone.nextX, 0.16, zone.nextZ);
+      nextRing.scale.set(zone.nextRadius, 1, zone.nextRadius);
+    } else {
+      nextRing.visible = false;
+    }
+  }
+  function zoneDamageTick() {
+    const stageDps = 4 + zone.stage * 2;
+    if (player.alive && !matchWon) {
+      const d = Math.hypot(player.pos.x - zone.centerX, player.pos.z - zone.centerZ);
+      if (d > zone.radius) damagePlayer(stageDps);
+    }
+    for (const bot of bots) {
+      if (!bot.alive || bot.falling) continue;
+      const d = Math.hypot(bot.pos.x - zone.centerX, bot.pos.z - zone.centerZ);
+      if (d > zone.radius) {
+        bot.health = Math.max(0, bot.health - stageDps);
+        updateHealthSprite(bot);
+        if (bot.health <= 0) killBot(bot, false);
+      }
+    }
+  }
+  function updateZone(dt) {
+    if (!zone.enabled || gameMode !== 'ffa') return;
+    if (zone.phase === 'hold') {
+      zone.timer -= dt;
+      if (zone.timer <= 0 && zone.stage < ZONE_STAGES.length) {
+        zone.phase = 'shrink';
+        zone.fromX = zone.centerX; zone.fromZ = zone.centerZ; zone.fromRadius = zone.radius;
+        zone.timer = ZONE_STAGES[zone.stage].shrinkTime;
+        showPickupToast('ZONE CLOSING');
+        const zt = document.getElementById('zoneText');
+        zt.textContent = 'Closing!'; zt.classList.add('danger');
+      }
+    } else if (zone.phase === 'shrink') {
+      const dur = ZONE_STAGES[zone.stage].shrinkTime;
+      zone.timer -= dt;
+      const t = dur > 0 ? Math.min(1, Math.max(0, 1 - zone.timer/dur)) : 1;
+      zone.radius = THREE.MathUtils.lerp(zone.fromRadius, zone.nextRadius, t);
+      zone.centerX = THREE.MathUtils.lerp(zone.fromX, zone.nextX, t);
+      zone.centerZ = THREE.MathUtils.lerp(zone.fromZ, zone.nextZ, t);
+      if (zone.timer <= 0) {
+        zone.radius = zone.nextRadius; zone.centerX = zone.nextX; zone.centerZ = zone.nextZ;
+        zone.stage++;
+        if (zone.stage < ZONE_STAGES.length) {
+          computeNextZoneTarget();
+          zone.phase = 'hold';
+          zone.timer = ZONE_STAGES[zone.stage].holdTime;
+          const zt = document.getElementById('zoneText');
+          zt.textContent = 'Safe'; zt.classList.remove('danger');
+        } else {
+          zone.phase = 'final';
+          const zt = document.getElementById('zoneText');
+          zt.textContent = 'Final Zone'; zt.classList.add('danger');
+        }
+      }
+    }
+    updateZoneVisual();
+    const outside = player.alive && Math.hypot(player.pos.x - zone.centerX, player.pos.z - zone.centerZ) > zone.radius;
+    document.getElementById('zoneVignette').classList.toggle('show', outside);
+    zone.tickTimer -= dt;
+    if (zone.tickTimer <= 0) {
+      zone.tickTimer = 1;
+      zoneDamageTick();
+    }
   }
 
   // ---------- Building ----------
@@ -3348,6 +3585,7 @@
         for (const zom of zombies) updateZombie(zom, dt);
       } else {
         for (const bot of bots) updateBot(bot, dt);
+        updateZone(dt);
       }
     }
     updateCamera();
