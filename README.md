@@ -58,3 +58,6 @@ Settings can now be opened while walking.
 
 **Update0.26** - *Committed by BlazingiceYT on 7 Aug 2026*
 **Added reload button**
+
+**Patch0.27** - *Commited by BlazingiceYT on 7 Aug 2026*
+**Fixed no sound on IOS**
