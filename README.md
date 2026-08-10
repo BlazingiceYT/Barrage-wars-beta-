@@ -74,4 +74,17 @@ Damages you (with a pulsing vignette) and bots once per second when outside it, 
 HUD shows "Zone: Safe / Closing! / Final Zone"
 Fully inactive in Zombie Mode — resets clean on every FFA restart
 
+**Update0.29** - *Commited by BlazingiceYT on 10 Aug 2026*
+Mini-map
+A circular radar in the top-left, centered on you, north-up
+Shows hills, houses, ammo crates (yellow), weapon pickups (colored by type), enemies (red triangles showing facing direction), and your own position (blue arrow that rotates with your facing)
+In FFA it also draws the storm zone — a purple overlay for the danger area outside the safe circle, plus a white preview ring during the "hold" phase showing where it's shrinking to next
+Automatically shows the smaller zombie-mode city area when you're in Zombie Mode instead
+Smarter bots
+Bots now start with an infinite-ammo pistol but actively seek out and pick up dropped/spawned guns (AK-47, sniper, minigun) when they spot one that's a real upgrade over what they're carrying
+Picked-up guns have real limited ammo (mag + reserve) just like yours — bots reload from reserve, and fall back to the pistol if they run completely dry
+Bots seek out ammo crates when running low on ammo for their equipped gun
+Each weapon type now has bot-appropriate damage and fire-rate (minigun sprays fast for chip damage, sniper hits hard but rarely, etc.)
+Low-health bots now hang back and try to keep distance instead of always charging in
+Idle "standing around" time between wander points cut way down, so downtime bots look busier
 
