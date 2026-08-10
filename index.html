@@ -485,6 +485,9 @@
     <h3 style="margin-top:14px;">GRAPHICS</h3>
     <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="2" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
     <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
+    <h3 id="mobileAimHeader" style="margin-top:14px;">MOBILE AIM</h3>
+    <div class="row" id="aimAssistRow"><span>Aim Assist</span><button id="aimAssistToggleBtn" class="miniToggleBtn">ON</button></div>
+    <div class="row" id="autoShootRow"><span>Auto Shoot</span><button id="autoShootToggleBtn" class="miniToggleBtn">ON</button></div>
     <button id="customizeControlsBtn">↕ Customize Control Positions</button>
     <button id="settingsClose">Close</button>
   </div>
@@ -605,6 +608,13 @@
     ? "Left=Move | Drag=Look | FIRE=Shoot | RELOAD=Reload | SCOPE=Aim | Slots=Switch | Bag=Inventory"
     : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | Ctrl/C=Crouch | R=Reload | 1/2/3=Weapon | P=View | Tab=Inventory";
   setTimeout(()=>{ document.getElementById('instructions').style.opacity = '0'; }, 8000);
+  // Aim assist / auto shoot only make sense with touch aiming - hide the
+  // settings on desktop rather than show toggles that do nothing there.
+  if (!isMobile) {
+    document.getElementById('mobileAimHeader').style.display = 'none';
+    document.getElementById('aimAssistRow').style.display = 'none';
+    document.getElementById('autoShootRow').style.display = 'none';
+  }
 
   // Buttons bound only to 'click' can miss taps when another finger is
   // already down elsewhere (e.g. holding the move joystick while walking) —
@@ -3278,7 +3288,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, renderDistLevel: 2 };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, renderDistLevel: 2, aimAssist: true, autoShoot: true };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -3354,6 +3364,18 @@
     settings.showCorpses = !settings.showCorpses;
     corpseToggleBtn.textContent = settings.showCorpses ? 'ON' : 'OFF';
     corpseToggleBtn.classList.toggle('off', !settings.showCorpses);
+  });
+  const aimAssistToggleBtn = document.getElementById('aimAssistToggleBtn');
+  bindTap(aimAssistToggleBtn, () => {
+    settings.aimAssist = !settings.aimAssist;
+    aimAssistToggleBtn.textContent = settings.aimAssist ? 'ON' : 'OFF';
+    aimAssistToggleBtn.classList.toggle('off', !settings.aimAssist);
+  });
+  const autoShootToggleBtn = document.getElementById('autoShootToggleBtn');
+  bindTap(autoShootToggleBtn, () => {
+    settings.autoShoot = !settings.autoShoot;
+    autoShootToggleBtn.textContent = settings.autoShoot ? 'ON' : 'OFF';
+    autoShootToggleBtn.classList.toggle('off', !settings.autoShoot);
   });
 
   // ---------- Customizable control positions ----------
@@ -4183,6 +4205,76 @@
     }
   }
 
+  // ---------- Mobile: aim assist + auto shoot ----------
+  // Both are conveniences for touch aiming (a thumb on glass is far less
+  // precise than a mouse) - gated to isMobile and each independently
+  // toggleable from Settings. Aim assist gently pulls the crosshair the
+  // rest of the way onto a target that's already roughly under it; auto
+  // shoot fires on its own once a target is dead-center, using the exact
+  // same primaryAction() the fire button uses (so fire-rate/ammo/reload
+  // all still apply normally - this never lets a weapon fire faster or
+  // skip reloads compared to manual firing).
+  const AIM_ASSIST_MAX_ANGLE = 0.26; // ~15 deg - target must already be roughly on screen to get pulled in
+  const AIM_ASSIST_STRENGTH = 3.2;   // higher = snappier pull toward target
+  const AUTO_SHOOT_CONE = 0.09;      // ~5 deg - how tightly centered a target must be before auto-shoot fires
+  const AIM_ASSIST_RANGE = 140;
+  let autoShootActive = false;
+
+  function angleDiff(a, b) {
+    let d = (a - b) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  function findAimAssistTarget() {
+    let best = null, bestAngle = AIM_ASSIST_MAX_ANGLE;
+    for (const e of activeEnemies()) {
+      if (!e.alive) continue;
+      const aimPoint = new THREE.Vector3(e.pos.x, e.pos.y + 1.05, e.pos.z);
+      const toTarget = aimPoint.clone().sub(aimOrigin);
+      const dist = toTarget.length();
+      if (dist < 0.5 || dist > AIM_ASSIST_RANGE) continue;
+      toTarget.normalize();
+      const angle = aimDir.angleTo(toTarget);
+      if (angle < bestAngle && hasLineOfSight(player.pos, e.pos)) {
+        bestAngle = angle;
+        best = { aimPoint, angle };
+      }
+    }
+    return best;
+  }
+
+  function updateMobileAimSystems(dt) {
+    autoShootActive = false;
+    if (!isMobile || !player.alive || drop.active || matchWon) return;
+    if (invOpen || settingsOpen || layoutEditMode) return;
+    if (!settings.aimAssist && !settings.autoShoot) return;
+
+    const found = findAimAssistTarget();
+    if (!found) return;
+
+    if (settings.aimAssist) {
+      const D = found.aimPoint.clone().sub(aimOrigin).normalize();
+      const desiredPitch = Math.asin(Math.max(-1, Math.min(1, D.y)));
+      const desiredYaw = Math.atan2(-D.x, -D.z);
+      const yawDiff = angleDiff(desiredYaw, player.yaw);
+      const pitchDiff = desiredPitch - player.pitch;
+      // Pull a bit harder while actively firing, like console aim assist
+      // "friction" - makes it easier to track a moving target once engaged.
+      const pull = Math.min(1, AIM_ASSIST_STRENGTH * dt * (firing ? 1.6 : 1));
+      player.yaw += yawDiff * pull;
+      player.pitch += pitchDiff * pull;
+      player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+    }
+
+    if (settings.autoShoot && found.angle < AUTO_SHOOT_CONE) {
+      autoShootActive = true;
+      primaryAction();
+    }
+    fireBtnEl.classList.toggle('engaged', firing || autoShootActive);
+  }
+
   let minigunSpinSpeed = 0, minigunRotation = 0;
   function updateWeaponAnim(dt) {
     if (axeSwingT > 0) {
@@ -4195,7 +4287,7 @@
       tpMeshes.axe.group.rotation.x = 0.2;
     }
     const isMinigunActive = currentMeshType() === 'minigun';
-    const targetSpeed = (isMinigunActive && firing) ? 42 : 0;
+    const targetSpeed = (isMinigunActive && (firing || autoShootActive)) ? 42 : 0;
     minigunSpinSpeed += (targetSpeed - minigunSpinSpeed) * Math.min(1, dt*4);
     minigunRotation += minigunSpinSpeed * dt;
     if (fpMeshes.minigun.barrelCluster) fpMeshes.minigun.barrelCluster.rotation.z = minigunRotation;
@@ -4274,6 +4366,7 @@
     }
     updateExplosionFX(dt);
     updateCamera();
+    updateMobileAimSystems(dt);
     updateWeaponAnim(dt);
     updateFX(dt);
     updateStreetlamps(dt);
