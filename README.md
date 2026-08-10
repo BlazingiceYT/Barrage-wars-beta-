@@ -102,3 +102,8 @@ Bound to F / the grenade button — throws with a real arc (gravity + a bit of b
 
 **Patch0.31** - *Commited by BlazingiceYT on 10 Aug 2026*
 Grenade button invisible and Mini-map wouldn't expand gliteches fixed
+
+**Update0.32** - *Commited by BlazingiceYT on 10 Aug 2026*
+Footsteps — a soft low-passed noise thud plays on a timer while you're moving on the ground, cadence changes with sprint/walk/crouch (faster when sprinting, slower and quieter when crouched), and it goes silent mid-air or in menus.
+Crouching — hold Ctrl/C (desktop) or the new crouch button next to Jump (mobile, drag it in the HUD editor like any other control). Crouching drops your speed to ~45%, disables sprint, lowers your camera/eye height, and squashes the third-person model down smoothly. Only works while grounded.
+Fall damage — tracks your peak height during a fall (whether you jumped or walked off a ledge) and compares it to landing height. Falls under ~4.2m are free; beyond that it's ~11 damage per meter over, using the same damagePlayer hit-flash/vignette/death flow as combat damage.
