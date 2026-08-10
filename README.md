@@ -100,4 +100,5 @@ Spawn in houses on their own independent 35% roll per floor (separate from the 5
 Green pickup ring, HUD counter (💣 button, max 4 held)
 Bound to F / the grenade button — throws with a real arc (gravity + a bit of bounce off terrain), fuse timer, then explodes with a radius-falloff blast (up to 95 dmg at the center, tapering to 0 at the 9-unit edge), checks line-of-sight so walls actually block the blast, damages you, bots, and zombies alike, with a light/flash FX and a synthesized boom sound plus screen shake if you're close
 
-
+**Patch0.31** - *Commited by BlazingiceYT on 10 Aug 2026*
+Grenade button invisible and Mini-map wouldn't expand gliteches fixed
