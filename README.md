@@ -88,3 +88,16 @@ Each weapon type now has bot-appropriate damage and fire-rate (minigun sprays fa
 Low-health bots now hang back and try to keep distance instead of always charging in
 Idle "standing around" time between wander points cut way down, so downtime bots look busier
 
+**Update0.30** - *Commited by BlazingiceYT on 10 Aug 2026*
+Fire/scope button overlap — while scoped, the scope button slides over to sit right on the fire button (computed from its live on-screen position, so it still respects a custom control layout), and snaps back when you unscope.
+Bots deal more damage — damage bumped ~60-70% across all bot weapons.
+Expandable minimap — tap the ⤢ button in its corner to grow it from 150px to 280px (crisp at both sizes since the canvas resolution scales too).
+Graphics settings — new GRAPHICS section in the settings panel:
+Render Distance slider (Low/Medium/High) — scales fog and camera draw distance
+Show Dead Bodies toggle — corpses now stay on the ground (tipped over) instead of vanishing, capped at 60 at once so Zombie Mode's endless waves can't quietly tank your framerate over a long session
+Grenades — full throw mechanic, not just a pickup:
+Spawn in houses on their own independent 35% roll per floor (separate from the 55% gun roll, so one doesn't crowd out the other)
+Green pickup ring, HUD counter (💣 button, max 4 held)
+Bound to F / the grenade button — throws with a real arc (gravity + a bit of bounce off terrain), fuse timer, then explodes with a radius-falloff blast (up to 95 dmg at the center, tapering to 0 at the 9-unit edge), checks line-of-sight so walls actually block the blast, damages you, bots, and zombies alike, with a light/flash FX and a synthesized boom sound plus screen shake if you're close
+
+
