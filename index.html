@@ -56,6 +56,20 @@
   #staminaBar { height: 100%; width: 100%; background: linear-gradient(90deg,#2b7fff,#5fd0ff); transition: width 0.12s ease-out; }
   #staminaBarBg.depleted #staminaBar { background: linear-gradient(90deg,#555,#888); }
 
+  #minimapWrap {
+    position: absolute; top: 112px; left: 16px; width: 150px; height: 150px;
+    border-radius: 50%; overflow: hidden; z-index: 6; pointer-events: none;
+    border: 2px solid rgba(255,255,255,0.35);
+    background: rgba(8,16,8,0.55);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+  #minimapCanvas { display: block; width: 100%; height: 100%; }
+  #minimapNorth {
+    position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 9px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    pointer-events: none;
+  }
+
   #speedVignette {
     position: absolute; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(ellipse at center, rgba(90,180,255,0) 60%, rgba(90,180,255,0.22) 100%);
@@ -365,6 +379,11 @@
         <div id="staminaLabel">Stamina</div>
         <div id="staminaBarBg"><div id="staminaBar"></div></div>
       </div>
+    </div>
+
+    <div id="minimapWrap">
+      <canvas id="minimapCanvas" width="150" height="150"></canvas>
+      <div id="minimapNorth">N</div>
     </div>
 
     <div id="speedVignette"></div>
@@ -1114,6 +1133,33 @@
   }
   const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh };
 
+  // ---------- Bot weapon handling ----------
+  // Bots start with an infinite-ammo pistol (so they're never stuck unarmed)
+  // and can pick up dropped guns just like the player, with limited mag/reserve
+  // ammo that they replenish from ammo crates. Tiers rank guns so bots only
+  // bother picking up a strict upgrade over what they're already carrying.
+  const BOT_WEAPON_TIER = { pistol: 0, ak47: 1, sniper: 2, minigun: 2 };
+  const BOT_WEAPON_COMBAT = {
+    pistol:  { dmg: [4, 9],   cooldown: [0.75, 1.3] },
+    ak47:    { dmg: [6, 12],  cooldown: [0.45, 0.8] },
+    minigun: { dmg: [3, 6],   cooldown: [0.14, 0.28] },
+    sniper:  { dmg: [28, 48], cooldown: [1.5, 2.2] },
+  };
+  function equipBotWeapon(bot, type) {
+    if (bot.gunMesh) bot.wRig.remove(bot.gunMesh);
+    const built = WEAPON_BUILDERS[type](1.15);
+    built.group.rotation.y = Math.PI/2;
+    bot.wRig.add(built.group);
+    bot.gunMesh = built.group;
+    bot.weaponType = type;
+    if (type === 'pistol') {
+      bot.ammo = { mag: Infinity, reserve: Infinity };
+    } else {
+      const def = WEAPON_DEFS[type];
+      bot.ammo = { mag: def.maxMag, reserve: def.maxMag * 2 };
+    }
+  }
+
   // simple gun model reused for AI bots (kept distinct from player's rig so bot
   // performance/visuals stay lightweight regardless of the player's loadout)
   function buildBotGunMesh(s) {
@@ -1495,9 +1541,6 @@
     const wRig = new THREE.Object3D();
     wRig.position.set(0.32, 1.15, 0.15);
     eBody.add(wRig);
-    const gun = buildBotGunMesh(1.15);
-    gun.rotation.y = Math.PI/2;
-    wRig.add(gun);
 
     const healthSprite = createHealthSprite();
     healthSprite.position.y = 2.15;
@@ -1530,7 +1573,9 @@
     scene.add(group);
 
     const bot = {
-      group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs], gunMesh: gun,
+      group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs], gunMesh: null, wRig,
+      weaponType: 'pistol', ammo: { mag: Infinity, reserve: Infinity },
+      lootCooldown: 0,
       health: 60, maxHealth: 60,
       pos: new THREE.Vector3(x,dropY,z),
       target: new THREE.Vector3(x,0,z),
@@ -1548,6 +1593,7 @@
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
+    equipBotWeapon(bot, 'pistol');
     updateHealthSprite(bot);
     bots.push(bot);
   }
@@ -2041,12 +2087,45 @@
     return { target: best, dist: bestDist };
   }
 
+  // ---------- Bot looting (guns + ammo crates) ----------
+  const LOOT_SEARCH_RADIUS = 55;
+  function findNearestLoot(pos, list, radius, filterFn) {
+    let best = null, bestDist = radius;
+    for (const item of list) {
+      if (!item.active) continue;
+      if (filterFn && !filterFn(item)) continue;
+      const d = Math.hypot(pos.x - item.x, pos.z - item.z);
+      if (d < bestDist) { bestDist = d; best = item; }
+    }
+    return best;
+  }
+  function botCollectLoot(bot, item) {
+    if (item.type) {
+      // weapon pickup
+      item.active = false;
+      item.group.visible = false;
+      item.ring.visible = false;
+      equipBotWeapon(bot, item.type);
+      setTimeout(() => { item.active = true; item.group.visible = true; item.ring.visible = true; }, 45000);
+    } else {
+      // ammo crate
+      item.active = false;
+      item.group.visible = false;
+      bot.ammo.reserve += item.amount;
+      setTimeout(() => { item.active = true; item.group.visible = true; }, 20000);
+    }
+  }
+
   function botShootAtTarget(bot, target, dist) {
     if (!hasLineOfSight(bot.pos, target.pos)) return;
-    playGunshot('ak47', bot.pos.distanceTo(player.pos));
+    if (bot.ammo.mag <= 0) return;
+    bot.ammo.mag--;
+    playGunshot(bot.weaponType, bot.pos.distanceTo(player.pos));
+    const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
     const hitChance = Math.max(0.2, 0.65 - dist/70);
     if (Math.random() < hitChance) {
-      const dmg = 4 + Math.random()*5;
+      const [dmgMin, dmgMax] = combat.dmg;
+      const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
       if (target.isPlayer) damagePlayer(dmg);
       else damageBot(target, dmg);
     }
@@ -2081,21 +2160,47 @@
       return;
     }
 
+    // Throttled loot-seeking: scan for a nearby ammo crate (if low on ammo
+    // for a non-pistol gun) or a strictly-better weapon pickup. Recomputed
+    // every ~0.5s per bot rather than every frame, since 49 bots scanning
+    // pickups/crates every tick would add up.
+    bot.lootCooldown -= dt;
+    if (bot.lootCooldown <= 0) {
+      bot.lootCooldown = 0.5 + Math.random()*0.4;
+      bot.lootTarget = null;
+      const maxMag = bot.weaponType !== 'pistol' ? WEAPON_DEFS[bot.weaponType].maxMag : 0;
+      const needsAmmo = bot.weaponType !== 'pistol' && (bot.ammo.mag + bot.ammo.reserve) < maxMag * 0.5;
+      if (needsAmmo) bot.lootTarget = findNearestLoot(bot.pos, ammoCrates, LOOT_SEARCH_RADIUS);
+      if (!bot.lootTarget) {
+        const myTier = BOT_WEAPON_TIER[bot.weaponType] || 0;
+        bot.lootTarget = findNearestLoot(bot.pos, pickups, LOOT_SEARCH_RADIUS, p => BOT_WEAPON_TIER[p.type] > myTier);
+      }
+    }
+
     const { target: combatTarget, dist: combatDist } = findNearestTarget(bot);
 
     if (combatTarget) {
       bot.target.copy(combatTarget.pos);
+    } else if (bot.lootTarget && bot.lootTarget.active) {
+      bot.target.set(bot.lootTarget.x, 0, bot.lootTarget.z);
+      if (Math.hypot(bot.pos.x - bot.lootTarget.x, bot.pos.z - bot.lootTarget.z) < 1.8) {
+        botCollectLoot(bot, bot.lootTarget);
+        bot.lootTarget = null;
+        bot.lootCooldown = 0;
+      }
     } else {
       bot.waitTimer -= dt;
       if (bot.pos.distanceTo(bot.target) < 1.5 && bot.waitTimer <= 0) {
-        bot.waitTimer = 1 + Math.random()*2;
+        bot.waitTimer = 0.3 + Math.random()*0.9;
       }
       if (bot.waitTimer <= 0) pickNewTarget(bot);
     }
 
     const dir = new THREE.Vector3().subVectors(bot.target, bot.pos); dir.y = 0;
     const dist = dir.length();
-    const desiredRange = 9;
+    // Low-health bots keep more distance and try to disengage rather than
+    // always closing in, so a hurt bot feels like it's actually retreating.
+    const desiredRange = (combatTarget && bot.health < bot.maxHealth * 0.3) ? 15 : 9;
     if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget)) {
       dir.normalize();
       bot.pos.x += dir.x * bot.speed * dt;
@@ -2129,9 +2234,26 @@
 
     bot.attackCooldown -= dt;
     if (combatTarget && bot.attackCooldown <= 0) {
-      bot.attackCooldown = 0.65 + Math.random()*0.5;
-      botShootAtTarget(bot, combatTarget, combatDist);
-      if (combatTarget.isPlayer) addShake(0.08);
+      if (bot.ammo.mag <= 0 && bot.weaponType !== 'pistol') {
+        // Out of ammo on the current gun: reload from reserve if possible,
+        // otherwise fall back to the infinite-ammo pistol.
+        if (bot.ammo.reserve > 0) {
+          const maxMag = WEAPON_DEFS[bot.weaponType].maxMag;
+          const refill = Math.min(maxMag, bot.ammo.reserve);
+          bot.ammo.reserve -= refill;
+          bot.ammo.mag = refill;
+          bot.attackCooldown = 1.1;
+        } else {
+          equipBotWeapon(bot, 'pistol');
+          bot.attackCooldown = 0.4;
+        }
+      } else {
+        const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
+        const [cMin, cMax] = combat.cooldown;
+        bot.attackCooldown = cMin + Math.random()*(cMax - cMin);
+        botShootAtTarget(bot, combatTarget, combatDist);
+        if (combatTarget.isPlayer) addShake(0.08);
+      }
     }
   }
 
@@ -2821,6 +2943,140 @@
       zone.tickTimer = 1;
       zoneDamageTick();
     }
+  }
+
+  // ---------- Mini-map ----------
+  // A small radar-style 2D canvas centered on the player, north-up. Shows
+  // terrain (hills/houses), loot (ammo crates / weapon pickups), enemies,
+  // and — in FFA — the current storm zone and its next target ring.
+  const minimapCanvas = document.getElementById('minimapCanvas');
+  const mctx = minimapCanvas.getContext('2d');
+  const MM_SIZE = 150, MM_CENTER = MM_SIZE / 2;
+  function mmProject(x, z, viewRadius) {
+    const scale = MM_CENTER / viewRadius;
+    return { x: MM_CENTER + (x) * scale, y: MM_CENTER + (z) * scale, scale };
+  }
+  function updateMinimap() {
+    if (!player) return;
+    mctx.clearRect(0, 0, MM_SIZE, MM_SIZE);
+    mctx.save();
+    mctx.beginPath();
+    mctx.arc(MM_CENTER, MM_CENTER, MM_CENTER, 0, Math.PI*2);
+    mctx.clip();
+
+    const inZombie = gameMode === 'zombie';
+    const viewRadius = inZombie ? 78 : 145;
+    const px = player.pos.x, pz = player.pos.z;
+
+    mctx.fillStyle = inZombie ? '#1c2418' : '#254a1e';
+    mctx.fillRect(0, 0, MM_SIZE, MM_SIZE);
+
+    // Hills (FFA only)
+    if (!inZombie) {
+      mctx.fillStyle = 'rgba(150,120,60,0.35)';
+      for (const h of hills) {
+        const rel = mmProject(h.x - px, h.z - pz, viewRadius);
+        const r = h.radius * rel.scale;
+        if (rel.x + r < 0 || rel.x - r > MM_SIZE || rel.y + r < 0 || rel.y - r > MM_SIZE) continue;
+        mctx.beginPath();
+        mctx.arc(rel.x, rel.y, r, 0, Math.PI*2);
+        mctx.fill();
+      }
+      // Houses
+      mctx.fillStyle = 'rgba(210,190,150,0.85)';
+      for (const hs of houseSpawnPoints) {
+        const rel = mmProject(hs.x - px, hs.z - pz, viewRadius);
+        if (rel.x < -4 || rel.x > MM_SIZE+4 || rel.y < -4 || rel.y > MM_SIZE+4) continue;
+        mctx.fillRect(rel.x-3, rel.y-3, 6, 6);
+      }
+    }
+
+    // Zone (FFA only)
+    if (!inZombie && zone.enabled) {
+      const rel = mmProject(zone.centerX - px, zone.centerZ - pz, viewRadius);
+      const r = zone.radius * rel.scale;
+      // darken everything outside the safe circle
+      mctx.fillStyle = 'rgba(140,40,180,0.28)';
+      mctx.beginPath();
+      mctx.rect(0, 0, MM_SIZE, MM_SIZE);
+      mctx.arc(rel.x, rel.y, Math.max(0, r), 0, Math.PI*2, true);
+      mctx.fill('evenodd');
+      mctx.strokeStyle = '#b98cff';
+      mctx.lineWidth = 1.5;
+      mctx.beginPath();
+      mctx.arc(rel.x, rel.y, Math.max(0, r), 0, Math.PI*2);
+      mctx.stroke();
+      if (zone.phase === 'hold') {
+        const relN = mmProject(zone.nextX - px, zone.nextZ - pz, viewRadius);
+        const rN = zone.nextRadius * rel.scale;
+        mctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        mctx.lineWidth = 1;
+        mctx.beginPath();
+        mctx.arc(relN.x, relN.y, Math.max(0, rN), 0, Math.PI*2);
+        mctx.stroke();
+      }
+    }
+
+    // Ammo crates
+    mctx.fillStyle = '#ffd23f';
+    const crateList = inZombie ? [] : ammoCrates;
+    for (const c of crateList) {
+      if (!c.active) continue;
+      const rel = mmProject(c.x - px, c.z - pz, viewRadius);
+      if (rel.x < -3 || rel.x > MM_SIZE+3 || rel.y < -3 || rel.y > MM_SIZE+3) continue;
+      mctx.beginPath();
+      mctx.arc(rel.x, rel.y, 2.4, 0, Math.PI*2);
+      mctx.fill();
+    }
+    // Weapon pickups
+    for (const p of (inZombie ? [] : pickups)) {
+      if (!p.active) continue;
+      const rel = mmProject(p.x - px, p.z - pz, viewRadius);
+      if (rel.x < -3 || rel.x > MM_SIZE+3 || rel.y < -3 || rel.y > MM_SIZE+3) continue;
+      mctx.fillStyle = p.type === 'sniper' ? '#b46bff' : (p.type === 'minigun' ? '#ff9a3d' : '#dfe4ea');
+      mctx.beginPath();
+      mctx.arc(rel.x, rel.y, 2.6, 0, Math.PI*2);
+      mctx.fill();
+    }
+
+    // Enemies (bots or zombies)
+    mctx.fillStyle = '#ff4444';
+    const enemyList = inZombie ? zombies : bots;
+    for (const e of enemyList) {
+      if (!e.alive || e.falling) continue;
+      const rel = mmProject(e.pos.x - px, e.pos.z - pz, viewRadius);
+      if (rel.x < -4 || rel.x > MM_SIZE+4 || rel.y < -4 || rel.y > MM_SIZE+4) continue;
+      const yaw = e.yaw || 0;
+      mctx.save();
+      mctx.translate(rel.x, rel.y);
+      mctx.rotate(-yaw);
+      mctx.beginPath();
+      mctx.moveTo(0, -4.2);
+      mctx.lineTo(3, 3.6);
+      mctx.lineTo(-3, 3.6);
+      mctx.closePath();
+      mctx.fill();
+      mctx.restore();
+    }
+
+    // Player marker (always centered, arrow shows facing)
+    mctx.save();
+    mctx.translate(MM_CENTER, MM_CENTER);
+    mctx.rotate(-player.yaw);
+    mctx.fillStyle = '#3fd0ff';
+    mctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    mctx.lineWidth = 1;
+    mctx.beginPath();
+    mctx.moveTo(0, -6);
+    mctx.lineTo(4.5, 5);
+    mctx.lineTo(0, 2.5);
+    mctx.lineTo(-4.5, 5);
+    mctx.closePath();
+    mctx.fill();
+    mctx.stroke();
+    mctx.restore();
+
+    mctx.restore();
   }
 
   // ---------- Building ----------
@@ -3593,6 +3849,7 @@
     updateFX(dt);
     updateStreetlamps(dt);
     updateShadowLOD();
+    if (matchStarted) updateMinimap();
 
     renderer.render(scene, camera);
   }
