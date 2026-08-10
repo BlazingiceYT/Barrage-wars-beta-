@@ -58,7 +58,12 @@
 
   #minimapWrap {
     position: absolute; top: 112px; left: 16px; width: 150px; height: 150px;
-    border-radius: 50%; overflow: hidden; z-index: 6; pointer-events: none;
+    z-index: 6; pointer-events: none;
+    transition: width 0.18s ease-out, height 0.18s ease-out;
+  }
+  #minimapWrap.expanded { width: 280px; height: 280px; }
+  #minimapMask {
+    width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
     border: 2px solid rgba(255,255,255,0.35);
     background: rgba(8,16,8,0.55);
     box-shadow: 0 4px 14px rgba(0,0,0,0.5);
@@ -69,7 +74,12 @@
     color: #fff; font-size: 9px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
     pointer-events: none;
   }
-
+  #minimapExpandBtn {
+    position: absolute; bottom: -3px; right: -3px; width: 22px; height: 22px;
+    border-radius: 50%; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.45);
+    color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; cursor: pointer; z-index: 2;
+  }
   #speedVignette {
     position: absolute; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(ellipse at center, rgba(90,180,255,0) 60%, rgba(90,180,255,0.22) 100%);
@@ -218,6 +228,16 @@
   #dropBtn:active { background: rgba(255,80,60,0.55); }
   #dropBtn.disabled { opacity: 0.35; pointer-events: none; }
 
+  #grenadeBtn {
+    position: absolute; right: 20px; bottom: 390px; width: 46px; height: 46px;
+    background: rgba(50,70,30,0.6); border: 2px solid rgba(150,200,100,0.6); color: #fff;
+    border-radius: 50%; font-size: 18px; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #grenadeBtn .count { position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold; color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px; }
+  #grenadeBtn:active { background: rgba(150,200,100,0.5); }
+  #grenadeBtn.disabled { opacity: 0.35; pointer-events: none; }
+
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -257,6 +277,8 @@
   #settingsPanel input[type=range] { width: 140px; }
   #settingsPanel .val { color: #ffdd55; font-size: 12px; min-width: 32px; text-align: right; }
   #customizeControlsBtn { display: block; width: 100%; margin: 4px 0 10px; }
+  .miniToggleBtn { padding: 4px 16px; border-radius: 14px; }
+  .miniToggleBtn.off { background: linear-gradient(180deg,#555,#333); border-color: #777; color: #aaa; }
 
   #creditsPanel {
     position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
@@ -382,8 +404,11 @@
     </div>
 
     <div id="minimapWrap">
-      <canvas id="minimapCanvas" width="150" height="150"></canvas>
-      <div id="minimapNorth">N</div>
+      <div id="minimapMask">
+        <canvas id="minimapCanvas" width="150" height="150"></canvas>
+        <div id="minimapNorth">N</div>
+      </div>
+      <button id="minimapExpandBtn">⤢</button>
     </div>
 
     <div id="speedVignette"></div>
@@ -403,12 +428,13 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:150px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | 1/2/3=Weapon | G=Drop | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | 1/2/3=Weapon | G=Drop | F=Grenade | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
     <button id="weaponSwitchBtn">SWITCH</button>
     <button id="dropBtn" class="disabled">DROP<br>(G)</button>
+    <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="reloadBtn">RELOAD</button>
@@ -448,6 +474,9 @@
     <h3>SETTINGS</h3>
     <div class="row"><span>Look Sensitivity</span><input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"><span class="val" id="sensVal">1.0</span></div>
     <div class="row"><span>Scope Sensitivity</span><input type="range" id="scopeSensSlider" min="0.1" max="1" step="0.05" value="0.35"><span class="val" id="scopeSensVal">0.35</span></div>
+    <h3 style="margin-top:14px;">GRAPHICS</h3>
+    <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="2" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
+    <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
     <button id="customizeControlsBtn">↕ Customize Control Positions</button>
     <button id="settingsClose">Close</button>
   </div>
@@ -804,7 +833,7 @@
     group.rotation.z = Math.PI/2.3;
     group.position.set(x, y + 1.0, z);
     scene.add(group);
-    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : 0xaeb4bb);
+    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'grenade' ? 0x6bff7a : 0xaeb4bb));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
@@ -829,6 +858,13 @@
     p.active = false;
     p.group.visible = false;
     p.ring.visible = false;
+    if (p.type === 'grenade') {
+      player.grenades = Math.min(player.maxGrenades, player.grenades + 1);
+      updateGrenadeUI();
+      showPickupToast('PICKED UP: GRENADE');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
     const def = WEAPON_DEFS[p.type];
     player.primaryType = p.type;
     player.ammoState.primary = { mag: def.maxMag, reserve: def.maxMag * 2 };
@@ -932,6 +968,13 @@
         const px = cx + (Math.random()-0.5) * (w - 3);
         const pz = cz + (Math.random()-0.5) * (d - 3);
         spawnWeaponPickup(type, px, baseY + 0.25, pz);
+      }
+      // separate, independent roll for a grenade pickup on the same floor —
+      // doesn't compete with (or reduce the odds of) the gun roll above
+      if (Math.random() < 0.35) {
+        const gx = cx + (Math.random()-0.5) * (w - 3);
+        const gz = cz + (Math.random()-0.5) * (d - 3);
+        spawnWeaponPickup('grenade', gx, baseY + 0.25, gz);
       }
     }
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -1116,8 +1159,7 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: new THREE.Vector3(0,0,-0.85*s), barrelCluster };
   }
-  function buildSniperMesh(s) {
-    const g = new THREE.Object3D();
+  function buildSniperMesh(s) {    const g = new THREE.Object3D();
     const scopeMat = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.4, metalness: 0.5 });
     const lensMat = new THREE.MeshStandardMaterial({ color: 0x2a6fbf, roughness: 0.2, metalness: 0.7 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.7), matMidShared); g.add(body);
@@ -1131,7 +1173,23 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: new THREE.Vector3(0,0.01,-0.85*s) };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh };
+  function buildGrenadeMesh(s) {
+    const g = new THREE.Object3D();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3f4a34, roughness: 0.75 });
+    const pinMat = new THREE.MeshStandardMaterial({ color: 0xb0b0b0, roughness: 0.4, metalness: 0.6 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), bodyMat);
+    g.add(body);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.07, 8), pinMat);
+    cap.position.set(0, 0.15, 0);
+    g.add(cap);
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.03), pinMat);
+    lever.position.set(0.07, 0.2, 0);
+    g.add(lever);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, grenade: buildGrenadeMesh };
 
   // ---------- Bot weapon handling ----------
   // Bots start with an infinite-ammo pistol (so they're never stuck unarmed)
@@ -1140,10 +1198,10 @@
   // bother picking up a strict upgrade over what they're already carrying.
   const BOT_WEAPON_TIER = { pistol: 0, ak47: 1, sniper: 2, minigun: 2 };
   const BOT_WEAPON_COMBAT = {
-    pistol:  { dmg: [4, 9],   cooldown: [0.75, 1.3] },
-    ak47:    { dmg: [6, 12],  cooldown: [0.45, 0.8] },
-    minigun: { dmg: [3, 6],   cooldown: [0.14, 0.28] },
-    sniper:  { dmg: [28, 48], cooldown: [1.5, 2.2] },
+    pistol:  { dmg: [7, 14],  cooldown: [0.7, 1.2] },
+    ak47:    { dmg: [10, 18], cooldown: [0.4, 0.75] },
+    minigun: { dmg: [5, 9],   cooldown: [0.13, 0.26] },
+    sniper:  { dmg: [42, 68], cooldown: [1.4, 2.1] },
   };
   function equipBotWeapon(bot, type) {
     if (bot.gunMesh) bot.wRig.remove(bot.gunMesh);
@@ -1437,6 +1495,8 @@
     weapon: 'pistol', // 'axe' | 'pistol' | 'primary'
     primaryType: null, // 'ak47' | 'minigun' | 'sniper' | null
     ammoState: { pistol: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
+    grenades: 0,
+    maxGrenades: 4,
     isPlayer: true,
     falling: false,
     chuteOpen: false
@@ -1611,12 +1671,32 @@
     bot.target.set((Math.random()-0.5)*(WORLD_SIZE-40), 0, (Math.random()-0.5)*(WORLD_SIZE-40));
   }
 
+  // ---------- Corpses ----------
+  // When enabled, a fallen bot/zombie stays visible (tipped over) instead of
+  // vanishing. Capped at MAX_CORPSES and oldest-first pruned so a long
+  // Zombie Mode session (waves keep spawning fresh zombies forever) can't
+  // quietly pile up hundreds of rendered corpses and tank the frame rate.
+  const MAX_CORPSES = 60;
+  const corpseList = [];
+  function markCorpse(ref) {
+    if (!settings.showCorpses) { ref.group.visible = false; return; }
+    ref.group.visible = true;
+    ref.group.rotation.x = Math.PI/2;
+    ref.group.position.y = Math.max(0, ref.pos.y - 0.15);
+    corpseList.push(ref);
+    if (corpseList.length > MAX_CORPSES) {
+      const old = corpseList.shift();
+      if (old && old.group) old.group.visible = false;
+    }
+  }
+
   function killBot(bot, killedByPlayer) {
     if (!bot.alive) return;
     bot.alive = false;
     bot.falling = false;
     if (bot.chuteGroup) bot.chuteGroup.visible = false;
-    bot.group.visible = false;
+    if (bot.healthSprite) bot.healthSprite.visible = false;
+    markCorpse(bot);
     aliveBotCount--;
     document.getElementById('aliveCount').textContent = aliveBotCount + (player.alive?1:0);
     if (killedByPlayer) {
@@ -1936,7 +2016,8 @@
   function killZombie(zom, killedByPlayer) {
     if (!zom.alive) return;
     zom.alive = false;
-    zom.group.visible = false;
+    if (zom.healthSprite) zom.healthSprite.visible = false;
+    markCorpse(zom);
     zombiesAliveCount = Math.max(0, zombiesAliveCount - 1);
     updateZombieHUD();
     if (killedByPlayer) {
@@ -2027,6 +2108,7 @@
     // shift there too.
     scene.background = new THREE.Color(0x05070b);
     scene.fog = new THREE.Fog(0x05070b, 16, 100);
+    applyRenderDistance(settings.renderDistLevel);
     hemiLight.color.setHex(0x26344a);
     hemiLight.groundColor.setHex(0x08080a);
     hemiLight.intensity = 0.4;
@@ -2512,6 +2594,10 @@
     }
     document.getElementById('dropBtn').classList.toggle('disabled', !player.primaryType);
   }
+  function updateGrenadeUI() {
+    document.getElementById('grenadeCountTag').textContent = player.grenades;
+    document.getElementById('grenadeBtn').classList.toggle('disabled', player.grenades <= 0);
+  }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
     document.getElementById('invWoodVal').textContent = player.wood;
@@ -2617,9 +2703,43 @@
     punchOsc.start(t); punchOsc.stop(t + cfg.punchDur + 0.02);
   }
 
-  // Dry-fire click when trying to shoot/reload with no ammo left
-  function playDryFire() {
+  // Low, heavy boom for grenade explosions — a lowpassed noise body plus a
+  // deep sine thump, with distance-based volume/muffle like playGunshot.
+  function playExplosionSound(distance) {
     const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    let vol = 1, muffle = 1;
+    if (distance && distance > 0) {
+      vol = Math.max(0, 1 - distance / 90);
+      if (vol <= 0.02) return;
+      muffle = Math.max(0.15, 1 - distance / 110);
+    }
+    const boomSrc = ctx.createBufferSource();
+    boomSrc.buffer = noiseBuffer;
+    boomSrc.playbackRate.value = 0.7 + Math.random()*0.1;
+    const boomFilter = ctx.createBiquadFilter();
+    boomFilter.type = 'lowpass';
+    boomFilter.frequency.value = 550 * muffle;
+    const boomGain = ctx.createGain();
+    boomGain.gain.setValueAtTime(0.9 * vol, t);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    boomSrc.connect(boomFilter); boomFilter.connect(boomGain); boomGain.connect(ctx.destination);
+    boomSrc.start(t); boomSrc.stop(t + 0.72);
+
+    const thumpOsc = ctx.createOscillator();
+    thumpOsc.type = 'sine';
+    thumpOsc.frequency.setValueAtTime(85, t);
+    thumpOsc.frequency.exponentialRampToValueAtTime(32, t + 0.35);
+    const thumpGain = ctx.createGain();
+    thumpGain.gain.setValueAtTime(0.85 * vol, t);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    thumpOsc.connect(thumpGain); thumpGain.connect(ctx.destination);
+    thumpOsc.start(t); thumpOsc.stop(t + 0.42);
+  }
+
+  // Dry-fire click when trying to shoot/reload with no ammo left
+  function playDryFire() {    const ctx = ensureAudio();
     if (!ctx) return;
     const t = ctx.currentTime;
     const o = ctx.createOscillator(); const g = ctx.createGain();
@@ -2742,6 +2862,8 @@
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
     player.weapon = 'pistol';
+    player.grenades = 0;
+    updateGrenadeUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
@@ -2784,6 +2906,11 @@
   function resetFFAMatch() {
     for (const bot of bots) scene.remove(bot.group);
     bots.length = 0;
+    corpseList.length = 0;
+    for (const g of activeGrenades) scene.remove(g.mesh);
+    activeGrenades.length = 0;
+    for (const fx of explosionFX) scene.remove(fx.mesh);
+    explosionFX.length = 0;
     aliveBotCount = BOT_COUNT;
     for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
     document.getElementById('aliveCount').textContent = aliveBotCount + 1;
@@ -2951,7 +3078,22 @@
   // and — in FFA — the current storm zone and its next target ring.
   const minimapCanvas = document.getElementById('minimapCanvas');
   const mctx = minimapCanvas.getContext('2d');
-  const MM_SIZE = 150, MM_CENTER = MM_SIZE / 2;
+  let MM_SIZE = 150, MM_CENTER = MM_SIZE / 2;
+  let minimapExpanded = false;
+  function setMinimapExpanded(v) {
+    minimapExpanded = v;
+    const wrap = document.getElementById('minimapWrap');
+    wrap.classList.toggle('expanded', v);
+    const size = v ? 280 : 150;
+    minimapCanvas.width = size;
+    minimapCanvas.height = size;
+    MM_SIZE = size; MM_CENTER = size / 2;
+    document.getElementById('minimapExpandBtn').textContent = v ? '⤡' : '⤢';
+  }
+  bindTap(document.getElementById('minimapExpandBtn'), (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setMinimapExpanded(!minimapExpanded);
+  });
   function mmProject(x, z, viewRadius) {
     const scale = MM_CENTER / viewRadius;
     return { x: MM_CENTER + (x) * scale, y: MM_CENTER + (z) * scale, scale };
@@ -3105,7 +3247,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35 };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, renderDistLevel: 2 };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -3154,12 +3296,41 @@
     document.getElementById('scopeSensVal').textContent = settings.scopeSensMult.toFixed(2);
   });
 
+  // ---------- Graphics settings ----------
+  const RENDER_DIST_LABELS = ['Low', 'Medium', 'High'];
+  const RENDER_DIST_FOG_MULT = [0.55, 0.78, 1.0];
+  const RENDER_DIST_CAM_FAR = [380, 480, 600];
+  const FOG_BASE = { ffa: { near: 60, far: 280 }, zombie: { near: 16, far: 100 } };
+  function applyRenderDistance(level) {
+    settings.renderDistLevel = level;
+    const base = gameMode === 'zombie' ? FOG_BASE.zombie : FOG_BASE.ffa;
+    const mult = RENDER_DIST_FOG_MULT[level];
+    if (scene.fog) {
+      scene.fog.near = base.near * mult;
+      scene.fog.far = base.far * mult;
+    }
+    camera.far = RENDER_DIST_CAM_FAR[level];
+    camera.updateProjectionMatrix();
+  }
+  const renderDistSlider = document.getElementById('renderDistSlider');
+  renderDistSlider.addEventListener('input', () => {
+    const level = parseInt(renderDistSlider.value, 10);
+    document.getElementById('renderDistVal').textContent = RENDER_DIST_LABELS[level];
+    applyRenderDistance(level);
+  });
+  const corpseToggleBtn = document.getElementById('corpseToggleBtn');
+  bindTap(corpseToggleBtn, () => {
+    settings.showCorpses = !settings.showCorpses;
+    corpseToggleBtn.textContent = settings.showCorpses ? 'ON' : 'OFF';
+    corpseToggleBtn.classList.toggle('off', !settings.showCorpses);
+  });
+
   // ---------- Customizable control positions ----------
   // Every draggable control is repositioned by converting its rendered
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -3169,6 +3340,7 @@
     buildBtn: 'BUILD WALL',
     weaponSwitchBtn: 'SWITCH WEAPON',
     dropBtn: 'DROP WEAPON',
+    grenadeBtn: 'THROW GRENADE',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -3295,6 +3467,41 @@
     const def = currentWeaponDef();
     return !!(def && def.scope);
   }
+  // While scoped, the scope button slides over to sit right on the fire
+  // button so a thumb doesn't have to travel between "keep firing" and
+  // "toggle scope". Position is computed live from the fire button's actual
+  // on-screen rect (not hardcoded), so it still works with a custom control
+  // layout, then restored exactly on unscope.
+  function overlapScopeWithFire() {
+    const fireEl = document.getElementById('fireBtn');
+    const scopeEl = document.getElementById('scopeBtn');
+    if (!fireEl || !scopeEl) return;
+    if (!scopeEl.dataset.overlapSaved) {
+      scopeEl.dataset.overlapSaved = '1';
+      scopeEl._origLeft = scopeEl.style.left;
+      scopeEl._origTop = scopeEl.style.top;
+      scopeEl._origRight = scopeEl.style.right;
+      scopeEl._origBottom = scopeEl.style.bottom;
+      scopeEl._origTransform = scopeEl.style.transform;
+    }
+    const fireRect = fireEl.getBoundingClientRect();
+    const w = scopeEl.offsetWidth || 60, h = scopeEl.offsetHeight || 60;
+    scopeEl.style.left = (fireRect.left + fireRect.width - w*0.6) + 'px';
+    scopeEl.style.top = (fireRect.top - h*0.35) + 'px';
+    scopeEl.style.right = 'auto';
+    scopeEl.style.bottom = 'auto';
+    scopeEl.style.transform = 'none';
+  }
+  function restoreScopePosition() {
+    const scopeEl = document.getElementById('scopeBtn');
+    if (!scopeEl || !scopeEl.dataset.overlapSaved) return;
+    scopeEl.style.left = scopeEl._origLeft;
+    scopeEl.style.top = scopeEl._origTop;
+    scopeEl.style.right = scopeEl._origRight;
+    scopeEl.style.bottom = scopeEl._origBottom;
+    scopeEl.style.transform = scopeEl._origTransform;
+    delete scopeEl.dataset.overlapSaved;
+  }
   function startScope() {
     if (!canScope() || drop.active || invOpen || layoutEditMode || matchWon) return;
     isScoped = true;
@@ -3303,6 +3510,7 @@
     document.getElementById('scopeOverlay').style.display = 'block';
     document.getElementById('scopeBtn').classList.add('active');
     document.getElementById('crosshair').style.display = 'none';
+    if (!layoutEditMode) overlapScopeWithFire();
   }
   function endScope() {
     if (!isScoped) return;
@@ -3312,6 +3520,7 @@
     document.getElementById('scopeOverlay').style.display = 'none';
     document.getElementById('scopeBtn').classList.remove('active');
     document.getElementById('crosshair').style.display = 'block';
+    restoreScopePosition();
   }
   function toggleScope() {
     if (isScoped) endScope(); else startScope();
@@ -3357,6 +3566,112 @@
     showPickupToast('DROPPED: ' + def.name);
   }
 
+  // ---------- Grenades ----------
+  // A separate pickup pool from guns (own spawn roll in houses). Player only
+  // for now — bots' loot AI already skips them since BOT_WEAPON_TIER has no
+  // 'grenade' entry, so the tier comparison used for gun-seeking just fails.
+  const activeGrenades = [];
+  const explosionFX = [];
+  function throwGrenade() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.grenades <= 0) return;
+    player.grenades--;
+    updateGrenadeUI();
+    const dir3 = new THREE.Vector3();
+    camera.getWorldDirection(dir3);
+    const throwSpeed = 19;
+    const vel = dir3.clone().multiplyScalar(throwSpeed);
+    vel.y += 6.5; // extra upward toss so it arcs instead of firing flat
+    const startPos = new THREE.Vector3(player.pos.x, player.pos.y + 1.5, player.pos.z);
+    startPos.addScaledVector(dir3, 0.7);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshStandardMaterial({ color: 0x3f4a34, roughness: 0.7 }));
+    mesh.castShadow = true;
+    mesh.position.copy(startPos);
+    scene.add(mesh);
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.7 });
+  }
+  function updateGrenades(dt) {
+    for (let i = activeGrenades.length - 1; i >= 0; i--) {
+      const g = activeGrenades[i];
+      g.vel.y -= 24 * dt;
+      g.pos.addScaledVector(g.vel, dt);
+      const floorY = groundHeightAt(g.pos.x, g.pos.z, g.pos.y + 2) + 0.14;
+      if (g.pos.y <= floorY) {
+        g.pos.y = floorY;
+        g.vel.y = Math.abs(g.vel.y) * 0.35; // small bounce off the ground
+        g.vel.x *= 0.65; g.vel.z *= 0.65;
+      }
+      g.mesh.position.copy(g.pos);
+      g.mesh.rotation.x += dt * 6;
+      g.fuse -= dt;
+      if (g.fuse <= 0) {
+        explodeGrenade(g.pos);
+        scene.remove(g.mesh);
+        activeGrenades.splice(i, 1);
+      }
+    }
+  }
+  function spawnExplosionFX(pos) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9 }));
+    mesh.position.copy(pos);
+    scene.add(mesh);
+    explosionFX.push({ mesh, life: 0, maxLife: 0.4, isLight: false });
+    const light = new THREE.PointLight(0xffb347, 3.4, 24, 2);
+    light.position.copy(pos);
+    scene.add(light);
+    explosionFX.push({ mesh: light, life: 0, maxLife: 0.3, isLight: true });
+  }
+  function updateExplosionFX(dt) {
+    for (let i = explosionFX.length - 1; i >= 0; i--) {
+      const fx = explosionFX[i];
+      fx.life += dt;
+      const t = fx.life / fx.maxLife;
+      if (fx.isLight) {
+        fx.mesh.intensity = Math.max(0, 3.4 * (1 - t));
+      } else {
+        const s = 1 + t * 9;
+        fx.mesh.scale.set(s, s, s);
+        fx.mesh.material.opacity = Math.max(0, 0.9 * (1 - t));
+      }
+      if (t >= 1) { scene.remove(fx.mesh); explosionFX.splice(i, 1); }
+    }
+  }
+  function explodeGrenade(pos) {
+    spawnExplosionFX(pos);
+    const camDist = pos.distanceTo(camera.position);
+    playExplosionSound(camDist);
+    if (camDist < 45) addShake(0.55);
+    const RADIUS = 9, MAXDMG = 95;
+    if (player.alive) {
+      const d = pos.distanceTo(player.pos);
+      if (d < RADIUS && hasLineOfSight(pos, player.pos)) {
+        damagePlayer(MAXDMG * (1 - d / RADIUS));
+      }
+    }
+    for (const bot of bots) {
+      if (!bot.alive || bot.falling) continue;
+      const d = pos.distanceTo(bot.pos);
+      if (d < RADIUS && hasLineOfSight(pos, bot.pos)) {
+        const dmg = MAXDMG * (1 - d / RADIUS);
+        bot.health -= dmg;
+        updateHealthSprite(bot);
+        if (bot.health <= 0) killEnemy(bot, true);
+      }
+    }
+    if (gameMode === 'zombie') {
+      for (const zom of zombies) {
+        if (!zom.alive) continue;
+        const d = pos.distanceTo(zom.pos);
+        if (d < RADIUS && hasLineOfSight(pos, zom.pos)) {
+          const dmg = MAXDMG * (1 - d / RADIUS);
+          zom.health -= dmg;
+          updateHealthSprite(zom);
+          if (zom.health <= 0) killEnemy(zom, true);
+        }
+      }
+    }
+  }
+  bindTap(document.getElementById('grenadeBtn'), throwGrenade);
+
   // ---------- View mode ----------
   let viewMode = 'third';
   function toggleView() {
@@ -3377,6 +3692,7 @@
     if (e.code === 'Digit3') setWeapon('primary');
     if (e.code === 'KeyB') tryBuildWall();
     if (e.code === 'KeyG') dropWeapon();
+    if (e.code === 'KeyF') throwGrenade();
     if (e.code === 'Tab') { toggleInventory(); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -3837,6 +4153,7 @@
     if (!drop.active && matchStarted) {
       updateAmmoCratePickups();
       updatePickups(dt);
+      updateGrenades(dt);
       if (gameMode === 'zombie') {
         for (const zom of zombies) updateZombie(zom, dt);
       } else {
@@ -3844,6 +4161,7 @@
         updateZone(dt);
       }
     }
+    updateExplosionFX(dt);
     updateCamera();
     updateWeaponAnim(dt);
     updateFX(dt);
@@ -3853,7 +4171,7 @@
 
     renderer.render(scene, camera);
   }
-  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI();
+  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI();
   animate();
 
 })();
