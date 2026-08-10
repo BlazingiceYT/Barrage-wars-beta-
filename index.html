@@ -175,6 +175,13 @@
   }
   #jumpBtn:active { background: rgba(255,255,255,0.3); }
 
+  #crouchBtn {
+    position: absolute; left: 90px; bottom: 20px; width: 52px; height: 52px;
+    border-radius: 50%; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.35);
+    color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; pointer-events: auto;
+  }
+  #crouchBtn.crouchActive, #crouchBtn:active { background: rgba(120,200,255,0.35); }
+
   #fireBtn {
     position: absolute; right: 12px; bottom: 112px; width: 120px; height: 120px;
     border-radius: 50%; background: transparent; border: none; padding: 0;
@@ -428,7 +435,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:150px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | 1/2/3=Weapon | G=Drop | F=Grenade | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -448,6 +455,7 @@
     <div id="moveTouchZone"></div>
     <div id="joystickZone"><div id="joystickBase"><div id="joystickKnob"></div></div></div>
     <div id="jumpBtn">⤴</div>
+    <div id="crouchBtn">⤓</div>
 
     <div id="equipBar">
       <div class="equipSlot" id="slotAxe" data-slot="axe"><span class="key">1</span>AXE</div>
@@ -500,6 +508,7 @@
       <div><b>1/2/3</b><br>Axe/Pistol/Primary</div>
       <div><b>P</b><br>Toggle View</div>
       <div><b>Space</b><br>Jump</div>
+      <div><b>Ctrl / C</b><br>Crouch</div>
       <div><b>R</b><br>Reload</div>
       <div><b>G</b><br>Drop Weapon</div>
       <div><b>Tab</b><br>Inventory</div>
@@ -594,7 +603,7 @@
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1000);
   document.getElementById('instructions').textContent = isMobile
     ? "Left=Move | Drag=Look | FIRE=Shoot | RELOAD=Reload | SCOPE=Aim | Slots=Switch | Bag=Inventory"
-    : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | R=Reload | 1/2/3=Weapon | P=View | Tab=Inventory";
+    : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | Ctrl/C=Crouch | R=Reload | 1/2/3=Weapon | P=View | Tab=Inventory";
   setTimeout(()=>{ document.getElementById('instructions').style.opacity = '0'; }, 8000);
 
   // Buttons bound only to 'click' can miss taps when another finger is
@@ -1486,6 +1495,7 @@
     stamina: 100,
     maxStamina: 100,
     sprinting: false,
+    crouching: false,
     health: 100,
     maxHealth: 100,
     isReloading: false,
@@ -2784,6 +2794,27 @@
     } catch(e) {}
   }
 
+  // Soft filtered-noise thud for footsteps. distance/muffle logic mirrors
+  // playGunshot but much quieter and lower, so it reads as a footstep, not
+  // a gunshot echo. loud=false lightens it further for crouched steps.
+  function playFootstep(loud) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    src.playbackRate.value = 0.6 + Math.random() * 0.35;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 260 + Math.random() * 160;
+    const g = ctx.createGain();
+    const vol = (loud ? 0.11 : 0.055) + Math.random() * 0.02;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    src.connect(filter); filter.connect(g); g.connect(ctx.destination);
+    src.start(t); src.stop(t + 0.1);
+  }
+
   function flashFire() {
     const fireBtn = document.getElementById('fireBtn');
     const sflash = document.getElementById('screenFlash');
@@ -3330,10 +3361,11 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
+    crouchBtn: 'CROUCH',
     fireBtn: 'FIRE',
     scopeBtn: 'SCOPE',
     reloadBtn: 'RELOAD',
@@ -3682,6 +3714,7 @@
 
   // ---------- Keyboard ----------
   const keys = {};
+  let mobileCrouchHeld = false; // set by the touch/mouse crouch button below
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code === 'KeyP') toggleView();
@@ -3823,6 +3856,19 @@
   document.getElementById('jumpBtn').addEventListener('touchstart', (e) => { e.preventDefault(); tryJump(); }, {passive:false});
   document.getElementById('jumpBtn').addEventListener('mousedown', tryJump);
 
+  // Crouch button: hold to crouch, like a hold-down modifier rather than a
+  // one-shot action button (mirrors how ShiftLeft/sprint works on desktop).
+  const crouchBtnEl = document.getElementById('crouchBtn');
+  function setMobileCrouch(on) {
+    mobileCrouchHeld = on;
+    crouchBtnEl.classList.toggle('crouchActive', on);
+  }
+  crouchBtnEl.addEventListener('touchstart', (e) => { e.preventDefault(); setMobileCrouch(true); }, {passive:false});
+  crouchBtnEl.addEventListener('touchend', (e) => { e.preventDefault(); setMobileCrouch(false); }, {passive:false});
+  crouchBtnEl.addEventListener('touchcancel', (e) => { setMobileCrouch(false); });
+  crouchBtnEl.addEventListener('mousedown', () => setMobileCrouch(true));
+  window.addEventListener('mouseup', () => setMobileCrouch(false));
+
   const fireBtnEl = document.getElementById('fireBtn');
   // Press-and-hold firing, unified for mouse and touch via Pointer Events.
   // (Previously touch used a toggle — tap to start, tap again to stop — which
@@ -3945,6 +3991,20 @@
   function getForward(yaw) { return new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw); }
   function getRight(yaw) { return new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw); }
 
+  // ---------- Footsteps ----------
+  let footstepTimer = 0;
+
+  // ---------- Fall damage ----------
+  // Tracks the highest point reached during the current airborne period, so
+  // a fall's damage is based on actual drop distance (peak -> landing) and
+  // not just how long gravity has been acting.
+  let fallPeakY = null;
+  const SAFE_FALL_DISTANCE = 4.2;   // meters of fall before any damage applies
+  const FALL_DAMAGE_PER_UNIT = 11;  // damage per meter fallen beyond the safe distance
+
+  // ---------- Crouch visual (third-person model squash) ----------
+  let crouchVisualScale = 1;
+
   function updateMovement(dt) {
     if (!player.alive || matchWon) return;
     if (drop.active) {
@@ -3986,7 +4046,12 @@
     const len = Math.hypot(inputX, inputZ);
     if (len > 1) { inputX /= len; inputZ /= len; }
 
-    const wantsSprint = !!keys['ShiftLeft'] && len > 0.001 && !isScoped;
+    // Crouching disables sprint (same intent as real shooters: you can't
+    // sprint while hunkered down) and only applies on the ground - crouch
+    // input mid-air just does nothing rather than fighting the fall.
+    player.crouching = !!(keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC'] || mobileCrouchHeld) && player.grounded;
+
+    const wantsSprint = !!keys['ShiftLeft'] && len > 0.001 && !isScoped && !player.crouching;
     if (wantsSprint && player.stamina > 0) {
       player.sprinting = true;
       player.stamina = Math.max(0, player.stamina - 28 * dt);
@@ -3994,7 +4059,7 @@
       player.sprinting = false;
       player.stamina = Math.min(player.maxStamina, player.stamina + 16 * dt);
     }
-    const speedMult = player.sprinting ? player.sprintMult : 1;
+    const speedMult = player.crouching ? 0.45 : (player.sprinting ? player.sprintMult : 1);
     updateStaminaUI();
     updateSpeedEffects(dt);
 
@@ -4010,12 +4075,54 @@
       playerGroup.rotation.y = player.yaw;
     }
 
+    // Footsteps: timer-based, cadence depends on sprint/crouch/walk, only
+    // while actually moving on the ground (not mid-air or in a menu).
+    if (len > 0.001 && player.grounded && !invOpen && !layoutEditMode) {
+      footstepTimer -= dt;
+      if (footstepTimer <= 0) {
+        playFootstep(player.sprinting);
+        footstepTimer = player.crouching ? 0.62 : (player.sprinting ? 0.27 : 0.42);
+      }
+    } else {
+      footstepTimer = 0;
+    }
+
+    // Smoothly squash the third-person model toward a crouch pose. The
+    // model's origin sits at the feet (torso/head are built upward from
+    // local y=0), so scaling y alone keeps feet planted with no offset.
+    const targetCrouchScale = player.crouching ? 0.62 : 1;
+    crouchVisualScale += (targetCrouchScale - crouchVisualScale) * Math.min(1, dt * 10);
+    playerGroup.scale.y = crouchVisualScale;
+
     resolveCollisions(player.pos, player.radius, player.pos.y);
 
+    const wasGrounded = player.grounded;
     const floorY = groundHeightAt(player.pos.x, player.pos.z, player.pos.y + 0.5);
     player.velY -= 20 * dt;
     player.pos.y += player.velY * dt;
-    if (player.pos.y <= floorY) { player.pos.y = floorY; player.velY = 0; player.grounded = true; }
+
+    // Track the peak height reached during this airborne period so landing
+    // damage is based on real fall distance rather than time spent falling.
+    if (!wasGrounded) {
+      if (fallPeakY === null || player.pos.y > fallPeakY) fallPeakY = player.pos.y;
+    } else {
+      fallPeakY = player.pos.y;
+    }
+
+    if (player.pos.y <= floorY) {
+      player.pos.y = floorY;
+      player.velY = 0;
+      player.grounded = true;
+      if (!wasGrounded && fallPeakY !== null) {
+        const fallDist = fallPeakY - floorY;
+        if (fallDist > SAFE_FALL_DISTANCE) {
+          damagePlayer(Math.round((fallDist - SAFE_FALL_DISTANCE) * FALL_DAMAGE_PER_UNIT));
+        }
+        fallPeakY = null;
+      }
+    } else {
+      player.grounded = false;
+    }
 
     playerGroup.position.set(player.pos.x, player.pos.y, player.pos.z);
 
@@ -4031,12 +4138,16 @@
   const camDir = new THREE.Vector3();
   function updateCamera() {
     playerGroup.visible = (viewMode === 'third');
+    // Eye height (and the third-person pivot) follow the same crouch lerp
+    // used for the model's visual squash, so the camera settles in step
+    // with the pose instead of snapping.
+    const crouchEyeMult = 0.55 + 0.45 * crouchVisualScale;
     if (viewMode === 'first') {
-      camera.position.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
+      camera.position.set(player.pos.x, player.pos.y + player.eyeHeight * crouchEyeMult, player.pos.z);
       camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
     } else {
       const distance = 6.5;
-      const targetY = player.pos.y + 1.5;
+      const targetY = player.pos.y + 1.5 * crouchEyeMult;
       const offX = Math.sin(player.yaw) * Math.cos(player.pitch) * distance;
       const offZ = Math.cos(player.yaw) * Math.cos(player.pitch) * distance;
       const offY = -Math.sin(player.pitch) * distance * 0.6 + 1.2;
