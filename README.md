@@ -116,3 +116,6 @@ Added a hit-confirm sound alongside the existing hitmarker — a quick two-tick 
 
 **Update0.35** - *Commited by BlazingiceYT on 11 Aug 2026*
 Added runner tank boss zombie
+
+**Update0.36** - *Commited by BlazingiceYT on 11 Aug 2026*
+Added key rebinding for keyboard
