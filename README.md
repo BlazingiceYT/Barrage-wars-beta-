@@ -113,3 +113,6 @@ Added auto shoot and aim assist for mobile
 
 **Update0.34** - *Commited by BlazingiceYT on 11 Aug 2026*
 Added a hit-confirm sound alongside the existing hitmarker — a quick two-tick chirp that plays the moment a bullet or axe swing actually lands on a bot or zombie. Headshots layer a brighter ringing tone on top so they're audibly distinct from a body shot.
+
+**Update0.35** - *Commited by BlazingiceYT on 11 Aug 2026*
+Added runner tank boss zombie
