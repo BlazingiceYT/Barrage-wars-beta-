@@ -525,6 +525,7 @@
     <h3 style="margin-top:14px;">GRAPHICS</h3>
     <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="2" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
     <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
+    <div class="row"><span>Shadows</span><button id="shadowToggleBtn" class="miniToggleBtn">ON</button></div>
     <h3 id="mobileAimHeader" style="margin-top:14px;">MOBILE AIM</h3>
     <div class="row" id="aimAssistRow"><span>Aim Assist</span><button id="aimAssistToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row" id="autoShootRow"><span>Auto Shoot</span><button id="autoShootToggleBtn" class="miniToggleBtn">ON</button></div>
@@ -951,12 +952,103 @@
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x8a3f33, roughness: 0.8 });
   const floorMat = new THREE.MeshStandardMaterial({ color: 0xa9906a, roughness: 0.9 });
 
+  // ---------- Breakable windows ----------
+  // Each window sits in an actual gap left in the wall geometry (the wall is
+  // built as 4 pieces framing a hole, like a picture frame, instead of one
+  // solid box) — so an intact window's glass pane is genuinely the only
+  // thing filling that gap, and once it's broken the gap is really open:
+  // bullets (and line of sight / the camera) pass straight through it
+  // instead of stopping on a wall that was only pretending to have a hole.
+  const HOUSE_WALL_THICKNESS = 0.25;
+  const windowFrameMat = new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 0.8 });
+  const windowGlassMat = new THREE.MeshStandardMaterial({
+    color: 0xbfe8f2, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.45
+  });
+  const windows = [];
+  const windowMeshes = [];
+  // Builds just the glass pane + cross mullions that fill a window gap —
+  // the wall pieces surrounding the gap already form the visual "frame",
+  // so this only needs to cover what sits inside the opening itself.
+  function buildWindow(width, height, wt) {
+    const group = new THREE.Object3D();
+    const glassW = width - 0.1, glassH = height - 0.1;
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(glassW, glassH, 0.04), windowGlassMat);
+    group.add(glass);
+    const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, glassH, wt + 0.02), windowFrameMat);
+    group.add(vBar);
+    const hBar = new THREE.Mesh(new THREE.BoxGeometry(glassW, 0.06, wt + 0.02), windowFrameMat);
+    group.add(hBar);
+    const ref = { group, glass, broken: false };
+    glass.userData.windowRef = ref;
+    windows.push(ref);
+    windowMeshes.push(glass);
+    return ref;
+  }
+  // Shattering hides the glass pane (leaving the mullions behind for that
+  // "broken window" look) and pops a handful of shard fragments that tumble
+  // and fade out. Since the glass was the only thing filling the wall's
+  // gap, hiding it is all it takes for the opening to really be open.
+  function breakWindow(ref) {
+    if (ref.broken) return;
+    ref.broken = true;
+    ref.glass.visible = false;
+    const worldPos = new THREE.Vector3();
+    ref.glass.getWorldPosition(worldPos);
+    const shardCount = 5 + Math.floor(Math.random()*4);
+    for (let i=0;i<shardCount;i++) {
+      const shard = new THREE.Mesh(new THREE.BoxGeometry(0.06+Math.random()*0.08, 0.06+Math.random()*0.08, 0.02), windowGlassMat.clone());
+      shard.position.copy(worldPos);
+      shard.position.x += (Math.random()-0.5)*0.3;
+      shard.position.y += (Math.random()-0.5)*0.3;
+      shard.position.z += (Math.random()-0.5)*0.3;
+      shard.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      scene.add(shard);
+      const vel = { x: (Math.random()-0.5)*2.5, y: Math.random()*1.5, z: (Math.random()-0.5)*2.5 };
+      const start = performance.now();
+      (function animateShard() {
+        const t = (performance.now() - start) / 1000;
+        if (t > 1.1) { scene.remove(shard); return; }
+        vel.y -= 9 * 0.016;
+        shard.position.x += vel.x * 0.016;
+        shard.position.y += vel.y * 0.016;
+        shard.position.z += vel.z * 0.016;
+        shard.material.opacity = Math.max(0, 0.45 * (1 - t/1.1));
+        requestAnimationFrame(animateShard);
+      })();
+    }
+    // glass grows back after a while, same idea as trees respawning, so a
+    // long match doesn't end with every window in the world broken
+    setTimeout(() => { ref.broken = false; ref.glass.visible = true; }, 20000);
+  }
+  // Builds a wall as 4 pieces framing a rectangular gap instead of one solid
+  // box, so a window placed in that gap is the only thing actually filling
+  // it. axis 'x' is for walls whose long dimension runs along local x (e.g.
+  // the back wall); axis 'z' is for walls running along local z (the side
+  // walls) — same idea, just built with the box dimensions swapped.
+  function buildWallWithGap(axis, wallLen, wallH, wt, gapLen, gapH, gapY) {
+    const sideLen = wallLen/2 - gapLen/2;
+    const bottomH = Math.max(0.05, gapY - gapH/2);
+    const topH = Math.max(0.05, wallH - (gapY + gapH/2));
+    const pieces = [];
+    function mk(size, height, longCenter, yCenter) {
+      const geo = axis === 'x' ? new THREE.BoxGeometry(size, height, wt) : new THREE.BoxGeometry(wt, height, size);
+      const mesh = new THREE.Mesh(geo, wallMat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      pieces.push({ mesh, longCenter, yCenter });
+    }
+    mk(sideLen, wallH, -(wallLen/2 - sideLen/2), wallH/2); // near side piece
+    mk(sideLen, wallH, (wallLen/2 - sideLen/2), wallH/2);  // far side piece
+    mk(gapLen, bottomH, 0, bottomH/2);                     // under the window
+    mk(gapLen, topH, 0, gapY + gapH/2 + topH/2);           // above the window
+    return pieces;
+  }
+
   function makeHouse(cx, cz, w, d, numFloors, rotY) {
     const group = new THREE.Object3D();
     group.position.set(cx, 0, cz);
     group.rotation.y = rotY || 0;
     const floorH = 3.2;
-    const wt = 0.25;
+    const wt = HOUSE_WALL_THICKNESS;
     const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
 
     for (let fl = 0; fl < numFloors; fl++) {
@@ -974,22 +1066,52 @@
       const doorWidth = 3.2;
       const sideW = (w - doorWidth)/2;
 
-      const back = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, wt), wallMat);
-      back.position.set(0, baseY + wallH/2, -d/2); back.castShadow = true; back.receiveShadow = true;
-      group.add(back);
-      const left = new THREE.Mesh(new THREE.BoxGeometry(wt, wallH, d), wallMat);
-      left.position.set(-w/2, baseY + wallH/2, 0); left.castShadow = true; left.receiveShadow = true;
-      group.add(left);
-      const right = new THREE.Mesh(new THREE.BoxGeometry(wt, wallH, d), wallMat);
-      right.position.set(w/2, baseY + wallH/2, 0); right.castShadow = true; right.receiveShadow = true;
-      group.add(right);
+      // back & side walls are each built with a real gap left for their
+      // window, so an intact window's glass is the only thing filling it —
+      // once broken, the opening is genuinely open.
+      const winH = 1.7, winY = wallH*0.58;
+      const backWinLen = Math.min(2.4, w*0.3);
+      const backPieces = buildWallWithGap('x', w, wallH, wt, backWinLen, winH, winY);
+      for (const p of backPieces) {
+        p.mesh.position.set(p.longCenter, baseY + p.yCenter, -d/2);
+        group.add(p.mesh);
+        collisionMeshes.push(p.mesh);
+      }
+      const sideWinLen = Math.min(2.4, d*0.3);
+      const leftPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
+      for (const p of leftPieces) {
+        p.mesh.position.set(-w/2, baseY + p.yCenter, p.longCenter);
+        group.add(p.mesh);
+        collisionMeshes.push(p.mesh);
+      }
+      const rightPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
+      for (const p of rightPieces) {
+        p.mesh.position.set(w/2, baseY + p.yCenter, p.longCenter);
+        group.add(p.mesh);
+        collisionMeshes.push(p.mesh);
+      }
       const frontL = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
       frontL.position.set(-(doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontL.castShadow = true; frontL.receiveShadow = true;
       group.add(frontL);
       const frontR = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
       frontR.position.set((doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontR.castShadow = true; frontR.receiveShadow = true;
       group.add(frontR);
-      collisionMeshes.push(back, left, right, frontL, frontR);
+      collisionMeshes.push(frontL, frontR);
+
+      // the actual window panes that fill each wall's gap
+      const backWin = buildWindow(backWinLen, winH, wt);
+      backWin.group.position.set(0, baseY + winY, -d/2);
+      group.add(backWin.group);
+
+      const leftWin = buildWindow(sideWinLen, winH, wt);
+      leftWin.group.rotation.y = Math.PI/2;
+      leftWin.group.position.set(-w/2, baseY + winY, 0);
+      group.add(leftWin.group);
+
+      const rightWin = buildWindow(sideWinLen, winH, wt);
+      rightWin.group.rotation.y = Math.PI/2;
+      rightWin.group.position.set(w/2, baseY + winY, 0);
+      group.add(rightWin.group);
 
       function worldSolid(lx, lz, hw, hd) {
         const wx = cx + lx*cosR + lz*sinR;
@@ -2668,7 +2790,7 @@
     // effect and never throws off actual aim.
     const dir = aimDir.clone();
     raycaster.set(aimOrigin, dir); raycaster.far = 300;
-    const targets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(collisionMeshes);
+    const targets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(windowMeshes).concat(collisionMeshes);
     const hits = raycaster.intersectObjects(targets, false);
     let endPoint;
     let hitBotRef = null, hitIsHead = false;
@@ -2678,6 +2800,8 @@
       if (hitObj.userData.botRef && hitObj.userData.botRef.alive) {
         hitBotRef = hitObj.userData.botRef;
         hitIsHead = hitObj.userData.isHead === true;
+      } else if (hitObj.userData.windowRef) {
+        breakWindow(hitObj.userData.windowRef);
       }
     } else {
       endPoint = aimOrigin.clone().addScaledVector(dir, 300);
@@ -2729,6 +2853,11 @@
         const treeRef = hit.userData.treeRef;
         if (treeRef && treeRef.alive) { chopTree(treeRef); showHitMarker(false); }
       } else {
+        const winHits = raycaster.intersectObjects(windowMeshes, false);
+        if (winHits.length > 0) {
+          const winRef = winHits[0].object.userData.windowRef;
+          if (winRef) { breakWindow(winRef); showHitMarker(false); }
+        } else {
         const wallHits = raycaster.intersectObjects(builtWalls.map(b=>b.mesh), false);
         if (wallHits.length > 0) {
           const entry = builtWalls.find(b => b.mesh === wallHits[0].object);
@@ -2750,6 +2879,7 @@
             playHitConfirm(isHead);
             if (botRef.health <= 0) killEnemy(botRef, true);
           }
+        }
         }
         }
       }
@@ -3588,7 +3718,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, renderDistLevel: 2, aimAssist: true, autoShoot: true };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -3741,6 +3871,16 @@
     settings.showCorpses = !settings.showCorpses;
     corpseToggleBtn.textContent = settings.showCorpses ? 'ON' : 'OFF';
     corpseToggleBtn.classList.toggle('off', !settings.showCorpses);
+  });
+  const shadowToggleBtn = document.getElementById('shadowToggleBtn');
+  bindTap(shadowToggleBtn, () => {
+    settings.shadows = !settings.shadows;
+    renderer.shadowMap.enabled = settings.shadows;
+    // Three.js needs materials that use shadows to be told to recompile
+    // once shadowMap.enabled flips, otherwise stale shadows can linger.
+    scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });
+    shadowToggleBtn.textContent = settings.shadows ? 'ON' : 'OFF';
+    shadowToggleBtn.classList.toggle('off', !settings.shadows);
   });
   const aimAssistToggleBtn = document.getElementById('aimAssistToggleBtn');
   bindTap(aimAssistToggleBtn, () => {
