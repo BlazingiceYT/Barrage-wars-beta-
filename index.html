@@ -1770,6 +1770,11 @@
     if (bot.chuteGroup) bot.chuteGroup.visible = false;
     if (bot.healthSprite) bot.healthSprite.visible = false;
     markCorpse(bot);
+    // Drop the bot's held gun (their infinite-ammo starter pistol doesn't
+    // count as loot - only a picked-up primary weapon like an AK/sniper/minigun drops).
+    if (bot.weaponType && bot.weaponType !== 'pistol') {
+      spawnWeaponPickup(bot.weaponType, bot.pos.x, bot.pos.y, bot.pos.z, true);
+    }
     aliveBotCount--;
     document.getElementById('aliveCount').textContent = aliveBotCount + (player.alive?1:0);
     if (killedByPlayer) {
