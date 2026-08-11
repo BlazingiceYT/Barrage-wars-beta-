@@ -299,9 +299,28 @@
   #invClose, #settingsClose { margin-top: 10px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
   #settingsPanel input[type=range] { width: 140px; }
   #settingsPanel .val { color: #ffdd55; font-size: 12px; min-width: 32px; text-align: right; }
-  #customizeControlsBtn { display: block; width: 100%; margin: 4px 0 10px; }
+  #customizeControlsBtn, #rebindKeysBtn { display: block; width: 100%; margin: 4px 0 10px; }
   .miniToggleBtn { padding: 4px 16px; border-radius: 14px; }
   .miniToggleBtn.off { background: linear-gradient(180deg,#555,#333); border-color: #777; color: #aaa; }
+
+  /* Key rebinding panel */
+  #keybindPanel {
+    position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,10,15,0.92); border: 2px solid rgba(255,255,255,0.25); border-radius: 12px;
+    padding: 16px 20px; color: #fff; display: none; pointer-events: auto; min-width: 270px;
+    max-width: 320px; max-height: 70vh; overflow-y: auto; text-align: center; z-index: 30;
+  }
+  #keybindPanel h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ffdd55; }
+  #keybindPanel .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 13px; gap: 10px; }
+  .keybindKeyBtn {
+    background: linear-gradient(180deg,#8a6a3b,#5a4222); border: 1px solid #d2aa6e; color: #fff;
+    padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; min-width: 60px;
+  }
+  .keybindKeyBtn.listening { background: linear-gradient(180deg,#ffdd55,#c9a227); color: #111; border-color: #fff; }
+  #keybindPanel button#keybindResetBtn, #keybindPanel button#keybindClose {
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff;
+    padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px;
+  }
 
   #creditsPanel {
     position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
@@ -510,7 +529,16 @@
     <div class="row" id="aimAssistRow"><span>Aim Assist</span><button id="aimAssistToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row" id="autoShootRow"><span>Auto Shoot</span><button id="autoShootToggleBtn" class="miniToggleBtn">ON</button></div>
     <button id="customizeControlsBtn">↕ Customize Control Positions</button>
+    <button id="rebindKeysBtn">⌨ Rebind Keys</button>
     <button id="settingsClose">Close</button>
+  </div>
+
+  <div id="keybindPanel">
+    <h3>KEY BINDINGS</h3>
+    <p style="font-size:11px;color:#9fb2bc;margin:0 0 10px;">Click a key, then press a new one. Esc cancels.</p>
+    <div id="keybindList"></div>
+    <button id="keybindResetBtn">Reset to Defaults</button>
+    <button id="keybindClose">Close</button>
   </div>
 
   <div id="creditsPanel">
@@ -1506,7 +1534,8 @@
     }
   }
   document.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && drop.active && player.falling && !player.chuteOpen) deployParachute();
+    if (rebindingAction) return;
+    if (e.code === keyBindings.jump && drop.active && player.falling && !player.chuteOpen) deployParachute();
   });
   document.getElementById('deployChuteBtn').addEventListener('click', deployParachute);
   document.getElementById('deployChuteBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); deployParachute(); }, {passive:false});
@@ -3565,6 +3594,83 @@
     if (settingsOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
 
+  // ---------- Rebindable key bindings ----------
+  const DEFAULT_KEY_BINDINGS = {
+    forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
+    jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
+    axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
+    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', inventory: 'Tab'
+  };
+  const KEY_ACTION_LABELS = {
+    forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
+    jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
+    axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
+    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', inventory: 'Inventory'
+  };
+  let keyBindings = {};
+  try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
+  keyBindings = Object.assign({}, DEFAULT_KEY_BINDINGS, keyBindings);
+
+  function codeToLabel(code) {
+    if (!code) return '—';
+    if (code.startsWith('Key')) return code.slice(3);
+    if (code.startsWith('Digit')) return code.slice(5);
+    const special = { Space: 'Space', Tab: 'Tab', ControlLeft: 'Ctrl', ControlRight: 'Ctrl',
+      ShiftLeft: 'Shift', ShiftRight: 'Shift', AltLeft: 'Alt', AltRight: 'Alt', Escape: 'Esc' };
+    return special[code] || code;
+  }
+
+  let rebindingAction = null;
+  const keybindPanel = document.getElementById('keybindPanel');
+  const keybindList = document.getElementById('keybindList');
+  let keybindOpen = false;
+
+  function renderKeybindList() {
+    keybindList.innerHTML = '';
+    for (const action in KEY_ACTION_LABELS) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const label = document.createElement('span');
+      label.textContent = KEY_ACTION_LABELS[action];
+      const btn = document.createElement('button');
+      btn.className = 'keybindKeyBtn';
+      btn.textContent = codeToLabel(keyBindings[action]);
+      btn.dataset.action = action;
+      btn.addEventListener('click', () => startRebind(action, btn));
+      row.appendChild(label);
+      row.appendChild(btn);
+      keybindList.appendChild(row);
+    }
+  }
+
+  function startRebind(action, btn) {
+    if (rebindingAction) return; // already waiting on a keypress
+    rebindingAction = action;
+    btn.classList.add('listening');
+    btn.textContent = 'Press a key…';
+  }
+
+  function finishRebind() {
+    rebindingAction = null;
+    renderKeybindList();
+  }
+
+  function resetKeyBindings() {
+    keyBindings = Object.assign({}, DEFAULT_KEY_BINDINGS);
+    localStorage.removeItem('blazingice_keyBindings');
+    renderKeybindList();
+  }
+
+  function toggleKeybind() {
+    if (settingsOpen) toggleSettings();
+    keybindOpen = !keybindOpen;
+    keybindPanel.style.display = keybindOpen ? 'block' : 'none';
+    if (keybindOpen) renderKeybindList();
+  }
+  document.getElementById('rebindKeysBtn').addEventListener('click', toggleKeybind);
+  document.getElementById('keybindResetBtn').addEventListener('click', resetKeyBindings);
+  document.getElementById('keybindClose').addEventListener('click', toggleKeybind);
+
   // ---------- Credits panel (home screen only) ----------
   const creditsPanel = document.getElementById('creditsPanel');
   const creditsContent = document.getElementById('creditsContent');
@@ -4004,17 +4110,30 @@
   const keys = {};
   let mobileCrouchHeld = false; // set by the touch/mouse crouch button below
   window.addEventListener('keydown', (e) => {
+    if (rebindingAction) {
+      e.preventDefault();
+      if (e.code !== 'Escape') {
+        // if another action already owns this key, unbind it from that action first
+        for (const a in keyBindings) {
+          if (a !== rebindingAction && keyBindings[a] === e.code) keyBindings[a] = null;
+        }
+        keyBindings[rebindingAction] = e.code;
+        localStorage.setItem('blazingice_keyBindings', JSON.stringify(keyBindings));
+      }
+      finishRebind();
+      return;
+    }
     keys[e.code] = true;
-    if (e.code === 'KeyP') toggleView();
-    if (e.code === 'KeyR') reload();
-    if (e.code === 'Space') { tryJump(); e.preventDefault(); }
-    if (e.code === 'Digit1') setWeapon('axe');
-    if (e.code === 'Digit2') setWeapon('pistol');
-    if (e.code === 'Digit3') setWeapon('primary');
-    if (e.code === 'KeyB') tryBuildWall();
-    if (e.code === 'KeyG') dropWeapon();
-    if (e.code === 'KeyF') throwGrenade();
-    if (e.code === 'Tab') { toggleInventory(); e.preventDefault(); }
+    if (e.code === keyBindings.toggleView) toggleView();
+    if (e.code === keyBindings.reload) reload();
+    if (e.code === keyBindings.jump) { tryJump(); e.preventDefault(); }
+    if (e.code === keyBindings.axe) setWeapon('axe');
+    if (e.code === keyBindings.pistol) setWeapon('pistol');
+    if (e.code === keyBindings.primary) setWeapon('primary');
+    if (e.code === keyBindings.build) tryBuildWall();
+    if (e.code === keyBindings.drop) dropWeapon();
+    if (e.code === keyBindings.grenade) throwGrenade();
+    if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -4298,10 +4417,10 @@
     if (drop.active) {
       let inputX = 0, inputZ = 0;
       if (player.chuteOpen && !invOpen && !layoutEditMode) {
-        if (keys['KeyW']) inputZ += 1;
-        if (keys['KeyS']) inputZ -= 1;
-        if (keys['KeyD']) inputX += 1;
-        if (keys['KeyA']) inputX -= 1;
+        if (keys[keyBindings.forward]) inputZ += 1;
+        if (keys[keyBindings.back]) inputZ -= 1;
+        if (keys[keyBindings.right]) inputX += 1;
+        if (keys[keyBindings.left]) inputX -= 1;
         if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
       }
       const len = Math.hypot(inputX, inputZ);
@@ -4325,10 +4444,10 @@
     }
     let inputX = 0, inputZ = 0;
     if (!invOpen && !layoutEditMode) {
-      if (keys['KeyW']) inputZ += 1;
-      if (keys['KeyS']) inputZ -= 1;
-      if (keys['KeyD']) inputX += 1;
-      if (keys['KeyA']) inputX -= 1;
+      if (keys[keyBindings.forward]) inputZ += 1;
+      if (keys[keyBindings.back]) inputZ -= 1;
+      if (keys[keyBindings.right]) inputX += 1;
+      if (keys[keyBindings.left]) inputX -= 1;
       if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
     }
     const len = Math.hypot(inputX, inputZ);
@@ -4337,9 +4456,10 @@
     // Crouching disables sprint (same intent as real shooters: you can't
     // sprint while hunkered down) and only applies on the ground - crouch
     // input mid-air just does nothing rather than fighting the fall.
-    player.crouching = !!(keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC'] || mobileCrouchHeld) && player.grounded;
+    // Ctrl always works as a crouch fallback even if the bound key is changed.
+    player.crouching = !!(keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight'] || mobileCrouchHeld) && player.grounded;
 
-    const wantsSprint = !!keys['ShiftLeft'] && len > 0.001 && !isScoped && !player.crouching;
+    const wantsSprint = !!keys[keyBindings.sprint] && len > 0.001 && !isScoped && !player.crouching;
     if (wantsSprint && player.stamina > 0) {
       player.sprinting = true;
       player.stamina = Math.max(0, player.stamina - 28 * dt);
