@@ -473,7 +473,7 @@
       <div id="viewModeLabel">View: Third Person</div>
     </div>
 
-    <button id="skipWaveBtn" style="display:none; position:absolute; top:150px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
+    <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
     <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | Tab=Inventory</div>
 
@@ -1593,6 +1593,15 @@
   const zombies = [];
   let waveNumber = 0;
   let zombiesAliveCount = 0;
+  // killZombie schedules the next wave 1.8s after the last zombie in the
+  // current wave dies. If the player dies right around that same moment,
+  // a respawn reset (or a manual Skip Wave) could leave that timeout
+  // dangling — it still fires later, sees zombiesAliveCount back at 0
+  // (because the wave was just reset/skipped), and calls startNextWave()
+  // a second, unintended time. That silently double-advances waveNumber,
+  // which is how a boss wave (every 15th) can get skipped over entirely.
+  // Tracking the timeout id lets any reset/skip cancel it first.
+  let waveAdvanceTimeoutId = null;
 
   function beginPlaneIntro() {
     matchStarted = true;
@@ -2328,8 +2337,31 @@
 
   function skipWave() {
     if (gameMode !== 'zombie') return;
+    if (waveAdvanceTimeoutId) { clearTimeout(waveAdvanceTimeoutId); waveAdvanceTimeoutId = null; }
     waveNumber++;
     spawnWave(waveNumber);
+  }
+
+  // Full wave reset for Zombie Mode: dying only used to respawn the player
+  // and left every previous zombie (dead or alive) sitting in the scene,
+  // so coming back dropped you into a stale, half-cleared wave instead of
+  // a fresh start. This clears every zombie, corpse, and in-flight grenade
+  // FX, then puts the wave counter back to 0 so the next spawnWave() call
+  // starts wave 1 again, same as a brand new zombie match.
+  function resetZombieWave() {
+    if (waveAdvanceTimeoutId) { clearTimeout(waveAdvanceTimeoutId); waveAdvanceTimeoutId = null; }
+    for (const zom of zombies) scene.remove(zom.group);
+    zombies.length = 0;
+    zombiesAliveCount = 0;
+    corpseList.length = 0;
+    for (const g of activeGrenades) scene.remove(g.mesh);
+    activeGrenades.length = 0;
+    for (const fx of explosionFX) scene.remove(fx.mesh);
+    explosionFX.length = 0;
+    bossZombie = null;
+    document.getElementById('bossBarWrap').classList.remove('show');
+    waveNumber = 0;
+    updateZombieHUD();
   }
 
   function updateZombieHUD() {
@@ -2354,7 +2386,10 @@
       showPickupToast('BOSS DEFEATED');
     }
     if (zombiesAliveCount <= 0) {
-      setTimeout(() => { if (gameMode === 'zombie' && zombiesAliveCount <= 0) startNextWave(); }, 1800);
+      waveAdvanceTimeoutId = setTimeout(() => {
+        waveAdvanceTimeoutId = null;
+        if (gameMode === 'zombie' && zombiesAliveCount <= 0) startNextWave();
+      }, 1800);
     }
   }
 
@@ -2447,6 +2482,7 @@
     gameMode = 'zombie';
     matchStarted = true;
     stopZone();
+    if (waveAdvanceTimeoutId) { clearTimeout(waveAdvanceTimeoutId); waveAdvanceTimeoutId = null; }
     bossZombie = null;
     document.getElementById('bossBarWrap').classList.remove('show');
     document.getElementById('zombieIntroScreen').style.display = 'none';
@@ -4503,8 +4539,10 @@
   bindTap(document.getElementById('restartBtn'), () => {
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
     if (gameMode === 'zombie') {
+      resetZombieWave();
       respawnPlayer();
       spawnZombiePlayer();
+      startNextWave();
     } else {
       resetFFAMatch();
     }
