@@ -119,3 +119,6 @@ Added runner tank boss zombie
 
 **Update0.36** - *Commited by BlazingiceYT on 11 Aug 2026*
 Added key rebinding for keyboard
+
+**Update0.37** - *Commited by BlazingiceYT on 11 Aug 2026*
+Bots now drop their held gun when killed
