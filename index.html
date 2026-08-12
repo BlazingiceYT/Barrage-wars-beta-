@@ -989,6 +989,16 @@
       return;
     }
     const def = WEAPON_DEFS[p.type];
+    if (player.primaryType && player.primaryType !== p.type) {
+      // Swapping guns used to just delete whatever you were holding. Now the
+      // old primary gets dropped on the ground as a real pickup instead of
+      // vanishing — same spot dropWeapon() uses, with the same brief pickup
+      // delay so you don't instantly re-grab the thing you just swapped away.
+      const forward = getForward(player.yaw);
+      const dropX = player.pos.x + forward.x * 1.3;
+      const dropZ = player.pos.z + forward.z * 1.3;
+      spawnWeaponPickup(player.primaryType, dropX, player.pos.y, dropZ, true);
+    }
     player.primaryType = p.type;
     player.ammoState.primary = { mag: def.maxMag, reserve: def.maxMag * 2 };
     setWeapon('primary');
