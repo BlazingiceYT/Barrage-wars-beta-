@@ -128,3 +128,6 @@ Added windows to houses
 
 **Patch0.39** - *Commited by BlazingiceYT on 11 Aug 2026*
 Fixed zombie mode bugs
+
+**Update0.40** - *Commited by BlazingiceYT on 12 Aug 2026*
+Added smoke bomb
