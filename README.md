@@ -131,3 +131,8 @@ Fixed zombie mode bugs
 
 **Update0.40** - *Commited by BlazingiceYT on 12 Aug 2026*
 Added smoke bomb
+
+**Update0.41** - *Commited by BlazingiceYT on 12 Aug 2026*
+Field of View slider (60–110°, default 70) — right under Scope Sensitivity. Changes apply live (smoothly eased in, same mechanism that already handles the sprint FOV bump), and correctly returns to your chosen value when you unscope.
+Invert Look Y toggle — flips vertical look on mouse drag, touch drag, and the fire-button drag-to-aim, so it works the same on desktop and mobile.
+Colorblind-Friendly Colors toggle (new "Accessibility" section) — swaps the red/yellow/green enemy-health-bar and hitmarker scheme for blue/amber/red, since red vs. green is the pairing most colorblind players struggle with. Applies immediately to any bots/zombies/boss already on screen, not just future ones.
