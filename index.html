@@ -276,6 +276,16 @@
   #smokeGrenadeBtn:active { background: rgba(200,200,210,0.5); }
   #smokeGrenadeBtn.disabled { opacity: 0.35; pointer-events: none; }
 
+  #molotovBtn {
+    position: absolute; right: 20px; bottom: 500px; width: 46px; height: 46px;
+    background: rgba(90,40,15,0.6); border: 2px solid rgba(255,140,60,0.6); color: #fff;
+    border-radius: 50%; font-size: 18px; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #molotovBtn .count { position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold; color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px; }
+  #molotovBtn:active { background: rgba(255,140,60,0.5); }
+  #molotovBtn.disabled { opacity: 0.35; pointer-events: none; }
+
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -302,6 +312,15 @@
     position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
     background: rgba(10,10,15,0.92); border: 2px solid rgba(255,255,255,0.25); border-radius: 12px;
     padding: 16px 20px; color: #fff; display: none; pointer-events: auto; min-width: 270px; text-align: center;
+  }
+
+  /* Pop-in animation for menu panels (inventory/settings/keybind/credits) */
+  @keyframes panelPopIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.92); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  }
+  #invPanel.panelAnim, #settingsPanel.panelAnim, #keybindPanel.panelAnim, #creditsPanel.panelAnim {
+    animation: panelPopIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
   }
   #settingsPanel { z-index: 30; }
   #invPanel h3, #settingsPanel h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ffdd55; }
@@ -490,7 +509,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -498,6 +517,7 @@
     <button id="dropBtn" class="disabled">DROP<br>(G)</button>
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
+    <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="reloadBtn">RELOAD</button>
@@ -922,7 +942,7 @@
     group.rotation.z = Math.PI/2.3;
     group.position.set(x, y + 1.0, z);
     scene.add(group);
-    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : 0xaeb4bb)));
+    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : (type === 'molotov' ? 0xff6a2e : 0xaeb4bb))));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
@@ -958,6 +978,13 @@
       player.smokeGrenades = Math.min(player.maxSmokeGrenades, player.smokeGrenades + 1);
       updateSmokeGrenadeUI();
       showPickupToast('PICKED UP: SMOKE GRENADE');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'molotov') {
+      player.molotovs = Math.min(player.maxMolotovs, player.molotovs + 1);
+      updateMolotovUI();
+      showPickupToast('PICKED UP: MOLOTOV');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -1188,12 +1215,14 @@
       }
       // separate, independent roll for a grenade pickup on the same floor —
       // doesn't compete with (or reduce the odds of) the gun roll above.
-      // Smoke grenades share this same 0.35 roll (not an extra chance on
-      // top) — whichever fires, a coin flip decides frag vs smoke.
+      // Frag/smoke/molotov all share this same 0.35 roll (not an extra
+      // chance on top) — whichever fires, a 3-way split decides the type.
       if (Math.random() < 0.35) {
         const gx = cx + (Math.random()-0.5) * (w - 3);
         const gz = cz + (Math.random()-0.5) * (d - 3);
-        spawnWeaponPickup(Math.random() < 0.5 ? 'grenade' : 'smokegrenade', gx, baseY + 0.25, gz);
+        const throwRoll = Math.random();
+        const throwType = throwRoll < 0.4 ? 'grenade' : (throwRoll < 0.7 ? 'smokegrenade' : 'molotov');
+        spawnWeaponPickup(throwType, gx, baseY + 0.25, gz);
       }
     }
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -1427,7 +1456,30 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: null };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh };
+  // A glass bottle with a splash of fuel inside and a rag stuffed in the neck —
+  // same silhouette family as the frag/smoke canisters, but distinctly a bottle.
+  function buildMolotovMesh(s) {
+    const g = new THREE.Object3D();
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x2e4a2e, roughness: 0.25, transparent: true, opacity: 0.7 });
+    const liquidMat = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.5, emissive: 0xff5500, emissiveIntensity: 0.35 });
+    const ragMat = new THREE.MeshStandardMaterial({ color: 0xd8c9a3, roughness: 0.9 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.24, 10), glassMat);
+    g.add(body);
+    const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.095, 0.14, 10), liquidMat);
+    liquid.position.set(0, -0.04, 0);
+    g.add(liquid);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.12, 8), glassMat);
+    neck.position.set(0, 0.18, 0);
+    g.add(neck);
+    const rag = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 6), ragMat);
+    rag.position.set(0, 0.26, 0);
+    rag.scale.set(0.9, 1.3, 0.9);
+    g.add(rag);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
 
   // ---------- Bot weapon handling ----------
   // Bots start with an infinite-ammo pistol (so they're never stuck unarmed)
@@ -1746,6 +1798,8 @@
     ammoState: { pistol: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
     grenades: 0,
     maxGrenades: 4,
+    molotovs: 0,
+    maxMolotovs: 4,
     smokeGrenades: 0,
     maxSmokeGrenades: 4,
     isPlayer: true,
@@ -2416,6 +2470,8 @@
     activeGrenades.length = 0;
     for (const fx of explosionFX) scene.remove(fx.mesh);
     explosionFX.length = 0;
+    for (const fz of fireZones) scene.remove(fz.group);
+    fireZones.length = 0;
     bossZombie = null;
     document.getElementById('bossBarWrap').classList.remove('show');
     waveNumber = 0;
@@ -3059,6 +3115,10 @@
     document.getElementById('smokeGrenadeCountTag').textContent = player.smokeGrenades;
     document.getElementById('smokeGrenadeBtn').classList.toggle('disabled', player.smokeGrenades <= 0);
   }
+  function updateMolotovUI() {
+    document.getElementById('molotovCountTag').textContent = player.molotovs;
+    document.getElementById('molotovBtn').classList.toggle('disabled', player.molotovs <= 0);
+  }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
     document.getElementById('invWoodVal').textContent = player.wood;
@@ -3222,6 +3282,44 @@
     hissGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
     hissSrc.connect(hissFilter); hissFilter.connect(hissGain); hissGain.connect(ctx.destination);
     hissSrc.start(t); hissSrc.stop(t + 0.52);
+  }
+
+  // Glass shatter (short bright noise burst) plus a fuel whoosh (lowpassed
+  // noise swelling in) for a molotov breaking open on impact.
+  function playMolotovShatter(distance) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    let vol = 0.7;
+    if (distance && distance > 0) {
+      vol = Math.max(0, 0.7 * (1 - distance / 60));
+      if (vol <= 0.02) return;
+    }
+    const shatterSrc = ctx.createBufferSource();
+    shatterSrc.buffer = noiseBuffer;
+    shatterSrc.playbackRate.value = 2.2 + Math.random()*0.3;
+    const shatterFilter = ctx.createBiquadFilter();
+    shatterFilter.type = 'highpass';
+    shatterFilter.frequency.value = 2200;
+    const shatterGain = ctx.createGain();
+    shatterGain.gain.setValueAtTime(vol, t);
+    shatterGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    shatterSrc.connect(shatterFilter); shatterFilter.connect(shatterGain); shatterGain.connect(ctx.destination);
+    shatterSrc.start(t); shatterSrc.stop(t + 0.2);
+
+    const whooshSrc = ctx.createBufferSource();
+    whooshSrc.buffer = noiseBuffer;
+    whooshSrc.playbackRate.value = 0.9;
+    const whooshFilter = ctx.createBiquadFilter();
+    whooshFilter.type = 'bandpass';
+    whooshFilter.frequency.value = 900;
+    whooshFilter.Q.value = 0.7;
+    const whooshGain = ctx.createGain();
+    whooshGain.gain.setValueAtTime(0.001, t);
+    whooshGain.gain.linearRampToValueAtTime(vol * 0.7, t + 0.08);
+    whooshGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    whooshSrc.connect(whooshFilter); whooshFilter.connect(whooshGain); whooshGain.connect(ctx.destination);
+    whooshSrc.start(t); whooshSrc.stop(t + 0.62);
   }
 
   // Low detuned growl for the boss's wave-start entrance - two saw
@@ -3458,6 +3556,8 @@
     updateGrenadeUI();
     player.smokeGrenades = 0;
     updateSmokeGrenadeUI();
+    player.molotovs = 0;
+    updateMolotovUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
@@ -3507,6 +3607,8 @@
     explosionFX.length = 0;
     for (const c of smokeClouds) scene.remove(c.mesh);
     smokeClouds.length = 0;
+    for (const fz of fireZones) scene.remove(fz.group);
+    fireZones.length = 0;
     aliveBotCount = BOT_COUNT;
     for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
     document.getElementById('aliveCount').textContent = aliveBotCount + 1;
@@ -3832,6 +3934,13 @@
   bindTap(document.getElementById('buildFromInvBtn'), tryBuildWall);
   bindTap(document.getElementById('reloadBtn'), reload);
 
+  // ---------- Menu panel open animation helper ----------
+  function playPanelOpenAnim(panel) {
+    panel.classList.remove('panelAnim');
+    void panel.offsetWidth; // force reflow so the animation restarts every time
+    panel.classList.add('panelAnim');
+  }
+
   // ---------- Inventory panel ----------
   const invPanel = document.getElementById('invPanel');
   let invOpen = false;
@@ -3839,6 +3948,7 @@
     if (settingsOpen) toggleSettings();
     invOpen = !invOpen;
     invPanel.style.display = invOpen ? 'block' : 'none';
+    if (invOpen) playPanelOpenAnim(invPanel);
     if (invOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
   bindTap(document.getElementById('invSlot'), toggleInventory);
@@ -3853,6 +3963,7 @@
     if (creditsOpen) toggleCredits();
     settingsOpen = !settingsOpen;
     settingsPanel.style.display = settingsOpen ? 'block' : 'none';
+    if (settingsOpen) playPanelOpenAnim(settingsPanel);
     if (settingsOpen && document.pointerLockElement === canvas) document.exitPointerLock();
   }
 
@@ -3861,13 +3972,13 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
-    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', inventory: 'Tab'
+    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
-    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', inventory: 'Inventory'
+    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -3927,7 +4038,7 @@
     if (settingsOpen) toggleSettings();
     keybindOpen = !keybindOpen;
     keybindPanel.style.display = keybindOpen ? 'block' : 'none';
-    if (keybindOpen) renderKeybindList();
+    if (keybindOpen) { renderKeybindList(); playPanelOpenAnim(keybindPanel); }
   }
   document.getElementById('rebindKeysBtn').addEventListener('click', toggleKeybind);
   document.getElementById('keybindResetBtn').addEventListener('click', resetKeyBindings);
@@ -3953,7 +4064,7 @@
     if (settingsOpen) toggleSettings();
     creditsOpen = !creditsOpen;
     creditsPanel.style.display = creditsOpen ? 'block' : 'none';
-    if (creditsOpen) loadCredits();
+    if (creditsOpen) { loadCredits(); playPanelOpenAnim(creditsPanel); }
   }
   bindTap(document.getElementById('homeCreditsBtn'), toggleCredits);
   bindTap(document.getElementById('creditsClose'), toggleCredits);
@@ -4056,7 +4167,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -4069,6 +4180,7 @@
     dropBtn: 'DROP WEAPON',
     grenadeBtn: 'THROW GRENADE',
     smokeGrenadeBtn: 'THROW SMOKE',
+    molotovBtn: 'THROW MOLOTOV',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -4335,6 +4447,23 @@
     scene.add(mesh);
     activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.5, isSmoke: true });
   }
+  function throwMolotov() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.molotovs <= 0) return;
+    player.molotovs--;
+    updateMolotovUI();
+    const dir3 = new THREE.Vector3();
+    camera.getWorldDirection(dir3);
+    const throwSpeed = 18;
+    const vel = dir3.clone().multiplyScalar(throwSpeed);
+    vel.y += 6.2; // extra upward toss so it arcs instead of firing flat
+    const startPos = new THREE.Vector3(player.pos.x, player.pos.y + 1.5, player.pos.z);
+    startPos.addScaledVector(dir3, 0.7);
+    const built = buildMolotovMesh(1);
+    const mesh = built.group;
+    mesh.position.copy(startPos);
+    scene.add(mesh);
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 4, isSmoke: false, isMolotov: true });
+  }
   function updateGrenades(dt) {
     for (let i = activeGrenades.length - 1; i >= 0; i--) {
       const g = activeGrenades[i];
@@ -4343,6 +4472,15 @@
       const floorY = groundHeightAt(g.pos.x, g.pos.z, g.pos.y + 2) + 0.14;
       if (g.pos.y <= floorY) {
         g.pos.y = floorY;
+        // Molotovs are glass — they shatter the instant they touch anything,
+        // instead of bouncing like the frag/smoke canisters do.
+        if (g.isMolotov) {
+          g.mesh.position.copy(g.pos);
+          spawnFireZone(g.pos);
+          scene.remove(g.mesh);
+          activeGrenades.splice(i, 1);
+          continue;
+        }
         g.vel.y = Math.abs(g.vel.y) * 0.35; // small bounce off the ground
         g.vel.x *= 0.65; g.vel.z *= 0.65;
       }
@@ -4350,7 +4488,7 @@
       g.mesh.rotation.x += dt * 6;
       g.fuse -= dt;
       if (g.fuse <= 0) {
-        if (g.isSmoke) spawnSmokeCloud(g.pos); else explodeGrenade(g.pos);
+        if (g.isSmoke) spawnSmokeCloud(g.pos); else if (g.isMolotov) spawnFireZone(g.pos); else explodeGrenade(g.pos);
         scene.remove(g.mesh);
         activeGrenades.splice(i, 1);
       }
@@ -4454,8 +4592,84 @@
       }
     }
   }
+  // Molotov fire — a burning ground patch that lingers and ticks damage to
+  // anyone standing in it (player, bots, zombies alike), unlike the frag
+  // grenade's one-shot blast. Purely a DOT zone: no line-of-sight check,
+  // since fire on the ground doesn't care what's between you and its source.
+  const fireZones = [];
+  const FIRE_RADIUS = 3.4, FIRE_DURATION = 5.5, FIRE_TICK = 0.5, FIRE_TICK_DMG = 9;
+  function spawnFireZone(pos) {
+    const floorY = groundHeightAt(pos.x, pos.z, pos.y + 2);
+    const group = new THREE.Object3D();
+    group.position.set(pos.x, floorY, pos.z);
+    scene.add(group);
+    const flames = [];
+    for (let i = 0; i < 6; i++) {
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.22 + Math.random()*0.12, 0.6 + Math.random()*0.3, 6),
+        new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff6a1a : 0xffb347, transparent: true, opacity: 0.85 })
+      );
+      const ang = Math.random()*Math.PI*2, rad = Math.random()*FIRE_RADIUS*0.55;
+      flame.position.set(Math.cos(ang)*rad, 0.3, Math.sin(ang)*rad);
+      group.add(flame);
+      flames.push(flame);
+    }
+    const light = new THREE.PointLight(0xff7a2a, 2.6, 14, 2);
+    light.position.set(0, 1, 0);
+    group.add(light);
+    const camDist = pos.distanceTo(camera.position);
+    playMolotovShatter(camDist);
+    if (camDist < 30) addShake(0.2);
+    fireZones.push({ group, flames, light, life: 0, nextTickAt: FIRE_TICK });
+  }
+  function applyFireDamage(fz) {
+    const p = fz.group.position;
+    if (player.alive) {
+      const d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
+      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG);
+    }
+    for (const bot of bots) {
+      if (!bot.alive || bot.falling) continue;
+      const d = Math.hypot(p.x - bot.pos.x, p.z - bot.pos.z);
+      if (d < FIRE_RADIUS) {
+        bot.health -= FIRE_TICK_DMG;
+        updateHealthSprite(bot);
+        if (bot.health <= 0) killEnemy(bot, true);
+      }
+    }
+    if (gameMode === 'zombie') {
+      for (const zom of zombies) {
+        if (!zom.alive) continue;
+        const d = Math.hypot(p.x - zom.pos.x, p.z - zom.pos.z);
+        if (d < FIRE_RADIUS) {
+          zom.health -= FIRE_TICK_DMG;
+          updateHealthSprite(zom);
+          if (zom.health <= 0) killEnemy(zom, true);
+        }
+      }
+    }
+  }
+  function updateFireZones(dt) {
+    for (let i = fireZones.length - 1; i >= 0; i--) {
+      const fz = fireZones[i];
+      fz.life += dt;
+      const flicker = 0.75 + Math.sin(fz.life*14)*0.15 + Math.random()*0.1;
+      fz.light.intensity = 2.6 * flicker;
+      for (const fl of fz.flames) fl.scale.set(1, flicker * (0.9 + Math.random()*0.2), 1);
+      if (fz.life >= fz.nextTickAt) {
+        fz.nextTickAt += FIRE_TICK;
+        applyFireDamage(fz);
+      }
+      if (fz.life >= FIRE_DURATION) {
+        scene.remove(fz.group);
+        fireZones.splice(i, 1);
+      }
+    }
+  }
+
   bindTap(document.getElementById('grenadeBtn'), throwGrenade);
   bindTap(document.getElementById('smokeGrenadeBtn'), throwSmokeGrenade);
+  bindTap(document.getElementById('molotovBtn'), throwMolotov);
 
   // ---------- View mode ----------
   let viewMode = 'third';
@@ -4493,6 +4707,7 @@
     if (e.code === keyBindings.drop) dropWeapon();
     if (e.code === keyBindings.grenade) throwGrenade();
     if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
+    if (e.code === keyBindings.molotov) throwMolotov();
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -5114,6 +5329,7 @@
     }
     updateExplosionFX(dt);
     updateSmokeClouds(dt);
+    updateFireZones(dt);
     updateCamera();
     updateMobileAimSystems(dt);
     updateWeaponAnim(dt);
@@ -5124,7 +5340,7 @@
 
     renderer.render(scene, camera);
   }
-  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI();
+  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
   animate();
 
 })();
