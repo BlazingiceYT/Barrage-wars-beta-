@@ -1281,7 +1281,7 @@
       const floorsN = 1 + Math.floor(Math.random()*3);
       const rotY = Math.floor(Math.random()*4) * (Math.PI/2);
       makeHouse(x, z, w, d, floorsN, rotY);
-      houseSpawnPoints.push({x,z});
+      houseSpawnPoints.push({x, z, w, d, rotY});
       placed++;
     }
   }
