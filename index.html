@@ -241,6 +241,14 @@
     color: #fff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center;
     pointer-events: auto; text-align: center;
   }
+  #buildPieceBtn, #buildTierBtn {
+    position: absolute; right: 190px; width: 50px; height: 34px;
+    border-radius: 8px; background: rgba(60,60,60,0.55); border: 2px solid rgba(220,220,220,0.5);
+    color: #fff; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; text-align: center;
+  }
+  #buildPieceBtn { bottom: 242px; }
+  #buildTierBtn { bottom: 202px; }
 
   #weaponSwitchBtn {
     position: absolute; right: 20px; bottom: 300px;
@@ -509,7 +517,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | B=Build | X=Piece | Z=Material | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -519,6 +527,8 @@
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
+    <button id="buildPieceBtn" title="Cycle piece type (X)">WALL</button>
+    <button id="buildTierBtn" title="Cycle material (Z)">WOOD</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="reloadBtn">RELOAD</button>
     <button id="fireBtn"><span id="fireBtnVisual">FIRE</span></button>
@@ -543,7 +553,8 @@
     <div id="invPanel">
       <h3>INVENTORY</h3>
       <div class="row"><span>🪵 Wood</span><span id="invWoodVal">0</span></div>
-      <div class="row"><span>🧱 Build Wall (costs 5 wood)</span><button id="buildFromInvBtn">Build</button></div>
+      <div class="row"><span>🧱 Build (X = piece, Z = material)</span><button id="buildFromInvBtn">Build</button></div>
+      <div class="row" style="font-size:11px;opacity:0.85;">Wall 5 / Ramp 6 / Floor 4 wood (×3 Stone, ×6 Metal)</div>
       <button id="invClose">Close</button>
     </div>
 
@@ -890,19 +901,30 @@
     group.add(trunk, leaves);
     group.position.set(x, terrainHeightAt(x, z), z);
     scene.add(group);
-    const tree = { group, x, z, wood: 5, alive: true, radius: 0.5, h };
+    const tree = { group, x, z, wood: 5, alive: true, radius: 0.5, h, hitsLeft: 5, maxHits: 5 };
     trunk.userData.treeRef = tree;
     leaves.userData.treeRef = tree;
     trees.push(tree);
     return tree;
   }
+  // Trees now take 5 chops to fell. Each chop gives a little wood right away
+  // (so chopping never feels wasted) and the tree visibly wobbles harder as
+  // it gets closer to falling. Only the 5th hit actually fells it.
   function chopTree(tree) {
     if (!tree.alive) return;
+    tree.hitsLeft -= 1;
+    player.wood += 1;
+    updateWoodUI();
+    if (tree.hitsLeft > 0) {
+      const g = tree.group;
+      const kick = 0.12;
+      g.rotation.z = (Math.random() < 0.5 ? -1 : 1) * kick;
+      setTimeout(() => { g.rotation.z = 0; }, 120);
+      return;
+    }
     tree.alive = false;
     tree.group.visible = false;
-    player.wood += tree.wood;
-    updateWoodUI();
-    setTimeout(() => { tree.alive = true; tree.group.visible = true; }, 15000);
+    setTimeout(() => { tree.alive = true; tree.group.visible = true; tree.hitsLeft = tree.maxHits; }, 15000);
   }
 
   // ---------- Grass ----------
@@ -1341,12 +1363,29 @@
     }
   }
 
-  // ---------- Buildable walls ----------
-  const buildWallMat = new THREE.MeshStandardMaterial({ color: 0xc4924f, roughness: 0.95 });
-  const builtWalls = [];
-  function placeWall(pos, yaw) {
+  // ---------- Buildable structures (wall / ramp / floor, in 3 material tiers) ----------
+  const TIERS = {
+    wood:  { label: 'Wood',  color: 0xc4924f, costMult: 1, hp: 60  },
+    stone: { label: 'Stone', color: 0x999a9c, costMult: 3, hp: 150 },
+    metal: { label: 'Metal', color: 0x6d7580, costMult: 6, hp: 320 }
+  };
+  const TIER_ORDER = ['wood', 'stone', 'metal'];
+  const PIECES = {
+    wall:  { label: 'Wall',  baseCost: 5 },
+    ramp:  { label: 'Ramp',  baseCost: 6 },
+    floor: { label: 'Floor', baseCost: 4 }
+  };
+  const PIECE_ORDER = ['wall', 'ramp', 'floor'];
+  function buildCost(pieceType, tier) { return Math.round(PIECES[pieceType].baseCost * TIERS[tier].costMult); }
+  function makePieceMaterial(tier) {
+    return new THREE.MeshStandardMaterial({ color: TIERS[tier].color, roughness: tier === 'metal' ? 0.5 : 0.92, metalness: tier === 'metal' ? 0.4 : 0 });
+  }
+
+  const builtPieces = []; // {type, mesh, pivot?, tier, health, solidRef?, floorRef?, rampRef?}
+
+  function placeWallPiece(pos, yaw, tier) {
     const w = 2.4, h = 2.2, t = 0.3;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), buildWallMat);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), makePieceMaterial(tier));
     mesh.position.set(pos.x, h/2, pos.z);
     mesh.rotation.y = yaw;
     mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1356,18 +1395,74 @@
     const eff_hw = Math.abs(w/2*cosR) + Math.abs(t/2*sinR);
     const eff_hd = Math.abs(w/2*sinR) + Math.abs(t/2*cosR);
     const solidRef = addSolid(pos.x, pos.z, eff_hw, eff_hd, 0, h);
-    builtWalls.push({ mesh, solidRef, health: 60 });
+    const entry = { type: 'wall', mesh, tier, health: TIERS[tier].hp, solidRef };
+    builtPieces.push(entry);
+    return entry;
   }
-  // destroy a built wall (used by the axe so players can never get permanently
-  // blocked by a wall they placed themselves)
-  function breakBuiltWall(entry) {
-    scene.remove(entry.mesh);
+
+  function placeFloorPiece(pos, tier) {
+    const w = 2.4, t = 0.25;
+    const y = player.pos.y;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, t, w), makePieceMaterial(tier));
+    mesh.position.set(pos.x, y + t/2, pos.z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    // registered in the same `floors` list houses use, so the player's normal
+    // stepping-up logic (groundHeightAt) treats it as a walkable surface.
+    const floorRef = { x: pos.x, z: pos.z, hw: w/2, hd: w/2, y: y + t/2 + 0.03, fl: 0 };
+    floors.push(floorRef);
+    const entry = { type: 'floor', mesh, tier, health: TIERS[tier].hp, floorRef };
+    builtPieces.push(entry);
+    return entry;
+  }
+
+  function placeRampPiece(pos, yaw, tier) {
+    const floorH = 2.2, rampLen = floorH * 1.7, rampWidth = 2.0;
+    const cosR = Math.cos(yaw), sinR = Math.sin(yaw);
+    const pivot = new THREE.Object3D();
+    pivot.position.set(pos.x, player.pos.y, pos.z);
+    pivot.rotation.y = yaw;
+    scene.add(pivot);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(rampWidth, 0.25, rampLen), makePieceMaterial(tier));
+    mesh.position.set(0, floorH/2, rampLen/2);
+    mesh.rotation.x = -Math.atan2(floorH, rampLen);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    pivot.add(mesh);
+    // registered in the same `ramps` list houses use for their staircases,
+    // so groundHeightAt lets the player climb it just like house stairs.
+    const rampRef = { cx: pos.x, cz: pos.z, cosR, sinR, localX: 0, zStart: 0, len: rampLen, halfWidth: rampWidth/2, baseY: player.pos.y + 0.12, floorH };
+    ramps.push(rampRef);
+    const entry = { type: 'ramp', mesh, pivot, tier, health: TIERS[tier].hp, rampRef };
+    builtPieces.push(entry);
+    return entry;
+  }
+
+  function placeStructure(pieceType, tier, pos, yaw) {
+    if (pieceType === 'wall') return placeWallPiece(pos, yaw, tier);
+    if (pieceType === 'floor') return placeFloorPiece(pos, tier);
+    if (pieceType === 'ramp') return placeRampPiece(pos, yaw, tier);
+  }
+
+  // destroy a built piece (used by the axe so players can never get
+  // permanently blocked by something they placed themselves)
+  function breakBuiltPiece(entry) {
+    scene.remove(entry.pivot || entry.mesh);
     const cmIdx = collisionMeshes.indexOf(entry.mesh);
     if (cmIdx !== -1) collisionMeshes.splice(cmIdx, 1);
-    const sIdx = solids.indexOf(entry.solidRef);
-    if (sIdx !== -1) solids.splice(sIdx, 1);
-    const bIdx = builtWalls.indexOf(entry);
-    if (bIdx !== -1) builtWalls.splice(bIdx, 1);
+    if (entry.solidRef) {
+      const sIdx = solids.indexOf(entry.solidRef);
+      if (sIdx !== -1) solids.splice(sIdx, 1);
+    }
+    if (entry.floorRef) {
+      const fIdx = floors.indexOf(entry.floorRef);
+      if (fIdx !== -1) floors.splice(fIdx, 1);
+    }
+    if (entry.rampRef) {
+      const rIdx = ramps.indexOf(entry.rampRef);
+      if (rIdx !== -1) ramps.splice(rIdx, 1);
+    }
+    const bIdx = builtPieces.indexOf(entry);
+    if (bIdx !== -1) builtPieces.splice(bIdx, 1);
   }
 
   // ---------- Weapon defs ----------
@@ -3038,13 +3133,13 @@
           const winRef = winHits[0].object.userData.windowRef;
           if (winRef) { breakWindow(winRef); showHitMarker(false); }
         } else {
-        const wallHits = raycaster.intersectObjects(builtWalls.map(b=>b.mesh), false);
+        const wallHits = raycaster.intersectObjects(builtPieces.map(b=>b.mesh), false);
         if (wallHits.length > 0) {
-          const entry = builtWalls.find(b => b.mesh === wallHits[0].object);
+          const entry = builtPieces.find(b => b.mesh === wallHits[0].object);
           if (entry) {
             entry.health -= 30;
             showHitMarker(false);
-            if (entry.health <= 0) breakBuiltWall(entry);
+            if (entry.health <= 0) breakBuiltPiece(entry);
           }
         } else {
         const botTargets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes);
@@ -3952,16 +4047,96 @@
   }
 
   // ---------- Building ----------
-  function tryBuildWall() {
-    if (player.wood < 5) return;
-    player.wood -= 5;
-    updateWoodUI();
+  let currentBuildPiece = 'wall';
+  let currentBuildTier = 'wood';
+
+  // where a ghost/placed piece should sit for the player's current facing
+  function buildPlacementPos() {
     const forward = getForward(player.yaw);
-    const pos = new THREE.Vector3(player.pos.x + forward.x*2, 0, player.pos.z + forward.z*2);
-    placeWall(pos, player.yaw + Math.PI/2);
+    return new THREE.Vector3(player.pos.x + forward.x*2, 0, player.pos.z + forward.z*2);
   }
+
+  function tryBuildWall() {
+    const cost = buildCost(currentBuildPiece, currentBuildTier);
+    if (player.wood < cost) return;
+    player.wood -= cost;
+    updateWoodUI();
+    const pos = buildPlacementPos();
+    const yaw = currentBuildPiece === 'wall' ? player.yaw + Math.PI/2 : player.yaw;
+    placeStructure(currentBuildPiece, currentBuildTier, pos, yaw);
+  }
+
+  function updateBuildBtnLabel() {
+    const cost = buildCost(currentBuildPiece, currentBuildTier);
+    document.getElementById('buildBtn').innerHTML = `${PIECES[currentBuildPiece].label.toUpperCase()}<br>${TIERS[currentBuildTier].label.toUpperCase()}<br>(${cost})`;
+    const pieceBtn = document.getElementById('buildPieceBtn');
+    const tierBtn = document.getElementById('buildTierBtn');
+    if (pieceBtn) pieceBtn.textContent = PIECES[currentBuildPiece].label.toUpperCase();
+    if (tierBtn) tierBtn.textContent = TIERS[currentBuildTier].label.toUpperCase();
+  }
+  function cycleBuildPiece() {
+    const i = PIECE_ORDER.indexOf(currentBuildPiece);
+    currentBuildPiece = PIECE_ORDER[(i+1) % PIECE_ORDER.length];
+    updateBuildBtnLabel();
+  }
+  function cycleBuildTier() {
+    const i = TIER_ORDER.indexOf(currentBuildTier);
+    currentBuildTier = TIER_ORDER[(i+1) % TIER_ORDER.length];
+    updateBuildBtnLabel();
+  }
+  updateBuildBtnLabel();
+
+  // ---------- Ghost preview ----------
+  // One reusable translucent mesh per piece type; only the one matching
+  // currentBuildPiece is shown, and it's recolored green/red each frame
+  // depending on whether the player can currently afford it.
+  const ghostMatGreen = new THREE.MeshBasicMaterial({ color: 0x5fff7a, transparent: true, opacity: 0.4, depthWrite: false });
+  const ghostMatRed = new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.4, depthWrite: false });
+
+  const ghostWallMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 0.3), ghostMatGreen);
+  scene.add(ghostWallMesh);
+
+  const ghostFloorMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.25, 2.4), ghostMatGreen);
+  scene.add(ghostFloorMesh);
+
+  const ghostRampPivot = new THREE.Object3D();
+  const GHOST_RAMP_FLOOR_H = 2.2, GHOST_RAMP_LEN = GHOST_RAMP_FLOOR_H * 1.7;
+  const ghostRampMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.25, GHOST_RAMP_LEN), ghostMatGreen);
+  ghostRampMesh.position.set(0, GHOST_RAMP_FLOOR_H/2, GHOST_RAMP_LEN/2);
+  ghostRampMesh.rotation.x = -Math.atan2(GHOST_RAMP_FLOOR_H, GHOST_RAMP_LEN);
+  ghostRampPivot.add(ghostRampMesh);
+  scene.add(ghostRampPivot);
+
+  function setGhostMat(mesh, ok) { mesh.material = ok ? ghostMatGreen : ghostMatRed; }
+
+  function updateBuildGhost() {
+    const showing = matchStarted && player.alive && !drop.active && !settingsOpen && !keybindOpen && !invOpen && !matchWon;
+    ghostWallMesh.visible = showing && currentBuildPiece === 'wall';
+    ghostFloorMesh.visible = showing && currentBuildPiece === 'floor';
+    ghostRampPivot.visible = showing && currentBuildPiece === 'ramp';
+    if (!showing) return;
+
+    const pos = buildPlacementPos();
+    const canAfford = player.wood >= buildCost(currentBuildPiece, currentBuildTier);
+
+    if (currentBuildPiece === 'wall') {
+      ghostWallMesh.position.set(pos.x, 2.2/2, pos.z);
+      ghostWallMesh.rotation.y = player.yaw + Math.PI/2;
+      setGhostMat(ghostWallMesh, canAfford);
+    } else if (currentBuildPiece === 'floor') {
+      ghostFloorMesh.position.set(pos.x, player.pos.y + 0.25/2, pos.z);
+      setGhostMat(ghostFloorMesh, canAfford);
+    } else if (currentBuildPiece === 'ramp') {
+      ghostRampPivot.position.set(pos.x, player.pos.y, pos.z);
+      ghostRampPivot.rotation.y = player.yaw;
+      setGhostMat(ghostRampMesh, canAfford);
+    }
+  }
+
   bindTap(document.getElementById('buildBtn'), tryBuildWall);
   bindTap(document.getElementById('buildFromInvBtn'), tryBuildWall);
+  bindTap(document.getElementById('buildPieceBtn'), cycleBuildPiece);
+  bindTap(document.getElementById('buildTierBtn'), cycleBuildTier);
   bindTap(document.getElementById('reloadBtn'), reload);
 
   // ---------- Menu panel open animation helper ----------
@@ -4002,13 +4177,13 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
-    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
+    build: 'KeyB', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
-    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
+    build: 'Build Piece', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -4197,7 +4372,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -4205,7 +4380,9 @@
     fireBtn: 'FIRE',
     scopeBtn: 'SCOPE',
     reloadBtn: 'RELOAD',
-    buildBtn: 'BUILD WALL',
+    buildBtn: 'BUILD PIECE',
+    buildPieceBtn: 'CYCLE PIECE TYPE',
+    buildTierBtn: 'CYCLE MATERIAL',
     weaponSwitchBtn: 'SWITCH WEAPON',
     dropBtn: 'DROP WEAPON',
     grenadeBtn: 'THROW GRENADE',
@@ -4742,6 +4919,8 @@
     if (e.code === keyBindings.pistol) setWeapon('pistol');
     if (e.code === keyBindings.primary) setWeapon('primary');
     if (e.code === keyBindings.build) tryBuildWall();
+    if (e.code === keyBindings.buildPiece) cycleBuildPiece();
+    if (e.code === keyBindings.buildTier) cycleBuildTier();
     if (e.code === keyBindings.drop) dropWeapon();
     if (e.code === keyBindings.grenade) throwGrenade();
     if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
@@ -5374,6 +5553,7 @@
     updateFX(dt);
     updateStreetlamps(dt);
     updateShadowLOD();
+    updateBuildGhost();
     if (matchStarted) updateMinimap();
 
     renderer.render(scene, camera);
