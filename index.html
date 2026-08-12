@@ -1270,7 +1270,7 @@
       const floorsN = 1 + Math.floor(Math.random()*3);
       const rotY = Math.floor(Math.random()*4) * (Math.PI/2);
       makeHouse(x, z, w, d, floorsN, rotY);
-      houseSpawnPoints.push({x,z});
+      houseSpawnPoints.push({x, z, w, d, rotY});
       placed++;
     }
   }
@@ -4972,17 +4972,36 @@
   // guarantees a handful actually exist by placing them on floors that
   // rolled "empty" during house generation, so they're always findable
   // without inflating the odds of finding one on any single floor.
-  function spawnGuaranteedMolotovs(count) {
-    const spots = lootFloorSpots.slice();
+  function shuffleSpots(spots) {
     for (let i = spots.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [spots[i], spots[j]] = [spots[j], spots[i]];
     }
+    return spots;
+  }
+  function spawnGuaranteedMolotovs(count) {
+    const spots = shuffleSpots(lootFloorSpots.slice());
     for (let i = 0; i < Math.min(count, spots.length); i++) {
       spawnWeaponPickup('molotov', spots[i].x, spots[i].y, spots[i].z);
     }
   }
+  // Also put a few guaranteed molotovs just outside house doorways. The
+  // interior-only guarantee above could technically work while still feeling
+  // broken to players who search houses from the outside and never see the
+  // tiny bottle/ring through walls. Doorstep spawns make the orange rings
+  // plainly visible without removing the random indoor loot.
+  function spawnDoorstepMolotovs(count) {
+    const spots = shuffleSpots(houseSpawnPoints.slice());
+    for (let i = 0; i < Math.min(count, spots.length); i++) {
+      const h = spots[i];
+      const localZ = h.d / 2 + 2.2;
+      const x = h.x + localZ * Math.sin(h.rotY || 0);
+      const z = h.z + localZ * Math.cos(h.rotY || 0);
+      spawnWeaponPickup('molotov', x, terrainHeightAt(x, z) + 0.25, z);
+    }
+  }
   spawnGuaranteedMolotovs(5);
+  spawnDoorstepMolotovs(6);
   generateTrees();
   generateAmmoCrates();
 
