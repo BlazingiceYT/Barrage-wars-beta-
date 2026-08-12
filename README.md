@@ -139,3 +139,7 @@ Colorblind-Friendly Colors toggle (new "Accessibility" section) — swaps the re
 
 **Update0.42** - *Commited by BlazingiceYT on 12 Aug 2026*
 Added better UI and molotov
+
+**Update0.42** - *Commited by BlazingiceYT on 12 Aug 2026*
+Upgraded pickup logic
+
