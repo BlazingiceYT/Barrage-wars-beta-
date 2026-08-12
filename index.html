@@ -261,6 +261,16 @@
   #grenadeBtn:active { background: rgba(150,200,100,0.5); }
   #grenadeBtn.disabled { opacity: 0.35; pointer-events: none; }
 
+  #smokeGrenadeBtn {
+    position: absolute; right: 20px; bottom: 445px; width: 46px; height: 46px;
+    background: rgba(60,60,65,0.6); border: 2px solid rgba(200,200,210,0.6); color: #fff;
+    border-radius: 50%; font-size: 18px; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #smokeGrenadeBtn .count { position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold; color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px; }
+  #smokeGrenadeBtn:active { background: rgba(200,200,210,0.5); }
+  #smokeGrenadeBtn.disabled { opacity: 0.35; pointer-events: none; }
+
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -475,13 +485,14 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
     <button id="weaponSwitchBtn">SWITCH</button>
     <button id="dropBtn" class="disabled">DROP<br>(G)</button>
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
+    <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="reloadBtn">RELOAD</button>
@@ -902,7 +913,7 @@
     group.rotation.z = Math.PI/2.3;
     group.position.set(x, y + 1.0, z);
     scene.add(group);
-    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'grenade' ? 0x6bff7a : 0xaeb4bb));
+    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : 0xaeb4bb)));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
@@ -931,6 +942,13 @@
       player.grenades = Math.min(player.maxGrenades, player.grenades + 1);
       updateGrenadeUI();
       showPickupToast('PICKED UP: GRENADE');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'smokegrenade') {
+      player.smokeGrenades = Math.min(player.maxSmokeGrenades, player.smokeGrenades + 1);
+      updateSmokeGrenadeUI();
+      showPickupToast('PICKED UP: SMOKE GRENADE');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -1160,11 +1178,13 @@
         spawnWeaponPickup(type, px, baseY + 0.25, pz);
       }
       // separate, independent roll for a grenade pickup on the same floor —
-      // doesn't compete with (or reduce the odds of) the gun roll above
+      // doesn't compete with (or reduce the odds of) the gun roll above.
+      // Smoke grenades share this same 0.35 roll (not an extra chance on
+      // top) — whichever fires, a coin flip decides frag vs smoke.
       if (Math.random() < 0.35) {
         const gx = cx + (Math.random()-0.5) * (w - 3);
         const gz = cz + (Math.random()-0.5) * (d - 3);
-        spawnWeaponPickup('grenade', gx, baseY + 0.25, gz);
+        spawnWeaponPickup(Math.random() < 0.5 ? 'grenade' : 'smokegrenade', gx, baseY + 0.25, gz);
       }
     }
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -1379,7 +1399,26 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: null };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, grenade: buildGrenadeMesh };
+  // Same canister silhouette as the frag grenade, but a plain grey body with
+  // a red band — the visual cue players use to tell them apart mid-throw.
+  function buildSmokeGrenadeMesh(s) {
+    const g = new THREE.Object3D();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.6, metalness: 0.15 });
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0xb03030, roughness: 0.5 });
+    const pinMat = new THREE.MeshStandardMaterial({ color: 0xb0b0b0, roughness: 0.4, metalness: 0.6 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.22, 10), bodyMat);
+    g.add(body);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.102, 0.102, 0.045, 10), bandMat);
+    band.position.set(0, 0.04, 0);
+    g.add(band);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.06, 8), pinMat);
+    cap.position.set(0, 0.14, 0);
+    g.add(cap);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh };
 
   // ---------- Bot weapon handling ----------
   // Bots start with an infinite-ammo pistol (so they're never stuck unarmed)
@@ -1698,6 +1737,8 @@
     ammoState: { pistol: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
     grenades: 0,
     maxGrenades: 4,
+    smokeGrenades: 0,
+    maxSmokeGrenades: 4,
     isPlayer: true,
     falling: false,
     chuteOpen: false
@@ -2997,6 +3038,10 @@
     document.getElementById('grenadeCountTag').textContent = player.grenades;
     document.getElementById('grenadeBtn').classList.toggle('disabled', player.grenades <= 0);
   }
+  function updateSmokeGrenadeUI() {
+    document.getElementById('smokeGrenadeCountTag').textContent = player.smokeGrenades;
+    document.getElementById('smokeGrenadeBtn').classList.toggle('disabled', player.smokeGrenades <= 0);
+  }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
     document.getElementById('invWoodVal').textContent = player.wood;
@@ -3135,6 +3180,31 @@
     thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
     thumpOsc.connect(thumpGain); thumpGain.connect(ctx.destination);
     thumpOsc.start(t); thumpOsc.stop(t + 0.42);
+  }
+
+  // Short, soft hiss-pop for a smoke canister popping open — a much
+  // quieter, higher-filtered cousin of playExplosionSound (no low thump,
+  // since there's no blast, just the canister venting).
+  function playSmokePop(distance) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    let vol = 0.55;
+    if (distance && distance > 0) {
+      vol = Math.max(0, 0.55 * (1 - distance / 55));
+      if (vol <= 0.02) return;
+    }
+    const hissSrc = ctx.createBufferSource();
+    hissSrc.buffer = noiseBuffer;
+    hissSrc.playbackRate.value = 1.6 + Math.random()*0.2;
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.value = 1200;
+    const hissGain = ctx.createGain();
+    hissGain.gain.setValueAtTime(vol, t);
+    hissGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    hissSrc.connect(hissFilter); hissFilter.connect(hissGain); hissGain.connect(ctx.destination);
+    hissSrc.start(t); hissSrc.stop(t + 0.52);
   }
 
   // Low detuned growl for the boss's wave-start entrance - two saw
@@ -3369,6 +3439,8 @@
     player.weapon = 'pistol';
     player.grenades = 0;
     updateGrenadeUI();
+    player.smokeGrenades = 0;
+    updateSmokeGrenadeUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
@@ -3416,6 +3488,8 @@
     activeGrenades.length = 0;
     for (const fx of explosionFX) scene.remove(fx.mesh);
     explosionFX.length = 0;
+    for (const c of smokeClouds) scene.remove(c.mesh);
+    smokeClouds.length = 0;
     aliveBotCount = BOT_COUNT;
     for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
     document.getElementById('aliveCount').textContent = aliveBotCount + 1;
@@ -3770,13 +3844,13 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
-    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', inventory: 'Tab'
+    build: 'KeyB', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', inventory: 'Tab'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
-    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', inventory: 'Inventory'
+    build: 'Build Wall', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', inventory: 'Inventory'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -3936,7 +4010,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -3948,6 +4022,7 @@
     weaponSwitchBtn: 'SWITCH WEAPON',
     dropBtn: 'DROP WEAPON',
     grenadeBtn: 'THROW GRENADE',
+    smokeGrenadeBtn: 'THROW SMOKE',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -4179,6 +4254,7 @@
   // 'grenade' entry, so the tier comparison used for gun-seeking just fails.
   const activeGrenades = [];
   const explosionFX = [];
+  const smokeClouds = [];
   function throwGrenade() {
     if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.grenades <= 0) return;
     player.grenades--;
@@ -4194,7 +4270,24 @@
     mesh.castShadow = true;
     mesh.position.copy(startPos);
     scene.add(mesh);
-    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.7 });
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.7, isSmoke: false });
+  }
+  function throwSmokeGrenade() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.smokeGrenades <= 0) return;
+    player.smokeGrenades--;
+    updateSmokeGrenadeUI();
+    const dir3 = new THREE.Vector3();
+    camera.getWorldDirection(dir3);
+    const throwSpeed = 17;
+    const vel = dir3.clone().multiplyScalar(throwSpeed);
+    vel.y += 6;
+    const startPos = new THREE.Vector3(player.pos.x, player.pos.y + 1.5, player.pos.z);
+    startPos.addScaledVector(dir3, 0.7);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.6 }));
+    mesh.castShadow = true;
+    mesh.position.copy(startPos);
+    scene.add(mesh);
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.5, isSmoke: true });
   }
   function updateGrenades(dt) {
     for (let i = activeGrenades.length - 1; i >= 0; i--) {
@@ -4211,7 +4304,7 @@
       g.mesh.rotation.x += dt * 6;
       g.fuse -= dt;
       if (g.fuse <= 0) {
-        explodeGrenade(g.pos);
+        if (g.isSmoke) spawnSmokeCloud(g.pos); else explodeGrenade(g.pos);
         scene.remove(g.mesh);
         activeGrenades.splice(i, 1);
       }
@@ -4277,7 +4370,46 @@
       }
     }
   }
+  // Smoke is purely visual — it obscures the view but never blocks bullets,
+  // aim raycasts, or grenade line-of-sight. It's not in collisionMeshes and
+  // never in `solids`, so it doesn't act like a wall in any sense: you can
+  // shoot through it and walk through it, same as anyone else can.
+  const SMOKE_RADIUS = 4.5, SMOKE_GROW = 1.0, SMOKE_HOLD = 6.0, SMOKE_FADE = 2.0;
+  function spawnSmokeCloud(pos) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(SMOKE_RADIUS, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xcfd2d6, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+    );
+    mesh.position.copy(pos);
+    mesh.scale.setScalar(0.001);
+    scene.add(mesh);
+    const camDist = pos.distanceTo(camera.position);
+    playSmokePop(camDist);
+    smokeClouds.push({ mesh, life: 0 });
+  }
+  function updateSmokeClouds(dt) {
+    for (let i = smokeClouds.length - 1; i >= 0; i--) {
+      const c = smokeClouds[i];
+      c.life += dt;
+      if (c.life < SMOKE_GROW) {
+        const t = c.life / SMOKE_GROW;
+        c.mesh.scale.setScalar(Math.max(0.001, t));
+        c.mesh.material.opacity = 0.55 * t;
+      } else if (c.life < SMOKE_GROW + SMOKE_HOLD) {
+        c.mesh.scale.setScalar(1);
+        c.mesh.material.opacity = 0.55;
+      } else {
+        const t = (c.life - SMOKE_GROW - SMOKE_HOLD) / SMOKE_FADE;
+        c.mesh.material.opacity = Math.max(0, 0.55 * (1 - t));
+        if (t >= 1) {
+          scene.remove(c.mesh);
+          smokeClouds.splice(i, 1);
+        }
+      }
+    }
+  }
   bindTap(document.getElementById('grenadeBtn'), throwGrenade);
+  bindTap(document.getElementById('smokeGrenadeBtn'), throwSmokeGrenade);
 
   // ---------- View mode ----------
   let viewMode = 'third';
@@ -4314,6 +4446,7 @@
     if (e.code === keyBindings.build) tryBuildWall();
     if (e.code === keyBindings.drop) dropWeapon();
     if (e.code === keyBindings.grenade) throwGrenade();
+    if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -4934,6 +5067,7 @@
       }
     }
     updateExplosionFX(dt);
+    updateSmokeClouds(dt);
     updateCamera();
     updateMobileAimSystems(dt);
     updateWeaponAnim(dt);
@@ -4944,7 +5078,7 @@
 
     renderer.render(scene, camera);
   }
-  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI();
+  updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI();
   animate();
 
 })();
