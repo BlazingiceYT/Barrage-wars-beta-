@@ -277,7 +277,7 @@
   #smokeGrenadeBtn.disabled { opacity: 0.35; pointer-events: none; }
 
   #molotovBtn {
-    position: absolute; right: 20px; bottom: 500px; width: 46px; height: 46px;
+    position: absolute; right: 74px; bottom: 445px; width: 46px; height: 46px;
     background: rgba(90,40,15,0.6); border: 2px solid rgba(255,140,60,0.6); color: #fff;
     border-radius: 50%; font-size: 18px; pointer-events: auto;
     display: flex; align-items: center; justify-content: center;
@@ -1227,12 +1227,17 @@
       // doesn't compete with (or reduce the odds of) the gun roll above.
       // Frag/smoke/molotov all share this same 0.35 roll (not an extra
       // chance on top) — whichever fires, a 3-way split decides the type.
+      // Floors that DON'T roll a throwable are recorded in lootFloorSpots so
+      // a guaranteed-molotov pass can use them afterward without ever
+      // double-spawning a pickup on top of one that already landed here.
+      const gx = cx + (Math.random()-0.5) * (w - 3);
+      const gz = cz + (Math.random()-0.5) * (d - 3);
       if (Math.random() < 0.35) {
-        const gx = cx + (Math.random()-0.5) * (w - 3);
-        const gz = cz + (Math.random()-0.5) * (d - 3);
         const throwRoll = Math.random();
         const throwType = throwRoll < 0.4 ? 'grenade' : (throwRoll < 0.7 ? 'smokegrenade' : 'molotov');
         spawnWeaponPickup(throwType, gx, baseY + 0.25, gz);
+      } else {
+        lootFloorSpots.push({ x: gx, y: baseY + 0.25, z: gz });
       }
     }
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -1246,6 +1251,10 @@
   }
 
   const houseSpawnPoints = [];
+  // Floor spots that rolled "no throwable" during house generation — a pool
+  // the guarantee pass below can draw from so molotovs never depend purely
+  // on luck to exist somewhere on the map.
+  const lootFloorSpots = [];
   function generateHouses() {
     let placed = 0, attempts = 0;
     while (placed < 30 && attempts < 700) {
@@ -4958,6 +4967,22 @@
 
   // ---------- World generation (order matters: houses before trees/crates) ----------
   generateHouses();
+  // The floor-loot roll only puts a molotov somewhere ~10% of the time per
+  // floor, which can mean an entire playthrough without seeing one. This
+  // guarantees a handful actually exist by placing them on floors that
+  // rolled "empty" during house generation, so they're always findable
+  // without inflating the odds of finding one on any single floor.
+  function spawnGuaranteedMolotovs(count) {
+    const spots = lootFloorSpots.slice();
+    for (let i = spots.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [spots[i], spots[j]] = [spots[j], spots[i]];
+    }
+    for (let i = 0; i < Math.min(count, spots.length); i++) {
+      spawnWeaponPickup('molotov', spots[i].x, spots[i].y, spots[i].z);
+    }
+  }
+  spawnGuaranteedMolotovs(5);
   generateTrees();
   generateAmmoCrates();
 
