@@ -32,10 +32,10 @@
     width: 30px; height: 30px; opacity: 0; pointer-events: none;
   }
   #hitmarker::before, #hitmarker::after {
-    content:''; position:absolute; width: 100%; height: 3px; background: #ff3b3b;
+    content:''; position:absolute; width: 100%; height: 3px; background: var(--hm-body, #ff3b3b);
     top: 50%; left: 0;
   }
-  #hitmarker.headshot::before, #hitmarker.headshot::after { background: #ffdd33; height: 4px; }
+  #hitmarker.headshot::before, #hitmarker.headshot::after { background: var(--hm-head, #ffdd33); height: 4px; }
   #hitmarker::before { transform: translateY(-50%) rotate(45deg); }
   #hitmarker::after { transform: translateY(-50%) rotate(-45deg); }
   #hitmarker.show { animation: hitflash 0.25s ease-out; }
@@ -48,7 +48,12 @@
   }
   #healthLabel { color: #ddd; font-size: 11px; letter-spacing: 1px; margin-bottom: 3px; text-transform: uppercase; }
   #healthBarBg { width: 100%; height: 14px; background: #331111; border-radius: 4px; overflow: hidden; }
-  #healthBar { height: 100%; width: 100%; background: linear-gradient(90deg,#ff3b3b,#ff8a3b); transition: width 0.15s ease-out; }
+  #healthBar { height: 100%; width: 100%; background: linear-gradient(90deg,var(--hb-a, #ff3b3b),var(--hb-b, #ff8a3b)); transition: width 0.15s ease-out; }
+  /* Colorblind-friendly palette: swaps the red/yellow/green scheme (hardest
+     to tell apart under red-green color blindness) for a blue/amber/red
+     scheme, where every pair differs in more than just the red-green axis.
+     Toggled by adding this class to <body> from the settings panel. */
+  body.colorblindMode { --hm-body: #3da5ff; --hm-head: #ff9d1f; --hb-a: #3da5ff; --hb-b: #8fd6ff; }
 
   #staminaWrap { margin-top: 8px; }
   #staminaLabel { color: #ddd; font-size: 11px; letter-spacing: 1px; margin-bottom: 3px; text-transform: uppercase; }
@@ -533,10 +538,14 @@
     <h3>SETTINGS</h3>
     <div class="row"><span>Look Sensitivity</span><input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"><span class="val" id="sensVal">1.0</span></div>
     <div class="row"><span>Scope Sensitivity</span><input type="range" id="scopeSensSlider" min="0.1" max="1" step="0.05" value="0.35"><span class="val" id="scopeSensVal">0.35</span></div>
+    <div class="row"><span>Field of View</span><input type="range" id="fovSlider" min="60" max="110" step="1" value="70"><span class="val" id="fovVal">70</span></div>
+    <div class="row"><span>Invert Look Y</span><button id="invertYToggleBtn" class="miniToggleBtn off">OFF</button></div>
     <h3 style="margin-top:14px;">GRAPHICS</h3>
     <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="2" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
     <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row"><span>Shadows</span><button id="shadowToggleBtn" class="miniToggleBtn">ON</button></div>
+    <h3 style="margin-top:14px;">ACCESSIBILITY</h3>
+    <div class="row"><span>Colorblind-Friendly Colors</span><button id="colorblindToggleBtn" class="miniToggleBtn off">OFF</button></div>
     <h3 id="mobileAimHeader" style="margin-top:14px;">MOBILE AIM</h3>
     <div class="row" id="aimAssistRow"><span>Aim Assist</span><button id="aimAssistToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row" id="autoShootRow"><span>Auto Shoot</span><button id="autoShootToggleBtn" class="miniToggleBtn">ON</button></div>
@@ -1809,12 +1818,20 @@
     spr.userData.canvas = cnv; spr.userData.ctx = cnv.getContext('2d'); spr.userData.tex = tex;
     return spr;
   }
+  // Standard palette is the traffic-light red/yellow/green scheme, which is
+  // exactly the pairing red-green colorblind players (the most common form)
+  // have the hardest time telling apart at a glance mid-fight. The
+  // colorblind-mode palette swaps in blue for "healthy" so every state
+  // differs by more than just the red-green axis.
+  const HEALTH_COLORS = ['#4bd25a', '#e8c22e', '#e34b3d'];
+  const HEALTH_COLORS_CB = ['#3da5ff', '#ffb400', '#e34b3d'];
   function updateHealthSprite(ent) {
     const { ctx, canvas: cnv, tex } = ent.healthSprite.userData;
     const frac = Math.max(0, ent.health / ent.maxHealth);
     ctx.clearRect(0,0,cnv.width,cnv.height);
     ctx.fillStyle = 'rgba(20,0,0,0.8)'; ctx.fillRect(0,0,cnv.width,cnv.height);
-    ctx.fillStyle = frac > 0.5 ? '#4bd25a' : (frac > 0.25 ? '#e8c22e' : '#e34b3d');
+    const palette = settings.colorblindMode ? HEALTH_COLORS_CB : HEALTH_COLORS;
+    ctx.fillStyle = frac > 0.5 ? palette[0] : (frac > 0.25 ? palette[1] : palette[2]);
     ctx.fillRect(2,2,(cnv.width-4)*frac,cnv.height-4);
     tex.needsUpdate = true;
     if (ent.isBoss) {
@@ -3413,7 +3430,7 @@
   })();
 
   function updateSpeedEffects(dt) {
-    const targetFov = (player.sprinting && !isScoped) ? BASE_FOV + 12 : BASE_FOV;
+    const targetFov = (player.sprinting && !isScoped) ? settings.fov + 12 : settings.fov;
     if (!isScoped) {
       camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 8);
       camera.updateProjectionMatrix();
@@ -3828,7 +3845,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true, fov: BASE_FOV, invertY: false, colorblindMode: false };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -3953,6 +3970,22 @@
     settings.scopeSensMult = parseFloat(scopeSensSlider.value);
     document.getElementById('scopeSensVal').textContent = settings.scopeSensMult.toFixed(2);
   });
+  const fovSlider = document.getElementById('fovSlider');
+  fovSlider.addEventListener('input', () => {
+    settings.fov = parseFloat(fovSlider.value);
+    document.getElementById('fovVal').textContent = settings.fov.toFixed(0);
+    // updateSpeedEffects() smoothly eases camera.fov toward settings.fov
+    // every frame when not scoped, so changing the value here is enough for
+    // a live preview — no direct camera.fov write needed. While scoped the
+    // zoom FOV is in control anyway; the new base value takes effect the
+    // moment the player unscopes (endScope() reads settings.fov).
+  });
+  const invertYToggleBtn = document.getElementById('invertYToggleBtn');
+  bindTap(invertYToggleBtn, () => {
+    settings.invertY = !settings.invertY;
+    invertYToggleBtn.textContent = settings.invertY ? 'ON' : 'OFF';
+    invertYToggleBtn.classList.toggle('off', !settings.invertY);
+  });
 
   // ---------- Graphics settings ----------
   const RENDER_DIST_LABELS = ['Low', 'Medium', 'High'];
@@ -3988,9 +4021,22 @@
     renderer.shadowMap.enabled = settings.shadows;
     // Three.js needs materials that use shadows to be told to recompile
     // once shadowMap.enabled flips, otherwise stale shadows can linger.
-    scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });
-    shadowToggleBtn.textContent = settings.shadows ? 'ON' : 'OFF';
+    scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });    shadowToggleBtn.textContent = settings.shadows ? 'ON' : 'OFF';
     shadowToggleBtn.classList.toggle('off', !settings.shadows);
+  });
+  const colorblindToggleBtn = document.getElementById('colorblindToggleBtn');
+  bindTap(colorblindToggleBtn, () => {
+    settings.colorblindMode = !settings.colorblindMode;
+    colorblindToggleBtn.textContent = settings.colorblindMode ? 'ON' : 'OFF';
+    colorblindToggleBtn.classList.toggle('off', !settings.colorblindMode);
+    document.body.classList.toggle('colorblindMode', settings.colorblindMode);
+    // Health sprites (bots/zombies/boss) are drawn onto a 2D canvas texture,
+    // not styled with CSS, so the palette swap doesn't reach any bar that's
+    // already been drawn until it's redrawn. Refresh every currently alive
+    // one immediately so the new palette shows without waiting for the next
+    // hit to trigger a redraw.
+    for (const bot of bots) { if (bot.alive && bot.healthSprite) updateHealthSprite(bot); }
+    for (const zom of zombies) { if (zom.alive && zom.healthSprite) updateHealthSprite(zom); }
   });
   const aimAssistToggleBtn = document.getElementById('aimAssistToggleBtn');
   bindTap(aimAssistToggleBtn, () => {
@@ -4197,7 +4243,7 @@
   function endScope() {
     if (!isScoped) return;
     isScoped = false;
-    camera.fov = BASE_FOV;
+    camera.fov = settings.fov;
     camera.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'none';
     document.getElementById('scopeBtn').classList.remove('active');
@@ -4466,7 +4512,7 @@
     if (document.pointerLockElement === canvas) {
       const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
       player.yaw -= e.movementX * MOUSE_SENS * mult;
-      player.pitch -= e.movementY * MOUSE_SENS * mult;
+      player.pitch -= e.movementY * MOUSE_SENS * mult * (settings.invertY ? -1 : 1);
       player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
     }
   });
@@ -4564,7 +4610,7 @@
       if (t.identifier === lookState.id) {
         const dx = t.clientX - lookState.lastX, dy = t.clientY - lookState.lastY;
         const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
-        player.yaw -= dx * TOUCH_SENS * mult; player.pitch -= dy * TOUCH_SENS * mult;
+        player.yaw -= dx * TOUCH_SENS * mult; player.pitch -= dy * TOUCH_SENS * mult * (settings.invertY ? -1 : 1);
         player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
         lookState.lastX = t.clientX; lookState.lastY = t.clientY;
       }
@@ -4621,7 +4667,7 @@
     const dx = e.clientX - fireDragState.lastX, dy = e.clientY - fireDragState.lastY;
     const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
     player.yaw -= dx * TOUCH_SENS * mult;
-    player.pitch -= dy * TOUCH_SENS * mult;
+    player.pitch -= dy * TOUCH_SENS * mult * (settings.invertY ? -1 : 1);
     player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
     fireDragState.lastX = e.clientX;
     fireDragState.lastY = e.clientY;
