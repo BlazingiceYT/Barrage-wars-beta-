@@ -1114,6 +1114,13 @@
     const floorH = 3.2;
     const wt = HOUSE_WALL_THICKNESS;
     const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
+    let houseHasGun = false;
+    let houseHasThrowable = false;
+    function spawnHousePickup(type, lx, lz, y) {
+      const wx = cx + lx*cosR + lz*sinR;
+      const wz = cz - lx*sinR + lz*cosR;
+      spawnWeaponPickup(type, wx, y, wz);
+    }
 
     for (let fl = 0; fl < numFloors; fl++) {
       const baseY = fl * floorH;
@@ -1219,27 +1226,35 @@
       if (Math.random() < 0.55) {
         const roll = Math.random();
         const type = roll < 0.5 ? 'ak47' : (roll < 0.78 ? 'minigun' : 'sniper');
-        const px = cx + (Math.random()-0.5) * (w - 3);
-        const pz = cz + (Math.random()-0.5) * (d - 3);
-        spawnWeaponPickup(type, px, baseY + 0.25, pz);
+        const px = (Math.random()-0.5) * (w - 3);
+        const pz = (Math.random()-0.5) * (d - 3);
+        spawnHousePickup(type, px, pz, baseY + 0.25);
+        houseHasGun = true;
       }
-      // separate, independent roll for a grenade pickup on the same floor —
-      // doesn't compete with (or reduce the odds of) the gun roll above.
-      // Frag/smoke/molotov all share this same 0.35 roll (not an extra
-      // chance on top) — whichever fires, a 3-way split decides the type.
-      // Floors that DON'T roll a throwable are recorded in lootFloorSpots so
-      // a guaranteed-molotov pass can use them afterward without ever
-      // double-spawning a pickup on top of one that already landed here.
-      const gx = cx + (Math.random()-0.5) * (w - 3);
-      const gz = cz + (Math.random()-0.5) * (d - 3);
+      // Separate, independent roll for a throwable pickup on the same floor.
+      // Frag/smoke/molotov share this same 0.35 roll; if no floor in this
+      // house rolls one, the fallback below guarantees one random throwable
+      // inside the house.
+      const gx = (Math.random()-0.5) * (w - 3);
+      const gz = (Math.random()-0.5) * (d - 3);
       if (Math.random() < 0.35) {
         const throwRoll = Math.random();
         const throwType = throwRoll < 0.4 ? 'grenade' : (throwRoll < 0.7 ? 'smokegrenade' : 'molotov');
-        spawnWeaponPickup(throwType, gx, baseY + 0.25, gz);
-      } else {
-        lootFloorSpots.push({ x: gx, y: baseY + 0.25, z: gz });
+        spawnHousePickup(throwType, gx, gz, baseY + 0.25);
+        houseHasThrowable = true;
       }
     }
+    if (!houseHasGun) {
+      const roll = Math.random();
+      const type = roll < 0.5 ? 'ak47' : (roll < 0.78 ? 'minigun' : 'sniper');
+      spawnHousePickup(type, -w * 0.22, 0, 0.25);
+    }
+    if (!houseHasThrowable) {
+      const throwRoll = Math.random();
+      const throwType = throwRoll < 0.34 ? 'grenade' : (throwRoll < 0.67 ? 'smokegrenade' : 'molotov');
+      spawnHousePickup(throwType, w * 0.22, 0, 0.25);
+    }
+
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
     roof.position.set(0, numFloors*floorH + 1.3, 0);
     roof.rotation.y = Math.PI/4;
@@ -1251,10 +1266,6 @@
   }
 
   const houseSpawnPoints = [];
-  // Floor spots that rolled "no throwable" during house generation — a pool
-  // the guarantee pass below can draw from so molotovs never depend purely
-  // on luck to exist somewhere on the map.
-  const lootFloorSpots = [];
   function generateHouses() {
     let placed = 0, attempts = 0;
     while (placed < 30 && attempts < 700) {
@@ -4616,30 +4627,37 @@
   // grenade's one-shot blast. Purely a DOT zone: no line-of-sight check,
   // since fire on the ground doesn't care what's between you and its source.
   const fireZones = [];
-  const FIRE_RADIUS = 3.4, FIRE_DURATION = 5.5, FIRE_TICK = 0.5, FIRE_TICK_DMG = 9;
+  const FIRE_RADIUS = 5.6, FIRE_DURATION = 5.5, FIRE_TICK = 0.5, FIRE_TICK_DMG = 9;
   function spawnFireZone(pos) {
     const floorY = groundHeightAt(pos.x, pos.z, pos.y + 2);
     const group = new THREE.Object3D();
     group.position.set(pos.x, floorY, pos.z);
     scene.add(group);
+    const scorch = new THREE.Mesh(
+      new THREE.CircleGeometry(FIRE_RADIUS, 32),
+      new THREE.MeshBasicMaterial({ color: 0xff5a16, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+    );
+    scorch.rotation.x = -Math.PI/2;
+    scorch.position.y = 0.025;
+    group.add(scorch);
     const flames = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 16; i++) {
       const flame = new THREE.Mesh(
-        new THREE.ConeGeometry(0.22 + Math.random()*0.12, 0.6 + Math.random()*0.3, 6),
+        new THREE.ConeGeometry(0.34 + Math.random()*0.22, 0.95 + Math.random()*0.65, 6),
         new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff6a1a : 0xffb347, transparent: true, opacity: 0.85 })
       );
-      const ang = Math.random()*Math.PI*2, rad = Math.random()*FIRE_RADIUS*0.55;
-      flame.position.set(Math.cos(ang)*rad, 0.3, Math.sin(ang)*rad);
+      const ang = Math.random()*Math.PI*2, rad = Math.random()*FIRE_RADIUS*0.9;
+      flame.position.set(Math.cos(ang)*rad, 0.45, Math.sin(ang)*rad);
       group.add(flame);
       flames.push(flame);
     }
-    const light = new THREE.PointLight(0xff7a2a, 2.6, 14, 2);
-    light.position.set(0, 1, 0);
+    const light = new THREE.PointLight(0xff7a2a, 4.2, 22, 2);
+    light.position.set(0, 1.4, 0);
     group.add(light);
     const camDist = pos.distanceTo(camera.position);
     playMolotovShatter(camDist);
     if (camDist < 30) addShake(0.2);
-    fireZones.push({ group, flames, light, life: 0, nextTickAt: FIRE_TICK });
+    fireZones.push({ group, scorch, flames, light, life: 0, nextTickAt: FIRE_TICK });
   }
   function applyFireDamage(fz) {
     const p = fz.group.position;
@@ -4673,7 +4691,8 @@
       const fz = fireZones[i];
       fz.life += dt;
       const flicker = 0.75 + Math.sin(fz.life*14)*0.15 + Math.random()*0.1;
-      fz.light.intensity = 2.6 * flicker;
+      fz.light.intensity = 4.2 * flicker;
+      fz.scorch.material.opacity = Math.max(0, 0.22 * (1 - fz.life / FIRE_DURATION));
       for (const fl of fz.flames) fl.scale.set(1, flicker * (0.9 + Math.random()*0.2), 1);
       if (fz.life >= fz.nextTickAt) {
         fz.nextTickAt += FIRE_TICK;
@@ -4967,41 +4986,6 @@
 
   // ---------- World generation (order matters: houses before trees/crates) ----------
   generateHouses();
-  // The floor-loot roll only puts a molotov somewhere ~10% of the time per
-  // floor, which can mean an entire playthrough without seeing one. This
-  // guarantees a handful actually exist by placing them on floors that
-  // rolled "empty" during house generation, so they're always findable
-  // without inflating the odds of finding one on any single floor.
-  function shuffleSpots(spots) {
-    for (let i = spots.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [spots[i], spots[j]] = [spots[j], spots[i]];
-    }
-    return spots;
-  }
-  function spawnGuaranteedMolotovs(count) {
-    const spots = shuffleSpots(lootFloorSpots.slice());
-    for (let i = 0; i < Math.min(count, spots.length); i++) {
-      spawnWeaponPickup('molotov', spots[i].x, spots[i].y, spots[i].z);
-    }
-  }
-  // Also put a few guaranteed molotovs just outside house doorways. The
-  // interior-only guarantee above could technically work while still feeling
-  // broken to players who search houses from the outside and never see the
-  // tiny bottle/ring through walls. Doorstep spawns make the orange rings
-  // plainly visible without removing the random indoor loot.
-  function spawnDoorstepMolotovs(count) {
-    const spots = shuffleSpots(houseSpawnPoints.slice());
-    for (let i = 0; i < Math.min(count, spots.length); i++) {
-      const h = spots[i];
-      const localZ = h.d / 2 + 2.2;
-      const x = h.x + localZ * Math.sin(h.rotY || 0);
-      const z = h.z + localZ * Math.cos(h.rotY || 0);
-      spawnWeaponPickup('molotov', x, terrainHeightAt(x, z) + 0.25, z);
-    }
-  }
-  spawnGuaranteedMolotovs(5);
-  spawnDoorstepMolotovs(6);
   generateTrees();
   generateAmmoCrates();
 
