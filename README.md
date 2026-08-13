@@ -137,8 +137,7 @@ Added damage direction indicator
 **Patch0.49** - *Commited by BlazingiceYT on 13 Aug 2026*
 Fixed skip wave button not working
 
-
-BETA0.50
+**Update0.50** - *Commited by BlazingiceYT on 13 Aug 2026*
 Added new guns but yet to fix their rotation
 
 Extreme beta 0.51
