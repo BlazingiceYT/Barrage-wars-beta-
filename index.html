@@ -2035,12 +2035,35 @@
   // and these two identical-looking materials are reused).
   const botHeadMat = new THREE.MeshStandardMaterial({color:0xe0b088});
   const botLegsMat = new THREE.MeshStandardMaterial({color:0x241010});
+  // ---------- Bot difficulty tiers (80% normal / 15% aggressive / 5% elite) ----------
+  // Normal: baseline stats, unchanged from before.
+  // Aggressive: tougher and hits a bit more often, closes distance faster.
+  // Elite: much more HP and a far gentler accuracy falloff with range, so they
+  // stay dangerous at distance instead of becoming harmless once you back off.
+  const BOT_TIERS = {
+    normal:     { health: 60,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null },
+    aggressive: { health: 85,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522 },
+    elite:      { health: 150, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f }
+  };
+  function pickBotTier() {
+    const r = Math.random();
+    if (r < 0.05) return 'elite';
+    if (r < 0.20) return 'aggressive';
+    return 'normal';
+  }
+
   function spawnBot(idx) {
+    const tierName = pickBotTier();
+    const tier = BOT_TIERS[tierName];
     const group = new THREE.Object3D();
     const colorHex = botBodyMats[idx % botBodyMats.length];
-    const eBody = new THREE.Mesh(humanoidTorsoGeo, new THREE.MeshStandardMaterial({color:colorHex, roughness:0.6}));
+    const bodyMat = new THREE.MeshStandardMaterial({color:colorHex, roughness:0.6});
+    if (tier.glow) { bodyMat.emissive = new THREE.Color(tier.glow); bodyMat.emissiveIntensity = tierName === 'elite' ? 0.55 : 0.28; }
+    const eBody = new THREE.Mesh(humanoidTorsoGeo, bodyMat);
     eBody.position.y = 1.0; eBody.castShadow = true;
-    const eHead = new THREE.Mesh(humanoidHeadGeo, botHeadMat);
+    const headMat = tier.glow ? botHeadMat.clone() : botHeadMat;
+    if (tier.glow) { headMat.emissive = new THREE.Color(tier.glow); headMat.emissiveIntensity = tierName === 'elite' ? 0.55 : 0.28; }
+    const eHead = new THREE.Mesh(humanoidHeadGeo, headMat);
     eHead.position.y = 1.65; eHead.castShadow = true;
     eHead.userData.isHead = true;
     const eLegs = new THREE.Mesh(humanoidLegsGeo, botLegsMat);
@@ -2079,16 +2102,18 @@
     } while (Math.hypot(x,z) < 15);
     const dropY = 70 + Math.random()*50;
     group.position.set(x, dropY, z);
+    if (tier.scale !== 1.0) group.scale.setScalar(tier.scale);
     scene.add(group);
 
     const bot = {
       group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs], gunMesh: null, wRig,
       weaponType: 'pistol', ammo: { mag: Infinity, reserve: Infinity },
       lootCooldown: 0,
-      health: 60, maxHealth: 60,
+      tier: tierName,
+      health: tier.health, maxHealth: tier.health,
       pos: new THREE.Vector3(x,dropY,z),
       target: new THREE.Vector3(x,0,z),
-      speed: 1.8 + Math.random()*1.4,
+      speed: (1.8 + Math.random()*1.4) * tier.speedMult,
       waitTimer: 0,
       alive: true,
       attackCooldown: Math.random()*1.5,
@@ -2840,7 +2865,8 @@
     bot.ammo.mag--;
     playGunshot(bot.weaponType, bot.pos.distanceTo(player.pos));
     const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
-    const hitChance = Math.max(0.2, 0.65 - dist/70);
+    const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
+    const hitChance = Math.max(tier.hitFloor, tier.hitBase - dist/tier.hitFalloff);
     if (Math.random() < hitChance) {
       const [dmgMin, dmgMax] = combat.dmg;
       const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
@@ -2918,7 +2944,7 @@
     const dist = dir.length();
     // Low-health bots keep more distance and try to disengage rather than
     // always closing in, so a hurt bot feels like it's actually retreating.
-    const desiredRange = (combatTarget && bot.health < bot.maxHealth * 0.3) ? 15 : 9;
+    const desiredRange = (combatTarget && bot.health < bot.maxHealth * (BOT_TIERS[bot.tier] || BOT_TIERS.normal).retreatFrac) ? 15 : 9;
     if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget)) {
       dir.normalize();
       bot.pos.x += dir.x * bot.speed * dt;
@@ -2968,7 +2994,8 @@
       } else {
         const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
         const [cMin, cMax] = combat.cooldown;
-        bot.attackCooldown = cMin + Math.random()*(cMax - cMin);
+        const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
+        bot.attackCooldown = (cMin + Math.random()*(cMax - cMin)) * tier.cooldownMult;
         botShootAtTarget(bot, combatTarget, combatDist);
         if (combatTarget.isPlayer) addShake(0.08);
       }
