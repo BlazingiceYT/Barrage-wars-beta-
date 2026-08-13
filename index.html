@@ -572,7 +572,8 @@
       <div class="equipSlot" id="slotAxe" data-slot="axe"><span class="key">1</span>AXE</div>
       <div class="equipSlot selected" id="slotPistol" data-slot="pistol"><span class="key">2</span>PSTL<span class="count" id="pistolAmmoTag">12</span></div>
       <div class="equipSlot emptySlot" id="slotPrimary" data-slot="primary"><span class="key">3</span><span id="primaryLabel">--</span><span class="count" id="primaryAmmoTag"></span></div>
-      <div class="equipSlot" id="slotKnife" data-slot="knife"><span class="key">4</span>KNFE</div>
+      <div class="equipSlot emptySlot" id="slotKnife" data-slot="knife"><span class="key">4</span>KNFE</div>
+      <div class="equipSlot emptySlot" id="slotScythe" data-slot="scythe"><span class="key">5</span>SCYT</div>
       <div id="invSlot" title="Inventory">🎒<span id="woodCount">0</span></div>
     </div>
 
@@ -990,7 +991,7 @@
     group.rotation.z = Math.PI/2.3;
     group.position.set(x, y + 1.0, z);
     scene.add(group);
-    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'shotgun' ? 0xffcc33 : (type === 'flamethrower' ? 0xff5a1f : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : (type === 'molotov' ? 0xff6a2e : 0xaeb4bb))))));
+    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'shotgun' ? 0xffcc33 : (type === 'flamethrower' ? 0xff5a1f : (type === 'knife' ? 0x8fd3ff : (type === 'scythe' ? 0x9d4edd : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : (type === 'molotov' ? 0xff6a2e : 0xaeb4bb))))))));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
@@ -1033,6 +1034,24 @@
       player.molotovs = Math.min(player.maxMolotovs, player.molotovs + 1);
       updateMolotovUI();
       showPickupToast('PICKED UP: MOLOTOV');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'knife') {
+      // Unlike the throwables above, this isn't a stackable count — it's a
+      // one-time unlock of the knife equip slot. Picking it up again (once
+      // this pickup respawns) just re-confirms the toast; hasKnife staying
+      // true is harmless and there's nothing to increment.
+      player.hasKnife = true;
+      updateWeaponVisibility();
+      showPickupToast('PICKED UP: KNIFE');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'scythe') {
+      player.hasScythe = true;
+      updateWeaponVisibility();
+      showPickupToast('PICKED UP: SCYTHE');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -1290,6 +1309,23 @@
         const throwType = throwRoll < 0.4 ? 'grenade' : (throwRoll < 0.7 ? 'smokegrenade' : 'molotov');
         spawnHousePickup(throwType, gx, gz, baseY + 0.25);
         houseHasThrowable = true;
+      }
+      // Third, independent roll: the knife. Unlike the gun/throwable rolls
+      // above, there's no guaranteed per-house fallback for it — it's meant
+      // to be a rarer bonus find, not something every house is required to
+      // contain.
+      if (Math.random() < 0.18) {
+        const kx = (Math.random()-0.5) * (w - 3);
+        const kz = (Math.random()-0.5) * (d - 3);
+        spawnHousePickup('knife', kx, kz, baseY + 0.25);
+      }
+      // Fourth, independent roll: the scythe. Rarer still than the knife —
+      // it's the strongest melee weapon in the game, so it should be the
+      // hardest one to stumble into.
+      if (Math.random() < 0.1) {
+        const sx = (Math.random()-0.5) * (w - 3);
+        const sz = (Math.random()-0.5) * (d - 3);
+        spawnHousePickup('scythe', sx, sz, baseY + 0.25);
       }
     }
     if (!houseHasGun) {
@@ -1553,6 +1589,30 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: null };
   }
+  // Long shaft with a curved blade (approximated as a half-ring torus arc,
+  // since a true scythe blade curve isn't practical with basic primitives)
+  // mounted near the top — reads as a scythe silhouette at a glance even as
+  // a blocky placeholder.
+  function buildScytheMesh(s) {
+    const g = new THREE.Object3D();
+    const shaftMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.85 });
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xb8bec4, roughness: 0.3, metalness: 0.8 });
+    const collarMat = new THREE.MeshStandardMaterial({ color: 0x2b2320, roughness: 0.6, metalness: 0.5 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.032,1.0,8), shaftMat);
+    shaft.position.set(0, 0, 0);
+    g.add(shaft);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.06,8), collarMat);
+    collar.position.set(0, 0.46, 0);
+    g.add(collar);
+    const blade = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.022, 6, 14, Math.PI * 1.05), bladeMat);
+    blade.position.set(0, 0.5, 0.32);
+    blade.rotation.set(Math.PI/2, 0, Math.PI * 0.72);
+    g.add(blade);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, scythe: buildScytheMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
   function buildPistolMesh(s) {
     const g = new THREE.Object3D();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.11,0.11,0.32), matMidShared); g.add(body);
@@ -1699,7 +1759,6 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: new THREE.Vector3(0,0.03,-0.65*s) };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
 
   // ---------- Bot weapon handling ----------
   // Bots start with an infinite-ammo pistol (so they're never stuck unarmed)
@@ -1750,16 +1809,23 @@
   scene.add(camera);
   const tpWeaponRig = new THREE.Object3D();
 
-  const WEAPON_TYPES = ['axe','knife','pistol','ak47','minigun','sniper','shotgun','flamethrower'];
+  const WEAPON_TYPES = ['axe','knife','scythe','pistol','ak47','minigun','sniper','shotgun','flamethrower'];
+  // Fixed equip-bar order the weaponSwitchBtn cycles through (mirrors the
+  // slot layout 1-5, then primary). ak47/minigun/sniper/shotgun/flamethrower
+  // aren't listed individually since they all live in the single 'primary'
+  // slot.
+  const WEAPON_CYCLE = ['axe','knife','scythe','pistol','primary'];
   const fpMeshes = {}, tpMeshes = {};
   function placeFP(entry, type) {
     if (type === 'axe') { entry.group.position.set(0.28,-0.28,-0.5); entry.group.rotation.set(0.3, Math.PI, 0); }
     else if (type === 'knife') { entry.group.position.set(0.26,-0.24,-0.36); entry.group.rotation.set(0.15, Math.PI, 0); }
+    else if (type === 'scythe') { entry.group.position.set(0.3,-0.3,-0.48); entry.group.rotation.set(0.32, Math.PI, 0); }
     else { entry.group.position.set(0.28,-0.24,-0.55); entry.group.rotation.set(0, Math.PI, 0); }
   }
   function placeTP(entry, type) {
     if (type === 'axe') { entry.group.rotation.set(0.2, Math.PI/2, 0); }
     else if (type === 'knife') { entry.group.rotation.set(0.1, Math.PI/2, 0); }
+    else if (type === 'scythe') { entry.group.rotation.set(0.22, Math.PI/2, 0); }
     else { entry.group.rotation.set(0, Math.PI/2, 0); }
   }
   for (const type of WEAPON_TYPES) {
@@ -1776,8 +1842,8 @@
 
   // ---------- GLB gun models (replace the blocky placeholders once loaded) ----------
   // Drop pistol.glb, ak-47.glb, minigun.glb, sniper.glb, shotgun.glb,
-  // flamethrower.glb and knife.glb next to this HTML file (or edit the "url"
-  // values below to point wherever you host them). Downloaded
+  // flamethrower.glb, knife.glb and scythe.glb next to this HTML file (or
+  // edit the "url" values below to point wherever you host them). Downloaded
   // models rarely share the same authoring scale as each other (a Sketchfab pistol
   // and a Sketchfab AK-47 can use completely different real-world-to-unit ratios),
   // so "scale: 1" alone isn't reliable — autoFit measures each model's actual
@@ -1802,6 +1868,7 @@
     // No muzzleLocal needed (melee, never fires a ray from the model) — autoFit
     // still centers/sizes it and the null muzzleLocal here is simply unused.
     knife:   { url: 'knife.glb',   scale: 1, autoFit: 0.34, modelRotationX: 0, modelRotationY: Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.02, -0.02), muzzleLocal: null },
+    scythe:  { url: 'scythe.glb',  scale: 1, autoFit: 1.05, modelRotationX: 0, modelRotationY: 0, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.36, 0), muzzleLocal: null },
   };
 
   function applyLoadedModel(entry, gltfScene, cfg, rigScale) {
@@ -2023,8 +2090,10 @@
     kills: 0,
     alive: true,
     wood: 0,
-    weapon: 'pistol', // 'axe' | 'pistol' | 'primary'
+    weapon: 'pistol', // 'axe' | 'knife' | 'pistol' | 'primary'
     primaryType: null, // 'ak47' | 'minigun' | 'sniper' | null
+    hasKnife: false, // knife is a house pickup, not a starting weapon like the axe
+    hasScythe: false, // same deal — scythe is a house pickup
     ammoState: { pistol: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
     grenades: 0,
     maxGrenades: 4,
@@ -2082,7 +2151,12 @@
     fpWeaponRig.visible = (viewMode === 'first');
     tpWeaponRig.visible = (viewMode === 'third');
     document.getElementById('slotAxe').classList.toggle('selected', player.weapon === 'axe');
-    document.getElementById('slotKnife').classList.toggle('selected', player.weapon === 'knife');
+    const slotKnifeEl = document.getElementById('slotKnife');
+    slotKnifeEl.classList.toggle('selected', player.weapon === 'knife');
+    slotKnifeEl.classList.toggle('emptySlot', !player.hasKnife);
+    const slotScytheEl = document.getElementById('slotScythe');
+    slotScytheEl.classList.toggle('selected', player.weapon === 'scythe');
+    slotScytheEl.classList.toggle('emptySlot', !player.hasScythe);
     document.getElementById('slotPistol').classList.toggle('selected', player.weapon === 'pistol');
     document.getElementById('slotPrimary').classList.toggle('selected', player.weapon === 'primary');
     document.getElementById('scopeBtn').style.display = canScope() ? 'flex' : 'none';
@@ -3187,14 +3261,19 @@
   let lastActionTime = 0;
   let firing = false;
 
-  // Melee weapons (axe, knife) don't use WEAPON_DEFS/ammo at all — they're a
-  // short raycast thrown every primaryAction() call, gated by their own
-  // cooldown instead of a fireRate. Keeping both in one table (instead of the
-  // axe being hardcoded everywhere) is what let the knife slot in as "just
-  // another entry" rather than a second copy of the whole melee code path.
+  // Melee weapons (axe, knife, scythe) don't use WEAPON_DEFS/ammo at all —
+  // they're a short raycast thrown every primaryAction() call, gated by
+  // their own cooldown instead of a fireRate. Keeping them all in one table
+  // (instead of the axe being hardcoded everywhere) is what let the knife
+  // and scythe slot in as "just another entry" rather than a second copy of
+  // the whole melee code path.
   const MELEE_DEFS = {
-    axe:   { rate: 450, range: 3.2, wallDmg: 30, headDmg: 55, bodyDmg: 35, shake: 0.2,  canChopTrees: true,  swingDecay: 4.5, swingAmp: 1.1, restFP: 0.3,  restTP: 0.2 },
-    knife: { rate: 220, range: 2.2, wallDmg: 16, headDmg: 40, bodyDmg: 26, shake: 0.12, canChopTrees: false, swingDecay: 7,   swingAmp: 0.8, restFP: 0.15, restTP: 0.1 }
+    axe:    { rate: 450, range: 3.2, wallDmg: 30, headDmg: 55, bodyDmg: 35, shake: 0.2,  canChopTrees: true,  swingDecay: 4.5, swingAmp: 1.1, restFP: 0.3,  restTP: 0.2 },
+    knife:  { rate: 220, range: 2.2, wallDmg: 16, headDmg: 40, bodyDmg: 26, shake: 0.12, canChopTrees: false, swingDecay: 7,   swingAmp: 0.8, restFP: 0.15, restTP: 0.1 },
+    // Slow, heavy, long-reaching — a big wide swing that hits harder than the
+    // axe and reaches further, at the cost of the slowest cooldown of any
+    // melee weapon in the game.
+    scythe: { rate: 700, range: 3.9, wallDmg: 42, headDmg: 72, bodyDmg: 48, shake: 0.3,  canChopTrees: true,  swingDecay: 3.2, swingAmp: 1.4, restFP: 0.32, restTP: 0.22 }
   };
 
   // Casts one hitscan ray along `dir` and applies its damage/FX — this is the
@@ -3891,6 +3970,8 @@
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
     player.weapon = 'pistol';
+    player.hasKnife = false;
+    player.hasScythe = false;
     player.grenades = 0;
     updateGrenadeUI();
     player.smokeGrenades = 0;
@@ -4212,7 +4293,7 @@
       if (!p.active) continue;
       const rel = mmProject(p.x - px, p.z - pz, viewRadius);
       if (rel.x < -3 || rel.x > MM_SIZE+3 || rel.y < -3 || rel.y > MM_SIZE+3) continue;
-      mctx.fillStyle = p.type === 'sniper' ? '#b46bff' : (p.type === 'minigun' ? '#ff9a3d' : (p.type === 'shotgun' ? '#ffcc33' : (p.type === 'flamethrower' ? '#ff5a1f' : '#dfe4ea')));
+      mctx.fillStyle = p.type === 'sniper' ? '#b46bff' : (p.type === 'minigun' ? '#ff9a3d' : (p.type === 'shotgun' ? '#ffcc33' : (p.type === 'flamethrower' ? '#ff5a1f' : (p.type === 'knife' ? '#8fd3ff' : (p.type === 'scythe' ? '#9d4edd' : '#dfe4ea')))));
       mctx.beginPath();
       mctx.arc(rel.x, rel.y, 2.6, 0, Math.PI*2);
       mctx.fill();
@@ -4411,13 +4492,13 @@
   const DEFAULT_KEY_BINDINGS = {
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
-    axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3', knife: 'Digit4',
+    axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3', knife: 'Digit4', scythe: 'Digit5',
     build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
-    axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary', knife: 'Equip Knife',
+    axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary', knife: 'Equip Knife', scythe: 'Equip Scythe',
     build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave'
   };
   let keyBindings = {};
@@ -4812,16 +4893,31 @@
   // ---------- Equip slot clicks ----------
   bindTap(document.getElementById('slotAxe'), () => setWeapon('axe'));
   bindTap(document.getElementById('slotKnife'), () => setWeapon('knife'));
+  bindTap(document.getElementById('slotScythe'), () => setWeapon('scythe'));
   bindTap(document.getElementById('slotPistol'), () => setWeapon('pistol'));
   bindTap(document.getElementById('slotPrimary'), () => setWeapon('primary'));
   bindTap(document.getElementById('weaponSwitchBtn'), () => {
-    if (player.weapon === 'axe') setWeapon('knife');
-    else if (player.weapon === 'knife') setWeapon('pistol');
-    else if (player.weapon === 'pistol') setWeapon(player.primaryType ? 'primary' : 'axe');
-    else setWeapon('axe');
+    // Cycles through every slot in equip-bar order, skipping ones the player
+    // doesn't currently own (unpicked-up knife/scythe, no primary yet) —
+    // walking the fixed WEAPON_CYCLE list instead of a chain of hardcoded
+    // "if on X, go to Y" transitions means an unowned slot just gets stepped
+    // over rather than the switch button silently doing nothing.
+    const owned = w => {
+      if (w === 'knife') return player.hasKnife;
+      if (w === 'scythe') return player.hasScythe;
+      if (w === 'primary') return !!player.primaryType;
+      return true;
+    };
+    const idx = WEAPON_CYCLE.indexOf(player.weapon);
+    for (let i = 1; i <= WEAPON_CYCLE.length; i++) {
+      const next = WEAPON_CYCLE[(idx + i) % WEAPON_CYCLE.length];
+      if (owned(next)) { setWeapon(next); break; }
+    }
   });
   function setWeapon(w) {
     if (w === 'primary' && !player.primaryType) return;
+    if (w === 'knife' && !player.hasKnife) return;
+    if (w === 'scythe' && !player.hasScythe) return;
     player.weapon = w;
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
@@ -5155,6 +5251,7 @@
     if (e.code === keyBindings.jump) { tryJump(); e.preventDefault(); }
     if (e.code === keyBindings.axe) setWeapon('axe');
     if (e.code === keyBindings.knife) setWeapon('knife');
+    if (e.code === keyBindings.scythe) setWeapon('scythe');
     if (e.code === keyBindings.pistol) setWeapon('pistol');
     if (e.code === keyBindings.primary) setWeapon('primary');
     if (e.code === keyBindings.build) tryBuildWall();
