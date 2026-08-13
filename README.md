@@ -125,5 +125,8 @@ Upgraded pickup logic
 **Update0.45** - *Commited by BlazingiceYT on 12 Aug 2026*
 Upgraded buliding mechanic
 
-**Patch0.46** - *Commited by BlazingiceYT on 12 Aug 2026*
-Fixed bulidng mechanic
+**Patch0.46** - *Commited by BlazingiceYT on 13 Aug 2026*
+Fixed bulidng mechanic]
+
+**Update0.47** - *Commited by BlazingiceYT on 13 Aug 2026*
+Added different types of bots
