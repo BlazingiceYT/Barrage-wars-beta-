@@ -539,9 +539,9 @@
       <div id="viewModeLabel">View: Third Person</div>
     </div>
 
-    <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
+    <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE (K)</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -4281,13 +4281,13 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
-    build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
+    build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
-    build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
+    build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -5032,6 +5032,7 @@
     if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
     if (e.code === keyBindings.molotov) throwMolotov();
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
+    if (e.code === keyBindings.skipWave) skipWave();
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -5043,7 +5044,11 @@
   const MOUSE_SENS = 0.0022;
   canvas.addEventListener('click', () => {
     if (!isMobile && !invOpen && !settingsOpen && document.getElementById('startScreen').style.display === 'none' && document.getElementById('deathScreen').style.display !== 'flex') {
-      canvas.requestPointerLock && canvas.requestPointerLock();
+      // Only request the lock if we don't already have it. This click event
+      // fires from the SAME click as the mousedown below, so without this
+      // check the very first click after loading both grabs pointer lock
+      // AND fires a shot at whatever the crosshair happened to be on.
+      if (document.pointerLockElement !== canvas) canvas.requestPointerLock && canvas.requestPointerLock();
     }
   });
   document.addEventListener('mousemove', (e) => {
@@ -5055,6 +5060,12 @@
     }
   });
   canvas.addEventListener('mousedown', (e) => {
+    // While the pointer isn't locked yet, this mousedown is the same click
+    // that's about to request pointer lock (see above) - don't also fire.
+    // Once locked, every mouse event targets the canvas regardless of where
+    // the (hidden) cursor visually is, so this guard only matters for that
+    // very first click.
+    if (!isMobile && document.pointerLockElement !== canvas) return;
     if (e.button === 0) { firing = true; primaryAction(); }
     if (e.button === 2) startScope();
   });
