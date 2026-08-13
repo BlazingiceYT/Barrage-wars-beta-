@@ -317,6 +317,28 @@
   #molotovBtn:active { background: rgba(255,140,60,0.5); }
   #molotovBtn.disabled { opacity: 0.35; pointer-events: none; }
 
+  /* Ability buttons (trampoline / dash / forcefield / fly) — stacked on the
+     left side, mirroring the throwable buttons on the right. */
+  #trampolineBtn, #dashBtn, #forcefieldBtn, #flyBtn {
+    position: absolute; left: 20px; width: 46px; height: 46px;
+    border-radius: 50%; color: #fff; font-size: 18px; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #trampolineBtn .count, #dashBtn .count, #forcefieldBtn .count, #flyBtn .count {
+    position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold;
+    color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px;
+  }
+  #trampolineBtn.disabled, #dashBtn.disabled, #forcefieldBtn.disabled, #flyBtn.disabled { opacity: 0.35; pointer-events: none; }
+  #trampolineBtn { bottom: 170px; background: rgba(30,70,90,0.6); border: 2px solid rgba(100,200,230,0.6); }
+  #trampolineBtn:active { background: rgba(100,200,230,0.5); }
+  #dashBtn { bottom: 225px; background: rgba(70,50,90,0.6); border: 2px solid rgba(190,130,240,0.6); }
+  #dashBtn:active { background: rgba(190,130,240,0.5); }
+  #forcefieldBtn { bottom: 280px; background: rgba(20,70,60,0.6); border: 2px solid rgba(90,220,180,0.6); }
+  #forcefieldBtn:active { background: rgba(90,220,180,0.5); }
+  #flyBtn { bottom: 335px; background: rgba(80,70,20,0.6); border: 2px solid rgba(240,210,90,0.6); }
+  #flyBtn:active { background: rgba(240,210,90,0.5); }
+  #flyBtn.flyActive { background: rgba(240,210,90,0.6); box-shadow: 0 0 10px rgba(240,210,90,0.8); }
+
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -541,7 +563,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE (K)</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Trampoline | J=Dash | H=Force Field | L=Fly</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -550,6 +572,10 @@
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
+    <button id="trampolineBtn" class="disabled" title="Place trampoline">🔵<span class="count" id="trampolineCountTag">0</span></button>
+    <button id="dashBtn" class="disabled" title="Dash">💨<span class="count" id="dashCountTag">0</span></button>
+    <button id="forcefieldBtn" class="disabled" title="Place force field">🛡️<span class="count" id="forcefieldCountTag">0</span></button>
+    <button id="flyBtn" class="disabled" title="Toggle fly">🕊️<span class="count" id="flyCountTag">0</span></button>
     <button id="buildModeBtn" title="Open build controls">BUILD<br>MODE<br>OFF</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="buildPieceBtn" title="Cycle piece type (X)" style="display:none;">WALL</button>
@@ -985,13 +1011,26 @@
 
   // ---------- Weapon pickups (declared before houses so makeHouse can spawn them) ----------
   const pickups = [];
+  const ABILITY_TYPES = ['trampoline', 'dash', 'forcefield', 'fly'];
+  const ABILITY_ICON_COLORS = { trampoline: 0x64c8e6, dash: 0xbe82f0, forcefield: 0x5adcb4, fly: 0xf0d25a };
   function spawnWeaponPickup(type, x, y, z, delayActive) {
-    const built = WEAPON_BUILDERS[type](1.3);
-    const group = built.group;
-    group.rotation.z = Math.PI/2.3;
+    let group;
+    if (ABILITY_TYPES.includes(type)) {
+      // Ability pickups aren't weapons, so they get a simple glowing
+      // icosahedron instead of a WEAPON_BUILDERS mesh.
+      const col = ABILITY_ICON_COLORS[type];
+      const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.55, roughness: 0.35 }));
+      mesh.castShadow = true;
+      group = new THREE.Object3D();
+      group.add(mesh);
+    } else {
+      const built = WEAPON_BUILDERS[type](1.3);
+      group = built.group;
+      group.rotation.z = Math.PI/2.3;
+    }
     group.position.set(x, y + 1.0, z);
     scene.add(group);
-    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'shotgun' ? 0xffcc33 : (type === 'flamethrower' ? 0xff5a1f : (type === 'knife' ? 0x8fd3ff : (type === 'scythe' ? 0x9d4edd : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : (type === 'molotov' ? 0xff6a2e : 0xaeb4bb))))))));
+    const ringColor = type === 'sniper' ? 0xb46bff : (type === 'minigun' ? 0xff9a3d : (type === 'shotgun' ? 0xffcc33 : (type === 'flamethrower' ? 0xff5a1f : (type === 'knife' ? 0x8fd3ff : (type === 'scythe' ? 0x9d4edd : (type === 'grenade' ? 0x6bff7a : (type === 'smokegrenade' ? 0xd8d8dc : (type === 'molotov' ? 0xff6a2e : (type === 'trampoline' ? 0x64c8e6 : (type === 'dash' ? 0xbe82f0 : (type === 'forcefield' ? 0x5adcb4 : (type === 'fly' ? 0xf0d25a : 0xaeb4bb))))))))))));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
@@ -1034,6 +1073,34 @@
       player.molotovs = Math.min(player.maxMolotovs, player.molotovs + 1);
       updateMolotovUI();
       showPickupToast('PICKED UP: MOLOTOV');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'trampoline') {
+      player.trampolines = Math.min(player.maxTrampolines, player.trampolines + 1);
+      updateTrampolineUI();
+      showPickupToast('PICKED UP: TRAMPOLINE');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'dash') {
+      player.dashes = Math.min(player.maxDashes, player.dashes + 1);
+      updateDashUI();
+      showPickupToast('PICKED UP: DASH');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'forcefield') {
+      player.forcefields = Math.min(player.maxForcefields, player.forcefields + 1);
+      updateForcefieldUI();
+      showPickupToast('PICKED UP: FORCE FIELD');
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
+      return;
+    }
+    if (p.type === 'fly') {
+      player.flyCharges = Math.min(player.maxFlyCharges, player.flyCharges + 1);
+      updateFlyUI();
+      showPickupToast('PICKED UP: FLY');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -1183,6 +1250,7 @@
     const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
     let houseHasGun = false;
     let houseHasThrowable = false;
+    let houseHasAbility = false;
     function spawnHousePickup(type, lx, lz, y) {
       const wx = cx + lx*cosR + lz*sinR;
       const wz = cz - lx*sinR + lz*cosR;
@@ -1327,6 +1395,18 @@
         const sz = (Math.random()-0.5) * (d - 3);
         spawnHousePickup('scythe', sx, sz, baseY + 0.25);
       }
+      // Fifth, independent roll: abilities (trampoline / dash / force field /
+      // fly). This is its own separate pool from the gun/throwable/melee
+      // rolls above — same guaranteed-per-house fallback pattern as guns
+      // and throwables get, just with its own roll chance and item table.
+      if (Math.random() < 0.22) {
+        const abilityRoll = Math.random();
+        const abilityType = abilityRoll < 0.3 ? 'trampoline' : (abilityRoll < 0.55 ? 'dash' : (abilityRoll < 0.8 ? 'forcefield' : 'fly'));
+        const ax = (Math.random()-0.5) * (w - 3);
+        const az = (Math.random()-0.5) * (d - 3);
+        spawnHousePickup(abilityType, ax, az, baseY + 0.25);
+        houseHasAbility = true;
+      }
     }
     if (!houseHasGun) {
       const roll = Math.random();
@@ -1337,6 +1417,11 @@
       const throwRoll = Math.random();
       const throwType = throwRoll < 0.34 ? 'grenade' : (throwRoll < 0.67 ? 'smokegrenade' : 'molotov');
       spawnHousePickup(throwType, w * 0.22, 0, 0.25);
+    }
+    if (!houseHasAbility) {
+      const abilityRoll = Math.random();
+      const abilityType = abilityRoll < 0.3 ? 'trampoline' : (abilityRoll < 0.55 ? 'dash' : (abilityRoll < 0.8 ? 'forcefield' : 'fly'));
+      spawnHousePickup(abilityType, 0, -d * 0.22, 0.25);
     }
 
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -2101,6 +2186,21 @@
     maxMolotovs: 4,
     smokeGrenades: 0,
     maxSmokeGrenades: 4,
+    // Fourth pickup pool — abilities found only in houses (separate roll
+    // from guns/throwables/melee). Each is a stackable charge, consumed on
+    // use, same idea as the grenades above.
+    trampolines: 0,
+    maxTrampolines: 3,
+    dashes: 0,
+    maxDashes: 3,
+    forcefields: 0,
+    maxForcefields: 2,
+    flyCharges: 0,
+    maxFlyCharges: 2,
+    flying: false,
+    flyTimeLeft: 0,
+    dashTimeLeft: 0,
+    dashDir: null,
     isPlayer: true,
     falling: false,
     chuteOpen: false
@@ -3500,6 +3600,23 @@
     document.getElementById('molotovCountTag').textContent = player.molotovs;
     document.getElementById('molotovBtn').classList.toggle('disabled', player.molotovs <= 0);
   }
+  function updateTrampolineUI() {
+    document.getElementById('trampolineCountTag').textContent = player.trampolines;
+    document.getElementById('trampolineBtn').classList.toggle('disabled', player.trampolines <= 0);
+  }
+  function updateDashUI() {
+    document.getElementById('dashCountTag').textContent = player.dashes;
+    document.getElementById('dashBtn').classList.toggle('disabled', player.dashes <= 0);
+  }
+  function updateForcefieldUI() {
+    document.getElementById('forcefieldCountTag').textContent = player.forcefields;
+    document.getElementById('forcefieldBtn').classList.toggle('disabled', player.forcefields <= 0);
+  }
+  function updateFlyUI() {
+    document.getElementById('flyCountTag').textContent = player.flyCharges;
+    document.getElementById('flyBtn').classList.toggle('disabled', player.flyCharges <= 0);
+    document.getElementById('flyBtn').classList.toggle('flyActive', player.flying);
+  }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
     document.getElementById('invWoodVal').textContent = player.wood;
@@ -4493,13 +4610,15 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3', knife: 'Digit4', scythe: 'Digit5',
-    build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK'
+    build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK',
+    trampoline: 'KeyT', dash: 'KeyJ', forcefield: 'KeyH', fly: 'KeyL'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary', knife: 'Equip Knife', scythe: 'Equip Scythe',
-    build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave'
+    build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave',
+    trampoline: 'Place Trampoline', dash: 'Dash', forcefield: 'Place Force Field', fly: 'Toggle Fly'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -4688,7 +4807,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','trampolineBtn','dashBtn','forcefieldBtn','flyBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -4705,6 +4824,10 @@
     grenadeBtn: 'THROW GRENADE',
     smokeGrenadeBtn: 'THROW SMOKE',
     molotovBtn: 'THROW MOLOTOV',
+    trampolineBtn: 'PLACE TRAMPOLINE',
+    dashBtn: 'DASH',
+    forcefieldBtn: 'PLACE FORCE FIELD',
+    flyBtn: 'TOGGLE FLY',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -5005,6 +5128,149 @@
     scene.add(mesh);
     activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 4, isSmoke: false, isMolotov: true });
   }
+
+  // ---------- Ability: Trampoline ----------
+  // Placed a short distance in front of the player, on the ground. Anyone
+  // (player or bot) who lands on top of it gets launched upward and takes
+  // no fall damage from that bounce. Despawns after a while, same idea as
+  // the dropped-weapon respawn timers elsewhere in the file.
+  const activeTrampolines = [];
+  const trampolineMat = new THREE.MeshStandardMaterial({ color: 0x3fb8e0, emissive: 0x1a5670, emissiveIntensity: 0.4, roughness: 0.4 });
+  const trampolineRimMat = new THREE.MeshStandardMaterial({ color: 0x1c2b33, roughness: 0.6 });
+  function placeTrampoline() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.trampolines <= 0) return;
+    player.trampolines--;
+    updateTrampolineUI();
+    const forward = getForward(player.yaw);
+    const x = player.pos.x + forward.x * 2.4;
+    const z = player.pos.z + forward.z * 2.4;
+    const y = groundHeightAt(x, z, player.pos.y + 2);
+    const group = new THREE.Object3D();
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.15, 20), trampolineMat);
+    pad.position.y = 0.08;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.1, 8, 20), trampolineRimMat);
+    rim.rotation.x = Math.PI/2;
+    rim.position.y = 0.15;
+    group.add(pad, rim);
+    group.position.set(x, y, z);
+    scene.add(group);
+    const entry = { group, x, y, z, radius: 1.3, life: 45, cooldownMap: new Map() };
+    activeTrampolines.push(entry);
+    showPickupToast('TRAMPOLINE PLACED');
+  }
+  function bounceEntity(ent, trampoline) {
+    ent.velY = 15;
+    if (ent.grounded !== undefined) ent.grounded = false;
+    if (ent === player) fallPeakY = null; // launched, not falling — don't charge fall damage for it
+  }
+  function updateTrampolines(dt) {
+    for (let i = activeTrampolines.length - 1; i >= 0; i--) {
+      const t = activeTrampolines[i];
+      t.life -= dt;
+      if (t.life <= 0) { scene.remove(t.group); activeTrampolines.splice(i, 1); continue; }
+      t.group.rotation.y += dt * 0.3;
+      const candidates = [player, ...activeEnemies().filter(b => b.alive)];
+      for (const ent of candidates) {
+        const d = Math.hypot(ent.pos.x - t.x, ent.pos.z - t.z);
+        const onTop = d < t.radius && Math.abs((ent.pos.y) - t.y) < 1.2;
+        const lastBounce = t.cooldownMap.get(ent) || 0;
+        if (onTop && ent.velY <= 0.5 && performance.now() - lastBounce > 500) {
+          bounceEntity(ent, t);
+          t.cooldownMap.set(ent, performance.now());
+        }
+      }
+    }
+  }
+
+  // ---------- Ability: Dash ----------
+  // A short burst of speed in the direction the player is currently moving
+  // (or facing, if standing still), handled as a temporary speed multiplier
+  // applied inside updateMovement rather than an instant teleport, so the
+  // player still collides with walls/props normally mid-dash.
+  const DASH_DURATION = 0.22;
+  const DASH_SPEED_MULT = 5.5;
+  function doDash() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.dashes <= 0) return;
+    if (player.dashTimeLeft > 0) return;
+    player.dashes--;
+    updateDashUI();
+    player.dashTimeLeft = DASH_DURATION;
+    addShake(0.15);
+    showPickupToast('DASH!');
+  }
+
+  // ---------- Ability: Force Field ----------
+  // Places a translucent dome that's added to collisionMeshes, which is the
+  // same list bullets raycast against (firePelletRay) and bots use for
+  // line-of-sight checks (hasLineOfSight) — so a bot or bullet on the far
+  // side of the dome is genuinely blocked, without needing any bespoke
+  // damage-blocking logic of its own.
+  const activeForcefields = [];
+  const forcefieldMat = new THREE.MeshStandardMaterial({ color: 0x5adcb4, transparent: true, opacity: 0.28, emissive: 0x2a8f6e, emissiveIntensity: 0.5, roughness: 0.3, side: THREE.DoubleSide });
+  function placeForcefield() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.forcefields <= 0) return;
+    player.forcefields--;
+    updateForcefieldUI();
+    const forward = getForward(player.yaw);
+    const x = player.pos.x + forward.x * 2.2;
+    const z = player.pos.z + forward.z * 2.2;
+    const y = groundHeightAt(x, z, player.pos.y + 2);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.6, 20, 14), forcefieldMat);
+    mesh.position.set(x, y + 2.4, z);
+    scene.add(mesh);
+    collisionMeshes.push(mesh);
+    const entry = { mesh, life: 16 };
+    activeForcefields.push(entry);
+    showPickupToast('FORCE FIELD DEPLOYED');
+  }
+  function updateForcefields(dt) {
+    for (let i = activeForcefields.length - 1; i >= 0; i--) {
+      const f = activeForcefields[i];
+      f.life -= dt;
+      f.mesh.material.opacity = 0.28 * Math.min(1, f.life / 2); // fade out just before it expires
+      if (f.life <= 0) {
+        scene.remove(f.mesh);
+        const idx = collisionMeshes.indexOf(f.mesh);
+        if (idx !== -1) collisionMeshes.splice(idx, 1);
+        activeForcefields.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------- Ability: Fly ----------
+  // Toggles free flight: gravity and ground-snapping are skipped in
+  // updateMovement while player.flying is true, and jump/crouch move the
+  // player up/down instead. One charge covers a timed window; toggling off
+  // early doesn't refund the remaining time.
+  const FLY_DURATION = 18;
+  function toggleFly() {
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon) return;
+    if (player.flying) {
+      player.flying = false;
+      player.flyTimeLeft = 0;
+      updateFlyUI();
+      showPickupToast('FLY ENDED');
+      return;
+    }
+    if (player.flyCharges <= 0) return;
+    player.flyCharges--;
+    player.flying = true;
+    player.flyTimeLeft = FLY_DURATION;
+    player.velY = 0;
+    updateFlyUI();
+    showPickupToast('FLYING');
+  }
+  function updateFlyTimer(dt) {
+    if (!player.flying) return;
+    player.flyTimeLeft -= dt;
+    if (player.flyTimeLeft <= 0) {
+      player.flying = false;
+      player.velY = 0;
+      updateFlyUI();
+      showPickupToast('FLY ENDED');
+    }
+  }
+
   function updateGrenades(dt) {
     for (let i = activeGrenades.length - 1; i >= 0; i--) {
       const g = activeGrenades[i];
@@ -5219,6 +5485,10 @@
   bindTap(document.getElementById('grenadeBtn'), throwGrenade);
   bindTap(document.getElementById('smokeGrenadeBtn'), throwSmokeGrenade);
   bindTap(document.getElementById('molotovBtn'), throwMolotov);
+  bindTap(document.getElementById('trampolineBtn'), placeTrampoline);
+  bindTap(document.getElementById('dashBtn'), doDash);
+  bindTap(document.getElementById('forcefieldBtn'), placeForcefield);
+  bindTap(document.getElementById('flyBtn'), toggleFly);
 
   // ---------- View mode ----------
   let viewMode = 'third';
@@ -5262,6 +5532,10 @@
     if (e.code === keyBindings.grenade) throwGrenade();
     if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
     if (e.code === keyBindings.molotov) throwMolotov();
+    if (e.code === keyBindings.trampoline) placeTrampoline();
+    if (e.code === keyBindings.dash) doDash();
+    if (e.code === keyBindings.forcefield) placeForcefield();
+    if (e.code === keyBindings.fly) toggleFly();
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
     if (e.code === keyBindings.skipWave) skipWave();
   });
@@ -5623,6 +5897,16 @@
       player.pos.x += move.x * player.speed * speedMult * dt;
       player.pos.z += move.z * player.speed * speedMult * dt;
       playerGroup.rotation.y = player.yaw;
+      if (player.dashTimeLeft > 0) player.dashDir = move.clone();
+    } else if (player.dashTimeLeft > 0 && !player.dashDir) {
+      player.dashDir = getForward(player.yaw);
+    }
+    if (player.dashTimeLeft > 0) {
+      const dir = player.dashDir || getForward(player.yaw);
+      player.pos.x += dir.x * player.speed * DASH_SPEED_MULT * dt;
+      player.pos.z += dir.z * player.speed * DASH_SPEED_MULT * dt;
+      player.dashTimeLeft -= dt;
+      if (player.dashTimeLeft <= 0) player.dashDir = null;
     }
 
     // Footsteps: timer-based, cadence depends on sprint/crouch/walk, only
@@ -5646,6 +5930,18 @@
 
     resolveCollisions(player.pos, player.radius, player.pos.y);
 
+    if (player.flying) {
+      // Free flight: no gravity, no floor snap, no fall damage. Jump/crouch
+      // keys move straight up/down instead of their normal ground meaning.
+      player.velY = 0;
+      player.grounded = false;
+      const flySpeed = 8;
+      if (keys[keyBindings.jump]) player.pos.y += flySpeed * dt;
+      if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight'] || mobileCrouchHeld) player.pos.y -= flySpeed * dt;
+      const floorClamp = groundHeightAt(player.pos.x, player.pos.z, player.pos.y + 0.5);
+      if (player.pos.y < floorClamp) player.pos.y = floorClamp;
+      fallPeakY = null;
+    } else {
     const wasGrounded = player.grounded;
     const floorY = groundHeightAt(player.pos.x, player.pos.z, player.pos.y + 0.5);
     player.velY -= 20 * dt;
@@ -5672,6 +5968,7 @@
       }
     } else {
       player.grounded = false;
+    }
     }
 
     playerGroup.position.set(player.pos.x, player.pos.y, player.pos.z);
@@ -5891,6 +6188,9 @@
       updateAmmoCratePickups();
       updatePickups(dt);
       updateGrenades(dt);
+      updateTrampolines(dt);
+      updateForcefields(dt);
+      updateFlyTimer(dt);
       if (gameMode === 'zombie') {
         for (const zom of zombies) updateZombie(zom, dt);
       } else {
@@ -5913,6 +6213,7 @@
     renderer.render(scene, camera);
   }
   updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
+  updateTrampolineUI(); updateDashUI(); updateForcefieldUI(); updateFlyUI();
   animate();
 
 })();
