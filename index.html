@@ -147,6 +147,22 @@
   #screenFlash { position: absolute; inset: 0; background: rgba(255,255,255,0.12); opacity: 0; pointer-events: none; }
   #screenFlash.show { animation: sflash 0.1s ease-out; }
   @keyframes sflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+  #damageDirWrap {
+    position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none;
+  }
+  .damageDirMarker {
+    position: absolute; top: 0; left: 0; width: 46px; height: 46px;
+    margin: -23px 0 0 -23px; opacity: 0;
+    /* the marker itself is rotated by JS (--ang) to point at the source,
+       then pushed outward along that same direction toward the screen edge */
+  }
+  .damageDirMarker svg { width: 100%; height: 100%; display: block; }
+  .damageDirMarker.show { animation: damageDirFade 1.1s ease-out; }
+  @keyframes damageDirFade {
+    0% { opacity: 0.95; }
+    75% { opacity: 0.55; }
+    100% { opacity: 0; }
+  }
   #damageVignette {
     position: absolute; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(ellipse at center, rgba(180,0,0,0) 55%, rgba(180,0,0,0.55) 100%);
@@ -477,6 +493,7 @@
     <div id="hitmarker"></div>
     <div id="screenFlash"></div>
     <div id="damageVignette"></div>
+    <div id="damageDirWrap"></div>
     <div id="pickupToast"></div>
 
     <div id="scopeOverlay">
@@ -2704,7 +2721,7 @@
     zom.attackCooldown -= dt;
     if (dist <= zom.attackRange && zom.attackCooldown <= 0) {
       zom.attackCooldown = zom.cooldownFn();
-      damagePlayer(zom.dmgFn());
+      damagePlayer(zom.dmgFn(), zom.pos);
       addShake(zom.isBoss ? 0.3 : 0.12);
     }
 
@@ -2722,7 +2739,7 @@
         zom.stompCooldown = 5 + Math.random()*1.5;
         zom.stompPulseT = 1;
         if (dist <= BOSS_STOMP_RANGE) {
-          damagePlayer(16 + Math.random()*10);
+          damagePlayer(16 + Math.random()*10, zom.pos);
           addShake(0.55);
         }
         playBossStomp();
@@ -2870,7 +2887,7 @@
     if (Math.random() < hitChance) {
       const [dmgMin, dmgMax] = combat.dmg;
       const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
-      if (target.isPlayer) damagePlayer(dmg);
+      if (target.isPlayer) damagePlayer(dmg, bot.pos);
       else damageBot(target, dmg);
     }
   }
@@ -3656,16 +3673,47 @@
   const aimOrigin = new THREE.Vector3();
   const aimDir = new THREE.Vector3(0, 0, -1);
 
-  function damagePlayer(amount) {
+  function damagePlayer(amount, sourcePos) {
     if (!player.alive) return;
     player.health = Math.max(0, player.health - amount);
     updateHealthUI();
     const vign = document.getElementById('damageVignette');
     vign.classList.add('show'); setTimeout(()=>vign.classList.remove('show'), 300);
     addShake(0.25);
+    if (sourcePos) showDamageDirection(sourcePos);
     if (player.health <= 0) playerDie();
   }
   function updateHealthUI() { document.getElementById('healthBar').style.width = (player.health/player.maxHealth*100) + '%'; }
+
+  // ---------- Damage direction indicator ----------
+  // Shows a chevron on the edge of the screen pointing toward wherever the
+  // last hit came from, rotated using the player's facing (yaw) so it stays
+  // correct no matter which way the camera is looking.
+  const damageDirWrap = document.getElementById('damageDirWrap');
+  const dmgDirColor = '#ff3b3b';
+  function showDamageDirection(sourcePos) {
+    const toSrc = new THREE.Vector3(sourcePos.x - player.pos.x, 0, sourcePos.z - player.pos.z);
+    if (toSrc.lengthSq() < 0.0001) return; // damage from right on top of us, no useful direction
+    toSrc.normalize();
+    const forward = getForward(player.yaw);
+    const right = getRight(player.yaw);
+    // angle from screen-forward, positive = clockwise (source is to our right)
+    const angle = Math.atan2(toSrc.dot(right), toSrc.dot(forward));
+
+    const marker = document.createElement('div');
+    marker.className = 'damageDirMarker';
+    marker.innerHTML = '<svg viewBox="0 0 46 46"><polygon points="23,6 34,30 23,24 12,30" fill="' + dmgDirColor + '" stroke="rgba(0,0,0,0.6)" stroke-width="1.5"/></svg>';
+    // Push the chevron out toward the screen edge in the direction of the
+    // hit, then rotate it to point back toward the source.
+    const pushDist = 150;
+    const px = Math.sin(angle) * pushDist;
+    const py = -Math.cos(angle) * pushDist;
+    marker.style.transform = `translate(${px}px, ${py}px) rotate(${angle}rad)`;
+    damageDirWrap.appendChild(marker);
+    void marker.offsetWidth;
+    marker.classList.add('show');
+    setTimeout(() => marker.remove(), 1150);
+  }
 
   function updateStaminaUI() {
     const pct = Math.max(0, player.stamina / player.maxStamina * 100);
@@ -4792,7 +4840,7 @@
     if (player.alive) {
       const d = pos.distanceTo(player.pos);
       if (d < RADIUS && hasLineOfSight(pos, player.pos)) {
-        damagePlayer(MAXDMG * (1 - d / RADIUS));
+        damagePlayer(MAXDMG * (1 - d / RADIUS), pos);
       }
     }
     for (const bot of bots) {
@@ -4897,7 +4945,7 @@
     const p = fz.group.position;
     if (player.alive) {
       const d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
-      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG);
+      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG, p);
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
