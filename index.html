@@ -334,12 +334,12 @@
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 6px; pointer-events: auto;
+    display: flex; gap: 5px; pointer-events: auto;
   }
   .equipSlot {
-    width: 58px; height: 58px; background: rgba(10,10,10,0.55); border: 2px solid rgba(255,255,255,0.3);
+    width: 52px; height: 52px; background: rgba(10,10,10,0.55); border: 2px solid rgba(255,255,255,0.3);
     border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: #fff; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; position: relative; cursor: pointer;
+    color: #fff; font-size: 10px; font-weight: bold; letter-spacing: 0.5px; position: relative; cursor: pointer;
   }
   .equipSlot.selected { border-color: #ffdd55; box-shadow: 0 0 10px rgba(255,221,85,0.6); }
   .equipSlot.emptySlot { opacity: 0.4; }
@@ -555,7 +555,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE (K)</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Use Ability</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3/6=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Use Ability</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -585,10 +585,9 @@
 
     <div id="equipBar">
       <div class="equipSlot" id="slotAxe" data-slot="axe"><span class="key">1</span>AXE</div>
-      <div class="equipSlot selected" id="slotPistol" data-slot="pistol"><span class="key">2</span>PSTL<span class="count" id="pistolAmmoTag">12</span></div>
-      <div class="equipSlot emptySlot" id="slotPrimary" data-slot="primary"><span class="key">3</span><span id="primaryLabel">--</span><span class="count" id="primaryAmmoTag"></span></div>
-      <div class="equipSlot emptySlot" id="slotKnife" data-slot="knife"><span class="key">4</span>KNFE</div>
-      <div class="equipSlot emptySlot" id="slotScythe" data-slot="scythe"><span class="key">5</span>SCYT</div>
+      <div class="equipSlot emptySlot" id="slotPrimary" data-slot="primary"><span class="key">2</span><span id="primaryLabel">--</span><span class="count" id="primaryAmmoTag"></span></div>
+      <div class="equipSlot selected" id="slotSecondary" data-slot="secondary"><span class="key">3</span>PSTL<span class="count" id="pistolAmmoTag">12</span></div>
+      <div class="equipSlot emptySlot" id="slotMelee" data-slot="melee"><span class="key">4</span><span id="meleeLabel">--</span></div>
       <div id="invSlot" title="Inventory">🎒<span id="woodCount">0</span></div>
     </div>
 
@@ -1040,26 +1039,33 @@
       }
     }
   }
+  function throwableTotal() { return player.grenades + player.smokeGrenades + player.molotovs; }
   function pickupWeapon(p) {
+    if ((p.type === 'grenade' || p.type === 'smokegrenade' || p.type === 'molotov') && throwableTotal() >= player.maxThrowablesTotal) {
+      // Full up on throwables — leave the pickup where it is instead of
+      // consuming it for nothing.
+      showPickupToast('THROWABLES FULL');
+      return;
+    }
     p.active = false;
     p.group.visible = false;
     p.ring.visible = false;
     if (p.type === 'grenade') {
-      player.grenades = Math.min(player.maxGrenades, player.grenades + 1);
+      player.grenades++;
       updateGrenadeUI();
       showPickupToast('PICKED UP: GRENADE');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
     if (p.type === 'smokegrenade') {
-      player.smokeGrenades = Math.min(player.maxSmokeGrenades, player.smokeGrenades + 1);
+      player.smokeGrenades++;
       updateSmokeGrenadeUI();
       showPickupToast('PICKED UP: SMOKE GRENADE');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
     if (p.type === 'molotov') {
-      player.molotovs = Math.min(player.maxMolotovs, player.molotovs + 1);
+      player.molotovs++;
       updateMolotovUI();
       showPickupToast('PICKED UP: MOLOTOV');
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
@@ -1067,48 +1073,65 @@
     }
     if (ABILITY_TYPES.includes(p.type)) {
       // Only one ability slot — picking up a new ability replaces whatever
-      // was held before (old one is just lost, no drop-on-ground like guns
-      // get, since abilities aren't worth building that extra machinery for).
+      // was held before. Same as gun-swapping: the old one gets dropped on
+      // the ground as a real pickup instead of just vanishing.
+      if (player.abilityType && player.abilityType !== p.type) {
+        const forward = getForward(player.yaw);
+        const dropX = player.pos.x + forward.x * 1.3;
+        const dropZ = player.pos.z + forward.z * 1.3;
+        spawnWeaponPickup(player.abilityType, dropX, player.pos.y, dropZ, true);
+      }
       player.abilityType = p.type;
+      player.abilityCooldown = 0; // a freshly-picked-up ability is ready to use right away
       updateAbilityUI();
       showPickupToast('PICKED UP: ' + p.type.toUpperCase());
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
-    if (p.type === 'knife') {
-      // Unlike the throwables above, this isn't a stackable count — it's a
-      // one-time unlock of the knife equip slot. Picking it up again (once
-      // this pickup respawns) just re-confirms the toast; hasKnife staying
-      // true is harmless and there's nothing to increment.
-      player.hasKnife = true;
+    if (p.type === 'knife' || p.type === 'scythe') {
+      // Single melee slot — knife and scythe share it. Already holding this
+      // exact one just re-confirms the toast; picking up the other one
+      // replaces it, dropping the old melee weapon on the ground the same
+      // way a gun swap does instead of it just vanishing.
+      if (player.meleeType && player.meleeType !== p.type) {
+        const forward = getForward(player.yaw);
+        const dropX = player.pos.x + forward.x * 1.3;
+        const dropZ = player.pos.z + forward.z * 1.3;
+        spawnWeaponPickup(player.meleeType, dropX, player.pos.y, dropZ, true);
+      }
+      player.meleeType = p.type;
       updateWeaponVisibility();
-      showPickupToast('PICKED UP: KNIFE');
-      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
-      return;
-    }
-    if (p.type === 'scythe') {
-      player.hasScythe = true;
-      updateWeaponVisibility();
-      showPickupToast('PICKED UP: SCYTHE');
+      showPickupToast('PICKED UP: ' + p.type.toUpperCase());
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
     const def = WEAPON_DEFS[p.type];
-    if (player.primaryType && player.primaryType !== p.type) {
-      // Swapping guns used to just delete whatever you were holding. Now the
-      // old primary gets dropped on the ground as a real pickup instead of
-      // vanishing — same spot dropWeapon() uses, with the same brief pickup
-      // delay so you don't instantly re-grab the thing you just swapped away.
-      const forward = getForward(player.yaw);
-      const dropX = player.pos.x + forward.x * 1.3;
-      const dropZ = player.pos.z + forward.z * 1.3;
-      spawnWeaponPickup(player.primaryType, dropX, player.pos.y, dropZ, true);
+    const fillGunSlot = (slotName) => {
+      player[slotName + 'Type'] = p.type;
+      player.ammoState[slotName] = { mag: def.maxMag, reserve: def.maxMag * 2 };
+      setWeapon(slotName);
+      showPickupToast('PICKED UP: ' + def.name);
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
+    };
+    if (player.primaryType === p.type) {
+      // Already carrying this exact gun in the primary slot — picking up
+      // another just tops off its ammo instead of doing anything fancier.
+      player.ammoState.primary = { mag: def.maxMag, reserve: def.maxMag * 2 };
+      updateAmmoUI();
+      showPickupToast('REFILLED: ' + def.name);
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
+      return;
     }
-    player.primaryType = p.type;
-    player.ammoState.primary = { mag: def.maxMag, reserve: def.maxMag * 2 };
-    setWeapon('primary');
-    showPickupToast('PICKED UP: ' + def.name);
-    setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
+    if (!player.primaryType) { fillGunSlot('primary'); return; }
+    // The one primary gun slot is already full with a different gun —
+    // replace it, dropping the old one on the ground instead of it just
+    // vanishing. The pistol lives in its own fixed secondary slot and is
+    // never touched by gun pickups.
+    const forward = getForward(player.yaw);
+    const dropX = player.pos.x + forward.x * 1.3;
+    const dropZ = player.pos.z + forward.z * 1.3;
+    spawnWeaponPickup(player.primaryType, dropX, player.pos.y, dropZ, true);
+    fillGunSlot('primary');
   }
   function showPickupToast(text) {
     const el = document.getElementById('pickupToast');
@@ -1867,10 +1890,11 @@
 
   const WEAPON_TYPES = ['axe','knife','scythe','pistol','ak47','minigun','sniper','shotgun','flamethrower'];
   // Fixed equip-bar order the weaponSwitchBtn cycles through (mirrors the
-  // slot layout 1-5, then primary). ak47/minigun/sniper/shotgun/flamethrower
-  // aren't listed individually since they all live in the single 'primary'
-  // slot.
-  const WEAPON_CYCLE = ['axe','knife','scythe','pistol','primary'];
+  // slot layout: axe, primary, secondary/pistol, melee). ak47/minigun/sniper/
+  // shotgun/flamethrower aren't listed individually since they all live in
+  // the single 'primary' slot; knife/scythe both sit in the single melee
+  // slot and the "owned" check below skips whichever one isn't held.
+  const WEAPON_CYCLE = ['axe','primary','pistol','knife','scythe'];
   const fpMeshes = {}, tpMeshes = {};
   function placeFP(entry, type) {
     if (type === 'axe') { entry.group.position.set(0.28,-0.28,-0.5); entry.group.rotation.set(0.3, Math.PI, 0); }
@@ -1920,7 +1944,7 @@
     minigun: { url: 'minigun.glb', scale: 1, autoFit: null, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
     sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.4,  modelRotationX: 0, modelRotationY: 0, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.52), muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
     shotgun: { url: 'shotgun.glb', scale: 1, autoFit: 1.1,  modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.3), muzzleLocal: new THREE.Vector3(0, 0.03, -0.62) },
-    flamethrower: { url: 'flamethrower.glb', scale: 1, autoFit: 1.2,  modelRotationX: 0, modelRotationY: Math.PI, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.05, -0.28), muzzleLocal: new THREE.Vector3(0, 0.03, -0.65) },
+    flamethrower: { url: 'flamethrower.glb', scale: 1, autoFit: 1.2,  modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.05, -0.28), muzzleLocal: new THREE.Vector3(0, 0.03, -0.65) },
     // No muzzleLocal needed (melee, never fires a ray from the model) — autoFit
     // still centers/sizes it and the null muzzleLocal here is simply unused.
     knife:   { url: 'knife.glb',   scale: 1, autoFit: 0.34, modelRotationX: 0, modelRotationY: Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.02, -0.02), muzzleLocal: null },
@@ -2146,22 +2170,23 @@
     kills: 0,
     alive: true,
     wood: 0,
-    weapon: 'pistol', // 'axe' | 'knife' | 'pistol' | 'primary'
-    primaryType: null, // 'ak47' | 'minigun' | 'sniper' | null
-    hasKnife: false, // knife is a house pickup, not a starting weapon like the axe
-    hasScythe: false, // same deal — scythe is a house pickup
+    weapon: 'pistol', // 'axe' | 'knife' | 'scythe' | 'pistol' | 'primary'
+    primaryType: null, // 'ak47' | 'minigun' | 'sniper' | 'shotgun' | 'flamethrower' | null — the one primary gun slot
+    meleeType: null, // 'knife' | 'scythe' | null — single melee slot; picking up one replaces the other
     ammoState: { pistol: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
+    // Grenades, smoke grenades, and molotovs share one combined cap now
+    // instead of each having their own max — you can carry any mix of the
+    // three as long as the total across all of them doesn't exceed this.
     grenades: 0,
-    maxGrenades: 4,
     molotovs: 0,
-    maxMolotovs: 4,
     smokeGrenades: 0,
-    maxSmokeGrenades: 4,
+    maxThrowablesTotal: 10,
     // Fourth pickup pool — abilities found only in houses (separate roll
     // from guns/throwables/melee). Unlike the throwables above, the player
     // can only hold ONE ability at a time: picking up a new one replaces
     // whatever's currently held, same as swapping a primary weapon.
     abilityType: null, // 'trampoline' | 'dash' | 'forcefield' | 'fly' | null
+    abilityCooldown: 0, // seconds left before the held ability can be used again
     flying: false,
     flyTimeLeft: 0,
     dashTimeLeft: 0,
@@ -2216,13 +2241,10 @@
     fpWeaponRig.visible = (viewMode === 'first');
     tpWeaponRig.visible = (viewMode === 'third');
     document.getElementById('slotAxe').classList.toggle('selected', player.weapon === 'axe');
-    const slotKnifeEl = document.getElementById('slotKnife');
-    slotKnifeEl.classList.toggle('selected', player.weapon === 'knife');
-    slotKnifeEl.classList.toggle('emptySlot', !player.hasKnife);
-    const slotScytheEl = document.getElementById('slotScythe');
-    slotScytheEl.classList.toggle('selected', player.weapon === 'scythe');
-    slotScytheEl.classList.toggle('emptySlot', !player.hasScythe);
-    document.getElementById('slotPistol').classList.toggle('selected', player.weapon === 'pistol');
+    const slotMeleeEl = document.getElementById('slotMelee');
+    slotMeleeEl.classList.toggle('selected', player.weapon === 'knife' || player.weapon === 'scythe');
+    slotMeleeEl.classList.toggle('emptySlot', !player.meleeType);
+    document.getElementById('slotSecondary').classList.toggle('selected', player.weapon === 'pistol');
     document.getElementById('slotPrimary').classList.toggle('selected', player.weapon === 'primary');
     document.getElementById('scopeBtn').style.display = canScope() ? 'flex' : 'none';
     if (!canScope() && isScoped) endScope();
@@ -3492,7 +3514,8 @@
     st.mag--;
     updateAmmoUI();
     flashFire();
-    addShake(player.weapon === 'primary' && player.primaryType === 'sniper' ? 0.85 : (player.primaryType === 'minigun' ? 0.22 : (player.primaryType === 'shotgun' ? 0.65 : (player.primaryType === 'flamethrower' ? 0.1 : 0.5))));
+    const heldType = currentMeshType();
+    addShake(heldType === 'sniper' ? 0.85 : (heldType === 'minigun' ? 0.22 : (heldType === 'shotgun' ? 0.65 : (heldType === 'flamethrower' ? 0.1 : 0.5))));
     playGunshot(currentMeshType());
     fireBullet(def);
     if (st.mag === 0) reload();
@@ -3551,7 +3574,10 @@
       primaryTagEl.textContent = '';
       slotPrimaryEl.classList.add('emptySlot');
     }
-    document.getElementById('dropBtn').classList.toggle('disabled', !player.primaryType);
+    const meleeLabelEl = document.getElementById('meleeLabel');
+    meleeLabelEl.textContent = player.meleeType === 'knife' ? 'KNFE' : (player.meleeType === 'scythe' ? 'SCYT' : '--');
+    const holdingGun = (player.weapon === 'primary' && player.primaryType);
+    document.getElementById('dropBtn').classList.toggle('disabled', !holdingGun);
   }
   function updateGrenadeUI() {
     document.getElementById('grenadeCountTag').textContent = player.grenades;
@@ -3570,7 +3596,7 @@
   function updateAbilityUI() {
     const btn = document.getElementById('abilityBtn');
     const hasAbility = !!player.abilityType;
-    btn.querySelector('.count') && (btn.querySelector('.count').style.display = '');
+    const onCooldown = player.abilityCooldown > 0;
     // Rebuild the icon text node without disturbing the .count span.
     const iconChar = hasAbility ? ABILITY_ICONS[player.abilityType] : '❓';
     let iconNode = btn.firstChild;
@@ -3579,9 +3605,18 @@
       btn.insertBefore(iconNode, btn.firstChild);
     }
     iconNode.textContent = iconChar;
-    document.getElementById('abilityCountTag').textContent = hasAbility ? '1' : '0';
-    btn.title = hasAbility ? ABILITY_LABELS[player.abilityType] : 'No ability held';
-    btn.classList.toggle('disabled', !hasAbility && !player.flying);
+    const countTag = document.getElementById('abilityCountTag');
+    if (onCooldown) {
+      countTag.style.display = '';
+      countTag.textContent = Math.ceil(player.abilityCooldown);
+    } else {
+      countTag.style.display = 'none';
+    }
+    btn.title = hasAbility ? (onCooldown ? ABILITY_LABELS[player.abilityType] + ' (cooling down)' : ABILITY_LABELS[player.abilityType]) : 'No ability held';
+    // Infinite use, gated only by cooldown — stays usable as long as an
+    // ability is held and it isn't cooling down (or flight is active,
+    // since toggling flight off always has to work regardless of cooldown).
+    btn.classList.toggle('disabled', (!hasAbility && !player.flying) || (onCooldown && !player.flying));
     btn.classList.toggle('flyActive', player.flying);
   }
   function updateWoodUI() {
@@ -4039,11 +4074,58 @@
     speedLinesEl.classList.toggle('show', player.sprinting);
   }
   let regenAccumulator = 0;
+  // Drops everything the player is currently carrying — used on death so
+  // guns, throwables, and abilities all end up on the ground the same way
+  // a manually-dropped gun does, instead of just guns.
+  function dropAllPlayerItems() {
+    const forward = getForward(player.yaw);
+    let spot = 0;
+    const nextSpot = () => {
+      // Scatter multiple items in a small ring around the death spot so
+      // they don't all spawn stacked in the exact same point.
+      const angle = spot * 1.1;
+      spot++;
+      return {
+        x: player.pos.x + Math.cos(angle) * 1.3,
+        z: player.pos.z + Math.sin(angle) * 1.3
+      };
+    };
+    if (player.primaryType) {
+      const pos = nextSpot();
+      spawnWeaponPickup(player.primaryType, pos.x, player.pos.y, pos.z, true);
+      player.primaryType = null;
+      player.ammoState.primary = { mag: 0, reserve: 0 };
+    }
+    if (player.abilityType) {
+      const pos = nextSpot();
+      spawnWeaponPickup(player.abilityType, pos.x, player.pos.y, pos.z, true);
+      player.abilityType = null;
+      player.abilityCooldown = 0;
+      player.flying = false;
+      player.flyTimeLeft = 0;
+      updateAbilityUI();
+    }
+    for (let i = 0; i < player.grenades; i++) {
+      const pos = nextSpot();
+      spawnWeaponPickup('grenade', pos.x, player.pos.y, pos.z, true);
+    }
+    for (let i = 0; i < player.smokeGrenades; i++) {
+      const pos = nextSpot();
+      spawnWeaponPickup('smokegrenade', pos.x, player.pos.y, pos.z, true);
+    }
+    for (let i = 0; i < player.molotovs; i++) {
+      const pos = nextSpot();
+      spawnWeaponPickup('molotov', pos.x, player.pos.y, pos.z, true);
+    }
+    player.grenades = 0; player.smokeGrenades = 0; player.molotovs = 0;
+    updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
+  }
   function playerDie() {
     player.alive = false;
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
     endScope();
+    dropAllPlayerItems();
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('finalKills').textContent = player.kills;
     document.getElementById('deathScreen').style.display = 'flex';
@@ -4054,14 +4136,18 @@
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
     player.weapon = 'pistol';
-    player.hasKnife = false;
-    player.hasScythe = false;
+    player.meleeType = null;
     player.grenades = 0;
     updateGrenadeUI();
     player.smokeGrenades = 0;
     updateSmokeGrenadeUI();
     player.molotovs = 0;
     updateMolotovUI();
+    player.abilityType = null;
+    player.abilityCooldown = 0;
+    player.flying = false;
+    player.flyTimeLeft = 0;
+    updateAbilityUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
@@ -4576,14 +4662,14 @@
   const DEFAULT_KEY_BINDINGS = {
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
-    axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3', knife: 'Digit4', scythe: 'Digit5',
+    axe: 'Digit1', primary: 'Digit2', pistol: 'Digit3', melee: 'Digit4',
     build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK',
     useAbility: 'KeyT'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
-    axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary', knife: 'Equip Knife', scythe: 'Equip Scythe',
+    axe: 'Equip Axe', primary: 'Equip Primary', pistol: 'Equip Secondary', melee: 'Equip Melee',
     build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave',
     useAbility: 'Use Ability'
   };
@@ -4979,19 +5065,18 @@
 
   // ---------- Equip slot clicks ----------
   bindTap(document.getElementById('slotAxe'), () => setWeapon('axe'));
-  bindTap(document.getElementById('slotKnife'), () => setWeapon('knife'));
-  bindTap(document.getElementById('slotScythe'), () => setWeapon('scythe'));
-  bindTap(document.getElementById('slotPistol'), () => setWeapon('pistol'));
   bindTap(document.getElementById('slotPrimary'), () => setWeapon('primary'));
+  bindTap(document.getElementById('slotSecondary'), () => setWeapon('pistol'));
+  bindTap(document.getElementById('slotMelee'), () => { if (player.meleeType) setWeapon(player.meleeType); });
   bindTap(document.getElementById('weaponSwitchBtn'), () => {
     // Cycles through every slot in equip-bar order, skipping ones the player
-    // doesn't currently own (unpicked-up knife/scythe, no primary yet) —
-    // walking the fixed WEAPON_CYCLE list instead of a chain of hardcoded
+    // doesn't currently own (no melee weapon picked up yet, no primary yet)
+    // — walking the fixed WEAPON_CYCLE list instead of a chain of hardcoded
     // "if on X, go to Y" transitions means an unowned slot just gets stepped
     // over rather than the switch button silently doing nothing.
     const owned = w => {
-      if (w === 'knife') return player.hasKnife;
-      if (w === 'scythe') return player.hasScythe;
+      if (w === 'knife') return player.meleeType === 'knife';
+      if (w === 'scythe') return player.meleeType === 'scythe';
       if (w === 'primary') return !!player.primaryType;
       return true;
     };
@@ -5003,8 +5088,8 @@
   });
   function setWeapon(w) {
     if (w === 'primary' && !player.primaryType) return;
-    if (w === 'knife' && !player.hasKnife) return;
-    if (w === 'scythe' && !player.hasScythe) return;
+    if (w === 'knife' && player.meleeType !== 'knife') return;
+    if (w === 'scythe' && player.meleeType !== 'scythe') return;
     player.weapon = w;
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
@@ -5016,7 +5101,10 @@
   // ---------- Drop weapon ----------
   bindTap(document.getElementById('dropBtn'), dropWeapon);
   function dropWeapon() {
-    if (!player.alive || drop.active || !player.primaryType) return;
+    if (!player.alive || drop.active) return;
+    // Only the primary gun slot can be dropped — the pistol is the fixed
+    // secondary weapon you spawn with and always keep.
+    if (player.weapon !== 'primary' || !player.primaryType) return;
     const type = player.primaryType;
     const def = WEAPON_DEFS[type];
     const forward = getForward(player.yaw);
@@ -5026,7 +5114,7 @@
 
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
-    if (player.weapon === 'primary') setWeapon('pistol');
+    setWeapon('pistol');
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
     updateWeaponVisibility();
@@ -5102,8 +5190,8 @@
   const trampolineMat = new THREE.MeshStandardMaterial({ color: 0x3fb8e0, emissive: 0x1a5670, emissiveIntensity: 0.4, roughness: 0.4 });
   const trampolineRimMat = new THREE.MeshStandardMaterial({ color: 0x1c2b33, roughness: 0.6 });
   function placeTrampoline() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'trampoline') return;
-    player.abilityType = null;
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'trampoline' || player.abilityCooldown > 0) return;
+    player.abilityCooldown = ABILITY_COOLDOWNS.trampoline;
     updateAbilityUI();
     const forward = getForward(player.yaw);
     const x = player.pos.x + forward.x * 2.4;
@@ -5154,9 +5242,9 @@
   const DASH_DURATION = 0.22;
   const DASH_SPEED_MULT = 5.5;
   function doDash() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'dash') return;
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'dash' || player.abilityCooldown > 0) return;
     if (player.dashTimeLeft > 0) return;
-    player.abilityType = null;
+    player.abilityCooldown = ABILITY_COOLDOWNS.dash;
     updateAbilityUI();
     player.dashTimeLeft = DASH_DURATION;
     addShake(0.15);
@@ -5172,8 +5260,8 @@
   const activeForcefields = [];
   const forcefieldMat = new THREE.MeshStandardMaterial({ color: 0x5adcb4, transparent: true, opacity: 0.28, emissive: 0x2a8f6e, emissiveIntensity: 0.5, roughness: 0.3, side: THREE.DoubleSide });
   function placeForcefield() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'forcefield') return;
-    player.abilityType = null;
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'forcefield' || player.abilityCooldown > 0) return;
+    player.abilityCooldown = ABILITY_COOLDOWNS.forcefield;
     updateAbilityUI();
     const forward = getForward(player.yaw);
     const x = player.pos.x + forward.x * 2.2;
@@ -5207,17 +5295,18 @@
   // player up/down instead. One charge covers a timed window; toggling off
   // early doesn't refund the remaining time.
   const FLY_DURATION = 18;
+  const ABILITY_COOLDOWNS = { trampoline: 8, dash: 4, forcefield: 12, fly: 20 };
   function toggleFly() {
     if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon) return;
     if (player.flying) {
       player.flying = false;
       player.flyTimeLeft = 0;
+      player.abilityCooldown = ABILITY_COOLDOWNS.fly;
       updateAbilityUI();
       showPickupToast('FLY ENDED');
       return;
     }
-    if (player.abilityType !== 'fly') return;
-    player.abilityType = null;
+    if (player.abilityType !== 'fly' || player.abilityCooldown > 0) return;
     player.flying = true;
     player.flyTimeLeft = FLY_DURATION;
     player.velY = 0;
@@ -5230,8 +5319,17 @@
     if (player.flyTimeLeft <= 0) {
       player.flying = false;
       player.velY = 0;
+      player.abilityCooldown = ABILITY_COOLDOWNS.fly;
       updateAbilityUI();
       showPickupToast('FLY ENDED');
+    }
+  }
+  // Ticks the shared ability cooldown down every frame — abilities are
+  // infinite-use now (never consumed on pickup), just gated by this timer.
+  function updateAbilityCooldown(dt) {
+    if (player.abilityCooldown > 0) {
+      player.abilityCooldown = Math.max(0, player.abilityCooldown - dt);
+      updateAbilityUI();
     }
   }
 
@@ -5492,10 +5590,9 @@
     if (e.code === keyBindings.reload) reload();
     if (e.code === keyBindings.jump) { tryJump(); e.preventDefault(); }
     if (e.code === keyBindings.axe) setWeapon('axe');
-    if (e.code === keyBindings.knife) setWeapon('knife');
-    if (e.code === keyBindings.scythe) setWeapon('scythe');
     if (e.code === keyBindings.pistol) setWeapon('pistol');
     if (e.code === keyBindings.primary) setWeapon('primary');
+    if (e.code === keyBindings.melee) { if (player.meleeType) setWeapon(player.meleeType); }
     if (e.code === keyBindings.build) tryBuildWall();
     if (e.code === keyBindings.buildModeToggle) toggleBuildMode();
     if (e.code === keyBindings.buildPiece) cycleBuildPiece();
@@ -6160,6 +6257,7 @@
       updateTrampolines(dt);
       updateForcefields(dt);
       updateFlyTimer(dt);
+      updateAbilityCooldown(dt);
       if (gameMode === 'zombie') {
         for (const zom of zombies) updateZombie(zom, dt);
       } else {
