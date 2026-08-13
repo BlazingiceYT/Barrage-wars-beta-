@@ -249,6 +249,13 @@
   }
   #buildPieceBtn { bottom: 242px; }
   #buildTierBtn { bottom: 202px; }
+  #buildModeBtn {
+    position: absolute; right: 130px; bottom: 282px; width: 56px; height: 44px;
+    border-radius: 10px; background: rgba(50,50,50,0.6); border: 2px solid rgba(200,200,200,0.6);
+    color: #fff; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; text-align: center; line-height: 1.15;
+  }
+  #buildModeBtn.active { background: rgba(95,255,122,0.35); border-color: rgba(150,255,170,0.9); }
 
   #weaponSwitchBtn {
     position: absolute; right: 20px; bottom: 300px;
@@ -517,7 +524,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | B=Build | X=Piece | Z=Material | Tab=Inventory</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -526,9 +533,10 @@
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
+    <button id="buildModeBtn" title="Open build controls">BUILD<br>MODE<br>OFF</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
-    <button id="buildPieceBtn" title="Cycle piece type (X)">WALL</button>
-    <button id="buildTierBtn" title="Cycle material (Z)">WOOD</button>
+    <button id="buildPieceBtn" title="Cycle piece type (X)" style="display:none;">WALL</button>
+    <button id="buildTierBtn" title="Cycle material (Z)" style="display:none;">WOOD</button>
     <button id="scopeBtn">SCOPE</button>
     <button id="reloadBtn">RELOAD</button>
     <button id="fireBtn"><span id="fireBtnVisual">FIRE</span></button>
@@ -4057,6 +4065,7 @@
   }
 
   function tryBuildWall() {
+    if (!buildModeOn) return;
     const cost = buildCost(currentBuildPiece, currentBuildTier);
     if (player.wood < cost) return;
     player.wood -= cost;
@@ -4109,8 +4118,27 @@
 
   function setGhostMat(mesh, ok) { mesh.material = ok ? ghostMatGreen : ghostMatRed; }
 
+  // Build mode is OFF by default so the ghost preview doesn't just hover in
+  // front of you all the time — it (and the piece/material buttons) only
+  // show up once you tap the BUILD MODE button, or press the build-mode key.
+  let buildModeOn = false;
+  const buildModeBtn = document.getElementById('buildModeBtn');
+  const buildPieceBtnEl = document.getElementById('buildPieceBtn');
+  const buildTierBtnEl = document.getElementById('buildTierBtn');
+  function setBuildModeUI() {
+    buildModeBtn.innerHTML = buildModeOn ? 'BUILD<br>MODE<br>ON' : 'BUILD<br>MODE<br>OFF';
+    buildModeBtn.classList.toggle('active', buildModeOn);
+    buildPieceBtnEl.style.display = buildModeOn ? 'flex' : 'none';
+    buildTierBtnEl.style.display = buildModeOn ? 'flex' : 'none';
+  }
+  function toggleBuildMode() {
+    buildModeOn = !buildModeOn;
+    setBuildModeUI();
+  }
+  setBuildModeUI();
+
   function updateBuildGhost() {
-    const showing = matchStarted && player.alive && !drop.active && !settingsOpen && !keybindOpen && !invOpen && !matchWon;
+    const showing = buildModeOn && matchStarted && player.alive && !drop.active && !settingsOpen && !keybindOpen && !invOpen && !matchWon;
     ghostWallMesh.visible = showing && currentBuildPiece === 'wall';
     ghostFloorMesh.visible = showing && currentBuildPiece === 'floor';
     ghostRampPivot.visible = showing && currentBuildPiece === 'ramp';
@@ -4137,6 +4165,7 @@
   bindTap(document.getElementById('buildFromInvBtn'), tryBuildWall);
   bindTap(document.getElementById('buildPieceBtn'), cycleBuildPiece);
   bindTap(document.getElementById('buildTierBtn'), cycleBuildTier);
+  bindTap(buildModeBtn, toggleBuildMode);
   bindTap(document.getElementById('reloadBtn'), reload);
 
   // ---------- Menu panel open animation helper ----------
@@ -4177,13 +4206,13 @@
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3',
-    build: 'KeyB', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
+    build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary',
-    build: 'Build Piece', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
+    build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -4372,7 +4401,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -4380,6 +4409,7 @@
     fireBtn: 'FIRE',
     scopeBtn: 'SCOPE',
     reloadBtn: 'RELOAD',
+    buildModeBtn: 'TOGGLE BUILD MODE',
     buildBtn: 'BUILD PIECE',
     buildPieceBtn: 'CYCLE PIECE TYPE',
     buildTierBtn: 'CYCLE MATERIAL',
@@ -4919,6 +4949,7 @@
     if (e.code === keyBindings.pistol) setWeapon('pistol');
     if (e.code === keyBindings.primary) setWeapon('primary');
     if (e.code === keyBindings.build) tryBuildWall();
+    if (e.code === keyBindings.buildModeToggle) toggleBuildMode();
     if (e.code === keyBindings.buildPiece) cycleBuildPiece();
     if (e.code === keyBindings.buildTier) cycleBuildTier();
     if (e.code === keyBindings.drop) dropWeapon();
