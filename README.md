@@ -131,5 +131,8 @@ Fixed bulidng mechanic]
 **Update0.47** - *Commited by BlazingiceYT on 13 Aug 2026*
 Added different types of bots
 
-**Update0.47** - *Commited by BlazingiceYT on 13 Aug 2026*
+**Update0.48** - *Commited by BlazingiceYT on 13 Aug 2026*
 Added damage direction indicator
+
+**Patch0.49** - *Commited by BlazingiceYT on 13 Aug 2026*
+Fixed skip wave button not working
