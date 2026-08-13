@@ -1920,7 +1920,7 @@
     minigun: { url: 'minigun.glb', scale: 1, autoFit: null, modelRotationY: 0, muzzleLocal: new THREE.Vector3(0, 0,    -0.85), barrelClusterName: 'barrelCluster' },
     sniper:  { url: 'sniper.glb',  scale: 1, autoFit: 1.4,  modelRotationX: 0, modelRotationY: 0, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.52), muzzleLocal: new THREE.Vector3(0, 0.01, -0.85) },
     shotgun: { url: 'shotgun.glb', scale: 1, autoFit: 1.1,  modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.04, -0.3), muzzleLocal: new THREE.Vector3(0, 0.03, -0.62) },
-    flamethrower: { url: 'flamethrower.glb', scale: 1, autoFit: 1.2,  modelRotationX: 0, modelRotationY: -Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.05, -0.28), muzzleLocal: new THREE.Vector3(0, 0.03, -0.65) },
+    flamethrower: { url: 'flamethrower.glb', scale: 1, autoFit: 1.2,  modelRotationX: 0, modelRotationY: Math.PI, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.05, -0.28), muzzleLocal: new THREE.Vector3(0, 0.03, -0.65) },
     // No muzzleLocal needed (melee, never fires a ray from the model) — autoFit
     // still centers/sizes it and the null muzzleLocal here is simply unused.
     knife:   { url: 'knife.glb',   scale: 1, autoFit: 0.34, modelRotationX: 0, modelRotationY: Math.PI / 2, modelRotationZ: 0, modelOffset: new THREE.Vector3(0, -0.02, -0.02), muzzleLocal: null },
