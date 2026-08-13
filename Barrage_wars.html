@@ -317,27 +317,19 @@
   #molotovBtn:active { background: rgba(255,140,60,0.5); }
   #molotovBtn.disabled { opacity: 0.35; pointer-events: none; }
 
-  /* Ability buttons (trampoline / dash / forcefield / fly) — stacked on the
-     left side, mirroring the throwable buttons on the right. */
-  #trampolineBtn, #dashBtn, #forcefieldBtn, #flyBtn {
-    position: absolute; left: 20px; width: 46px; height: 46px;
+  /* Ability button (trampoline / dash / forcefield / fly) — a single slot,
+     since the player can only hold one ability at a time. Sits above the
+     throwable buttons on the right side. */
+  #abilityBtn {
+    position: absolute; right: 20px; bottom: 500px; width: 46px; height: 46px;
     border-radius: 50%; color: #fff; font-size: 18px; pointer-events: auto;
     display: flex; align-items: center; justify-content: center;
+    background: rgba(50,50,60,0.6); border: 2px solid rgba(180,180,200,0.6);
   }
-  #trampolineBtn .count, #dashBtn .count, #forcefieldBtn .count, #flyBtn .count {
-    position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold;
-    color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px;
-  }
-  #trampolineBtn.disabled, #dashBtn.disabled, #forcefieldBtn.disabled, #flyBtn.disabled { opacity: 0.35; pointer-events: none; }
-  #trampolineBtn { bottom: 170px; background: rgba(30,70,90,0.6); border: 2px solid rgba(100,200,230,0.6); }
-  #trampolineBtn:active { background: rgba(100,200,230,0.5); }
-  #dashBtn { bottom: 225px; background: rgba(70,50,90,0.6); border: 2px solid rgba(190,130,240,0.6); }
-  #dashBtn:active { background: rgba(190,130,240,0.5); }
-  #forcefieldBtn { bottom: 280px; background: rgba(20,70,60,0.6); border: 2px solid rgba(90,220,180,0.6); }
-  #forcefieldBtn:active { background: rgba(90,220,180,0.5); }
-  #flyBtn { bottom: 335px; background: rgba(80,70,20,0.6); border: 2px solid rgba(240,210,90,0.6); }
-  #flyBtn:active { background: rgba(240,210,90,0.5); }
-  #flyBtn.flyActive { background: rgba(240,210,90,0.6); box-shadow: 0 0 10px rgba(240,210,90,0.8); }
+  #abilityBtn .count { position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold; color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px; }
+  #abilityBtn.disabled { opacity: 0.35; pointer-events: none; }
+  #abilityBtn:active { background: rgba(180,180,200,0.5); }
+  #abilityBtn.flyActive { background: rgba(240,210,90,0.6); box-shadow: 0 0 10px rgba(240,210,90,0.8); }
 
   /* Equipment slots bar */
   #equipBar {
@@ -563,7 +555,7 @@
 
     <button id="skipWaveBtn" style="display:none; position:absolute; top:200px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#5fae3d,#2f6b1f); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">SKIP WAVE (K)</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Trampoline | J=Dash | H=Force Field | L=Fly</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Use Ability</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
 
@@ -572,10 +564,7 @@
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
-    <button id="trampolineBtn" class="disabled" title="Place trampoline">🔵<span class="count" id="trampolineCountTag">0</span></button>
-    <button id="dashBtn" class="disabled" title="Dash">💨<span class="count" id="dashCountTag">0</span></button>
-    <button id="forcefieldBtn" class="disabled" title="Place force field">🛡️<span class="count" id="forcefieldCountTag">0</span></button>
-    <button id="flyBtn" class="disabled" title="Toggle fly">🕊️<span class="count" id="flyCountTag">0</span></button>
+    <button id="abilityBtn" class="disabled" title="Use ability">❓<span class="count" id="abilityCountTag">0</span></button>
     <button id="buildModeBtn" title="Open build controls">BUILD<br>MODE<br>OFF</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="buildPieceBtn" title="Cycle piece type (X)" style="display:none;">WALL</button>
@@ -1076,31 +1065,13 @@
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
-    if (p.type === 'trampoline') {
-      player.trampolines = Math.min(player.maxTrampolines, player.trampolines + 1);
-      updateTrampolineUI();
-      showPickupToast('PICKED UP: TRAMPOLINE');
-      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
-      return;
-    }
-    if (p.type === 'dash') {
-      player.dashes = Math.min(player.maxDashes, player.dashes + 1);
-      updateDashUI();
-      showPickupToast('PICKED UP: DASH');
-      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
-      return;
-    }
-    if (p.type === 'forcefield') {
-      player.forcefields = Math.min(player.maxForcefields, player.forcefields + 1);
-      updateForcefieldUI();
-      showPickupToast('PICKED UP: FORCE FIELD');
-      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
-      return;
-    }
-    if (p.type === 'fly') {
-      player.flyCharges = Math.min(player.maxFlyCharges, player.flyCharges + 1);
-      updateFlyUI();
-      showPickupToast('PICKED UP: FLY');
+    if (ABILITY_TYPES.includes(p.type)) {
+      // Only one ability slot — picking up a new ability replaces whatever
+      // was held before (old one is just lost, no drop-on-ground like guns
+      // get, since abilities aren't worth building that extra machinery for).
+      player.abilityType = p.type;
+      updateAbilityUI();
+      showPickupToast('PICKED UP: ' + p.type.toUpperCase());
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -2187,16 +2158,10 @@
     smokeGrenades: 0,
     maxSmokeGrenades: 4,
     // Fourth pickup pool — abilities found only in houses (separate roll
-    // from guns/throwables/melee). Each is a stackable charge, consumed on
-    // use, same idea as the grenades above.
-    trampolines: 0,
-    maxTrampolines: 3,
-    dashes: 0,
-    maxDashes: 3,
-    forcefields: 0,
-    maxForcefields: 2,
-    flyCharges: 0,
-    maxFlyCharges: 2,
+    // from guns/throwables/melee). Unlike the throwables above, the player
+    // can only hold ONE ability at a time: picking up a new one replaces
+    // whatever's currently held, same as swapping a primary weapon.
+    abilityType: null, // 'trampoline' | 'dash' | 'forcefield' | 'fly' | null
     flying: false,
     flyTimeLeft: 0,
     dashTimeLeft: 0,
@@ -3600,22 +3565,24 @@
     document.getElementById('molotovCountTag').textContent = player.molotovs;
     document.getElementById('molotovBtn').classList.toggle('disabled', player.molotovs <= 0);
   }
-  function updateTrampolineUI() {
-    document.getElementById('trampolineCountTag').textContent = player.trampolines;
-    document.getElementById('trampolineBtn').classList.toggle('disabled', player.trampolines <= 0);
-  }
-  function updateDashUI() {
-    document.getElementById('dashCountTag').textContent = player.dashes;
-    document.getElementById('dashBtn').classList.toggle('disabled', player.dashes <= 0);
-  }
-  function updateForcefieldUI() {
-    document.getElementById('forcefieldCountTag').textContent = player.forcefields;
-    document.getElementById('forcefieldBtn').classList.toggle('disabled', player.forcefields <= 0);
-  }
-  function updateFlyUI() {
-    document.getElementById('flyCountTag').textContent = player.flyCharges;
-    document.getElementById('flyBtn').classList.toggle('disabled', player.flyCharges <= 0);
-    document.getElementById('flyBtn').classList.toggle('flyActive', player.flying);
+  const ABILITY_ICONS = { trampoline: '🔵', dash: '💨', forcefield: '🛡️', fly: '🕊️' };
+  const ABILITY_LABELS = { trampoline: 'Place trampoline', dash: 'Dash', forcefield: 'Place force field', fly: 'Toggle fly' };
+  function updateAbilityUI() {
+    const btn = document.getElementById('abilityBtn');
+    const hasAbility = !!player.abilityType;
+    btn.querySelector('.count') && (btn.querySelector('.count').style.display = '');
+    // Rebuild the icon text node without disturbing the .count span.
+    const iconChar = hasAbility ? ABILITY_ICONS[player.abilityType] : '❓';
+    let iconNode = btn.firstChild;
+    if (!iconNode || iconNode.nodeType !== Node.TEXT_NODE) {
+      iconNode = document.createTextNode('');
+      btn.insertBefore(iconNode, btn.firstChild);
+    }
+    iconNode.textContent = iconChar;
+    document.getElementById('abilityCountTag').textContent = hasAbility ? '1' : '0';
+    btn.title = hasAbility ? ABILITY_LABELS[player.abilityType] : 'No ability held';
+    btn.classList.toggle('disabled', !hasAbility && !player.flying);
+    btn.classList.toggle('flyActive', player.flying);
   }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
@@ -4611,14 +4578,14 @@
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', pistol: 'Digit2', primary: 'Digit3', knife: 'Digit4', scythe: 'Digit5',
     build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK',
-    trampoline: 'KeyT', dash: 'KeyJ', forcefield: 'KeyH', fly: 'KeyL'
+    useAbility: 'KeyT'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', pistol: 'Equip Pistol', primary: 'Equip Primary', knife: 'Equip Knife', scythe: 'Equip Scythe',
     build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave',
-    trampoline: 'Place Trampoline', dash: 'Dash', forcefield: 'Place Force Field', fly: 'Toggle Fly'
+    useAbility: 'Use Ability'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -4807,7 +4774,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','trampolineBtn','dashBtn','forcefieldBtn','flyBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','abilityBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -4824,10 +4791,7 @@
     grenadeBtn: 'THROW GRENADE',
     smokeGrenadeBtn: 'THROW SMOKE',
     molotovBtn: 'THROW MOLOTOV',
-    trampolineBtn: 'PLACE TRAMPOLINE',
-    dashBtn: 'DASH',
-    forcefieldBtn: 'PLACE FORCE FIELD',
-    flyBtn: 'TOGGLE FLY',
+    abilityBtn: 'USE ABILITY',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -5138,9 +5102,9 @@
   const trampolineMat = new THREE.MeshStandardMaterial({ color: 0x3fb8e0, emissive: 0x1a5670, emissiveIntensity: 0.4, roughness: 0.4 });
   const trampolineRimMat = new THREE.MeshStandardMaterial({ color: 0x1c2b33, roughness: 0.6 });
   function placeTrampoline() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.trampolines <= 0) return;
-    player.trampolines--;
-    updateTrampolineUI();
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'trampoline') return;
+    player.abilityType = null;
+    updateAbilityUI();
     const forward = getForward(player.yaw);
     const x = player.pos.x + forward.x * 2.4;
     const z = player.pos.z + forward.z * 2.4;
@@ -5190,10 +5154,10 @@
   const DASH_DURATION = 0.22;
   const DASH_SPEED_MULT = 5.5;
   function doDash() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.dashes <= 0) return;
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'dash') return;
     if (player.dashTimeLeft > 0) return;
-    player.dashes--;
-    updateDashUI();
+    player.abilityType = null;
+    updateAbilityUI();
     player.dashTimeLeft = DASH_DURATION;
     addShake(0.15);
     showPickupToast('DASH!');
@@ -5208,9 +5172,9 @@
   const activeForcefields = [];
   const forcefieldMat = new THREE.MeshStandardMaterial({ color: 0x5adcb4, transparent: true, opacity: 0.28, emissive: 0x2a8f6e, emissiveIntensity: 0.5, roughness: 0.3, side: THREE.DoubleSide });
   function placeForcefield() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.forcefields <= 0) return;
-    player.forcefields--;
-    updateForcefieldUI();
+    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'forcefield') return;
+    player.abilityType = null;
+    updateAbilityUI();
     const forward = getForward(player.yaw);
     const x = player.pos.x + forward.x * 2.2;
     const z = player.pos.z + forward.z * 2.2;
@@ -5248,16 +5212,16 @@
     if (player.flying) {
       player.flying = false;
       player.flyTimeLeft = 0;
-      updateFlyUI();
+      updateAbilityUI();
       showPickupToast('FLY ENDED');
       return;
     }
-    if (player.flyCharges <= 0) return;
-    player.flyCharges--;
+    if (player.abilityType !== 'fly') return;
+    player.abilityType = null;
     player.flying = true;
     player.flyTimeLeft = FLY_DURATION;
     player.velY = 0;
-    updateFlyUI();
+    updateAbilityUI();
     showPickupToast('FLYING');
   }
   function updateFlyTimer(dt) {
@@ -5266,9 +5230,20 @@
     if (player.flyTimeLeft <= 0) {
       player.flying = false;
       player.velY = 0;
-      updateFlyUI();
+      updateAbilityUI();
       showPickupToast('FLY ENDED');
     }
+  }
+
+  // Single entry point the button/key calls — dispatches to whichever
+  // ability is currently held (or turns flight off, if that's active).
+  function useAbility() {
+    if (player.flying) { toggleFly(); return; }
+    if (!player.abilityType) return;
+    if (player.abilityType === 'trampoline') placeTrampoline();
+    else if (player.abilityType === 'dash') doDash();
+    else if (player.abilityType === 'forcefield') placeForcefield();
+    else if (player.abilityType === 'fly') toggleFly();
   }
 
   function updateGrenades(dt) {
@@ -5485,10 +5460,7 @@
   bindTap(document.getElementById('grenadeBtn'), throwGrenade);
   bindTap(document.getElementById('smokeGrenadeBtn'), throwSmokeGrenade);
   bindTap(document.getElementById('molotovBtn'), throwMolotov);
-  bindTap(document.getElementById('trampolineBtn'), placeTrampoline);
-  bindTap(document.getElementById('dashBtn'), doDash);
-  bindTap(document.getElementById('forcefieldBtn'), placeForcefield);
-  bindTap(document.getElementById('flyBtn'), toggleFly);
+  bindTap(document.getElementById('abilityBtn'), useAbility);
 
   // ---------- View mode ----------
   let viewMode = 'third';
@@ -5532,10 +5504,7 @@
     if (e.code === keyBindings.grenade) throwGrenade();
     if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
     if (e.code === keyBindings.molotov) throwMolotov();
-    if (e.code === keyBindings.trampoline) placeTrampoline();
-    if (e.code === keyBindings.dash) doDash();
-    if (e.code === keyBindings.forcefield) placeForcefield();
-    if (e.code === keyBindings.fly) toggleFly();
+    if (e.code === keyBindings.useAbility) useAbility();
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
     if (e.code === keyBindings.skipWave) skipWave();
   });
@@ -6213,7 +6182,7 @@
     renderer.render(scene, camera);
   }
   updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
-  updateTrampolineUI(); updateDashUI(); updateForcefieldUI(); updateFlyUI();
+  updateAbilityUI();
   animate();
 
 })();
