@@ -145,3 +145,7 @@ Add ability buttons for trampoline, dash, forcefield, and fly
 
 **Update0.52** - *Commited by BlazingiceYT on 14 Aug 2026*
 Upgraded inventory slots
+
+**Update0.52** - *Commited by BlazingiceYT on 14 Aug 2026*
+Added shield
+
