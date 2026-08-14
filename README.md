@@ -140,5 +140,8 @@ Fixed skip wave button not working
 **Update0.50** - *Commited by BlazingiceYT on 13 Aug 2026*
 Added new guns but yet to fix their rotation
 
-Extreme beta 0.51
+**Update0.51** - *Commited by BlazingiceYT on 13 Aug 2026*
 Add ability buttons for trampoline, dash, forcefield, and fly
+
+**Update0.52** - *Commited by BlazingiceYT on 14 Aug 2026*
+Upgraded inventory slots
