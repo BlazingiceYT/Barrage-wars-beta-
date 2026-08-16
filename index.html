@@ -2363,12 +2363,18 @@
     const model = THREE.SkeletonUtils.clone(gltf.scene);
     // Applied as two separate sequential rotations (not a combined Euler
     // triple) so each one has an unambiguous, easy-to-reason-about effect:
-    // rotateX first corrects the Z-up export onto Y-up, THEN rotateY spins
-    // the now-upright model around its own vertical axis to face away from
-    // the camera in third person (it was facing the camera before).
+    // rotateX first corrects the Z-up export onto Y-up, then a second turn
+    // spins the now-upright model around its own vertical axis to face
+    // away from the camera in third person (it was facing the camera
+    // before).
     model.rotation.set(0, 0, 0);
+    // NOTE: after rotateX, the model's own local Y axis no longer points
+    // world-up (that rotation moved it) — its local Z axis does instead.
+    // So the second turn has to rotate around Z, not Y, or it spins
+    // around the wrong axis and flips the character upside-down instead
+    // of just turning it to face the other way (found this the hard way).
     model.rotateX(CHARACTER_MODEL_ROTATION_X);
-    model.rotateY(CHARACTER_MODEL_ROTATION_Y);
+    model.rotateZ(CHARACTER_MODEL_ROTATION_Y);
 
     // Auto-fit: rescale to a consistent height and drop it so the feet
     // sit at local y=0. We measure using the Head and toe bones' actual
