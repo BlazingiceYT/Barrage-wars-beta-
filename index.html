@@ -2716,7 +2716,8 @@
       if (keys[keyBindings.right]) inputX += 1;
       if (keys[keyBindings.left]) inputX -= 1;
       if (keys[keyBindings.jump]) inputY += 1;
-      if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight']) inputY -= 1;
+      if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight'] || mobileCrouchHeld) inputY -= 1;
+      if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
     }
     const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), freecamYaw);
     const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), freecamYaw);
@@ -5492,8 +5493,16 @@
   bindTap(cheatFreecamBtn, () => {
     cheatState.freecam = !cheatState.freecam;
     if (cheatState.freecam) {
-      freecamPos.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
-      freecamYaw = player.yaw; freecamPitch = player.pitch;
+      // Start freecam from the camera's current rendered view, not from the
+      // player's eye point. On mobile the cheat is usually toggled while in
+      // third-person, so using the player position snaps the camera inside the
+      // character/terrain and can leave the user staring at sky/water with no
+      // usable touch-look controls.
+      freecamPos.copy(camera.position);
+      freecamYaw = camera.rotation.y;
+      freecamPitch = camera.rotation.x;
+      firing = false;
+      fireBtnEl.classList.remove('engaged');
       if (settingsOpen) toggleSettings();
       cheatPanel.style.display = 'none';
     }
@@ -6333,6 +6342,19 @@
     }
   }
 
+  function applyLookDelta(dx, dy, sens) {
+    const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
+    if (cheatState.freecam) {
+      freecamYaw -= dx * sens * mult;
+      freecamPitch -= dy * sens * mult * (settings.invertY ? -1 : 1);
+      freecamPitch = Math.max(-1.5, Math.min(1.5, freecamPitch));
+      return;
+    }
+    player.yaw -= dx * sens * mult;
+    player.pitch -= dy * sens * mult * (settings.invertY ? -1 : 1);
+    player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+  }
+
   // ---------- Mouse look (desktop) ----------
   const MOUSE_SENS = 0.0022;
   canvas.addEventListener('click', () => {
@@ -6346,16 +6368,7 @@
   });
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === canvas) {
-      const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
-      if (cheatState.freecam) {
-        freecamYaw -= e.movementX * MOUSE_SENS * mult;
-        freecamPitch -= e.movementY * MOUSE_SENS * mult * (settings.invertY ? -1 : 1);
-        freecamPitch = Math.max(-1.5, Math.min(1.5, freecamPitch));
-        return;
-      }
-      player.yaw -= e.movementX * MOUSE_SENS * mult;
-      player.pitch -= e.movementY * MOUSE_SENS * mult * (settings.invertY ? -1 : 1);
-      player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+      applyLookDelta(e.movementX, e.movementY, MOUSE_SENS);
     }
   });
   canvas.addEventListener('mousedown', (e) => {
@@ -6459,9 +6472,7 @@
     for (const t of e.changedTouches) {
       if (t.identifier === lookState.id) {
         const dx = t.clientX - lookState.lastX, dy = t.clientY - lookState.lastY;
-        const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
-        player.yaw -= dx * TOUCH_SENS * mult; player.pitch -= dy * TOUCH_SENS * mult * (settings.invertY ? -1 : 1);
-        player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+        applyLookDelta(dx, dy, TOUCH_SENS);
         lookState.lastX = t.clientX; lookState.lastY = t.clientY;
       }
     }
@@ -6515,10 +6526,7 @@
     if (!fireDragState.active || e.pointerId !== fireDragState.id) return;
     if (document.pointerLockElement === canvas) return; // desktop mouse-look already handles this
     const dx = e.clientX - fireDragState.lastX, dy = e.clientY - fireDragState.lastY;
-    const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
-    player.yaw -= dx * TOUCH_SENS * mult;
-    player.pitch -= dy * TOUCH_SENS * mult * (settings.invertY ? -1 : 1);
-    player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+    applyLookDelta(dx, dy, TOUCH_SENS);
     fireDragState.lastX = e.clientX;
     fireDragState.lastY = e.clientY;
   }
