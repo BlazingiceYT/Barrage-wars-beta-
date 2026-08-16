@@ -387,6 +387,28 @@
   .miniToggleBtn { padding: 4px 16px; border-radius: 14px; }
   .miniToggleBtn.off { background: linear-gradient(180deg,#555,#333); border-color: #777; color: #aaa; }
 
+  /* Cheats (debug tools) */
+  #cheatUnlockBtn { display: block; width: 100%; margin: 4px 0 10px; background: linear-gradient(180deg,#5a2222,#3a1414); border-color: #d26e6e; }
+  #cheatPinModal {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(10,10,15,0.96); border: 2px solid rgba(255,80,80,0.5); border-radius: 12px;
+    padding: 18px 22px; color: #fff; display: none; pointer-events: auto; min-width: 240px; text-align: center; z-index: 40;
+  }
+  #cheatPinModal h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ff8080; }
+  #cheatPinInput { width: 140px; text-align: center; letter-spacing: 4px; font-size: 16px; padding: 6px; border-radius: 6px; border: 1px solid #777; background: #1a1a1a; color: #fff; }
+  #cheatPinError { color: #ff6b6b; font-size: 11px; height: 14px; margin-top: 6px; }
+  #cheatPinModal button, #cheatPanel button { margin-top: 10px; background: linear-gradient(180deg,#8a6a3b,#5a4222); border: 1px solid #d2aa6e; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  #cheatPanel {
+    position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
+    background: rgba(15,8,8,0.94); border: 2px solid rgba(255,80,80,0.4); border-radius: 12px;
+    padding: 16px 20px; color: #fff; display: none; pointer-events: auto; min-width: 270px; text-align: center; z-index: 35;
+  }
+  #cheatPanel h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: 1px; color: #ff8080; }
+  #cheatPanel .row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; font-size: 13px; gap: 10px; }
+  #cheatPanel input[type=range] { width: 140px; }
+  #cheatPanel select { background: #1a1a1a; color: #fff; border: 1px solid #777; border-radius: 6px; padding: 4px; font-size: 12px; }
+  #cheatPanel .val { color: #ff8080; font-size: 12px; min-width: 32px; text-align: right; }
+
   /* Key rebinding panel */
   #keybindPanel {
     position: absolute; bottom: 86px; left: 50%; transform: translateX(-50%);
@@ -629,7 +651,36 @@
     <div class="row" id="autoShootRow"><span>Auto Shoot</span><button id="autoShootToggleBtn" class="miniToggleBtn">ON</button></div>
     <button id="customizeControlsBtn">↕ Customize Control Positions</button>
     <button id="rebindKeysBtn">⌨ Rebind Keys</button>
+    <h3 style="margin-top:14px;">DEBUG</h3>
+    <button id="cheatUnlockBtn">🛠 Cheats</button>
     <button id="settingsClose">Close</button>
+  </div>
+
+  <div id="cheatPinModal">
+    <h3>ENTER PIN</h3>
+    <input id="cheatPinInput" type="password" inputmode="numeric" maxlength="6" placeholder="••••••">
+    <div id="cheatPinError"></div>
+    <div style="display:flex; gap:8px; justify-content:center;">
+      <button id="cheatPinSubmitBtn">Unlock</button>
+      <button id="cheatPinCancelBtn">Cancel</button>
+    </div>
+  </div>
+
+  <div id="cheatPanel">
+    <h3>⚠ CHEATS (DEBUG)</h3>
+    <div class="row"><span>Speed Multiplier</span><input type="range" id="cheatSpeedSlider" min="0.25" max="5" step="0.25" value="1"><span class="val" id="cheatSpeedVal">1.0x</span></div>
+    <div class="row"><span>Show Hitboxes</span><button id="cheatHitboxBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Fly</span><button id="cheatFlyBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Freecam</span><button id="cheatFreecamBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>God Mode</span><button id="cheatGodBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Move Mode (click a bot/zombie to grab, click again to drop)</span><button id="cheatMoveBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Item Spawner</span>
+      <span style="display:flex; gap:6px;">
+        <select id="cheatItemSelect"></select>
+        <button id="cheatSpawnBtn">Spawn</button>
+      </span>
+    </div>
+    <button id="cheatPanelClose">Close</button>
   </div>
 
   <div id="keybindPanel">
@@ -2587,6 +2638,94 @@
   const humanoidHeadGeo = new THREE.SphereGeometry(0.28, 12, 12);
   const humanoidLegsGeo = new THREE.CylinderGeometry(0.34, 0.3, 0.9, 10);
 
+  // ---------- Cheat infrastructure (freecam state + hitbox visualization) ----------
+  // Declared up here (near the player object) so both the settings-panel
+  // wiring above and updateMovement/updateCamera/animate below can all see
+  // the same instances without fighting over declaration order.
+  const freecamPos = new THREE.Vector3();
+  let freecamYaw = 0, freecamPitch = 0;
+
+  const cheatHitboxGroup = new THREE.Group();
+  cheatHitboxGroup.visible = false;
+  scene.add(cheatHitboxGroup);
+  const cheatDynamicHitboxGroup = new THREE.Group(); // rebuilt every frame: player + bots/zombies
+  cheatHitboxGroup.add(cheatDynamicHitboxGroup);
+  const cheatStaticHitboxGroup = new THREE.Group(); // built once per toggle-on: world collision solids
+  cheatHitboxGroup.add(cheatStaticHitboxGroup);
+  const CHEAT_HITBOX_MAT = new THREE.LineBasicMaterial({ color: 0x00ff66 });
+  const CHEAT_HITBOX_STATIC_MAT = new THREE.LineBasicMaterial({ color: 0xff3366 });
+
+  function makeBoxWireframe(minX, minY, minZ, maxX, maxY, maxZ, mat) {
+    const geo = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
+    const edges = new THREE.EdgesGeometry(geo);
+    const line = new THREE.LineSegments(edges, mat);
+    line.position.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+    return line;
+  }
+
+  // Static world-collision AABBs (the `solids` array resolveCollisions()
+  // pushes players/bots out of) don't move, so these only need rebuilding
+  // when the cheat is switched on, not every frame.
+  function buildStaticHitboxHelpers() {
+    while (cheatStaticHitboxGroup.children.length) cheatStaticHitboxGroup.remove(cheatStaticHitboxGroup.children[0]);
+    for (const s of solids) {
+      cheatStaticHitboxGroup.add(makeBoxWireframe(s.x - s.hw, s.minY, s.z - s.hd, s.x + s.hw, s.maxY, s.z + s.hd, CHEAT_HITBOX_STATIC_MAT));
+    }
+  }
+
+  // Player + bots/zombies move every frame, so their boxes are rebuilt from
+  // scratch each frame this is on — cheap enough at these entity counts and
+  // guaranteed to always match the real, current hit-test geometry rather
+  // than a stale snapshot.
+  function updateCheatHitboxes() {
+    if (!cheatState.showHitboxes) return;
+    while (cheatDynamicHitboxGroup.children.length) cheatDynamicHitboxGroup.remove(cheatDynamicHitboxGroup.children[0]);
+    // Player: this is the movement/collision capsule (radius + rough eye
+    // height), i.e. what resolveCollisions() and groundHeightAt() actually
+    // treat as "the player" for clipping purposes.
+    const pr = player.radius;
+    cheatDynamicHitboxGroup.add(makeBoxWireframe(
+      player.pos.x - pr, player.pos.y, player.pos.z - pr,
+      player.pos.x + pr, player.pos.y + player.eyeHeight + 0.2, player.pos.z + pr,
+      CHEAT_HITBOX_MAT
+    ));
+    // Bots/zombies: wrap each one's actual hitMeshes (what bullets raycast
+    // against), so this shows exactly what's registering hits — useful for
+    // spotting a hitbox that's sunk into the ground or offset from the model.
+    const enemies = (gameMode === 'zombie') ? zombies : bots;
+    for (const e of enemies) {
+      if (!e.alive || !e.hitMeshes) continue;
+      const box = new THREE.Box3();
+      let any = false;
+      for (const m of e.hitMeshes) { box.expandByObject(m); any = true; }
+      if (any && isFinite(box.min.x)) {
+        cheatDynamicHitboxGroup.add(makeBoxWireframe(box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, CHEAT_HITBOX_MAT));
+      }
+    }
+  }
+
+  // ---------- Freecam movement ----------
+  // Moves an independent camera position/orientation instead of the
+  // player entity — WASD/mouse fly the camera, the player stays frozen
+  // wherever it was when freecam was toggled on.
+  function updateFreecamMovement(dt) {
+    let inputX = 0, inputZ = 0, inputY = 0;
+    if (!invOpen && !layoutEditMode) {
+      if (keys[keyBindings.forward]) inputZ += 1;
+      if (keys[keyBindings.back]) inputZ -= 1;
+      if (keys[keyBindings.right]) inputX += 1;
+      if (keys[keyBindings.left]) inputX -= 1;
+      if (keys[keyBindings.jump]) inputY += 1;
+      if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight']) inputY -= 1;
+    }
+    const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), freecamYaw);
+    const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), freecamYaw);
+    const spd = (keys[keyBindings.sprint] ? 3 : 1) * 14 * cheatState.speedMult;
+    freecamPos.addScaledVector(fwd, inputZ * spd * dt);
+    freecamPos.addScaledVector(right, inputX * spd * dt);
+    freecamPos.y += inputY * spd * dt;
+  }
+
   const playerGroup = new THREE.Object3D();
   scene.add(playerGroup);
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3d7dd6, roughness: 0.6 });
@@ -3325,6 +3464,7 @@
   const BOSS_STOMP_RANGE = 5.5;
   function updateZombie(zom, dt) {
     if (!zom.alive) return;
+    if (zom.heldByCheat) { zom.group.position.set(zom.pos.x, zom.pos.y, zom.pos.z); if (zom.healthSprite) zom.healthSprite.quaternion.copy(camera.quaternion); return; }
     if (zom.rising) {
       zom.riseTimer += dt;
       const t = Math.min(1, zom.riseTimer / 0.9);
@@ -3530,6 +3670,7 @@
 
   function updateBot(bot, dt) {
     if (!bot.alive) return;
+    if (bot.heldByCheat) { bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z); if (bot.healthSprite) bot.healthSprite.quaternion.copy(camera.quaternion); return; }
 
     if (bot.falling) {
       if (bot.dropDelay > 0) {
@@ -4409,6 +4550,7 @@
 
   function damagePlayer(amount, sourcePos) {
     if (!player.alive) return;
+    if (cheatState.godMode) return;
     if (player.blocking && sourcePos) {
       // The shield only catches hits arriving from roughly the direction
       // the player is facing — a flank or rear hit still goes through.
@@ -5272,6 +5414,164 @@
     autoShootToggleBtn.classList.toggle('off', !settings.autoShoot);
   });
 
+  // ---------- Cheats (debug tools, PIN-gated) ----------
+  // Purely a debug aid for the developer (checking clipping/collision bugs,
+  // inspecting hitboxes, etc.) — gated behind a PIN so it doesn't show up
+  // for a normal player poking around the settings menu. Unlock state is
+  // remembered locally so the PIN isn't needed every single session.
+  const CHEAT_PIN = '242309';
+  const cheatState = {
+    unlocked: (localStorage.getItem('blazingice_cheatsUnlocked') === '1'),
+    speedMult: 1,
+    showHitboxes: false,
+    flying: false,
+    freecam: false,
+    godMode: false,
+    moveMode: false,
+    heldEntity: null
+  };
+  const cheatPinModal = document.getElementById('cheatPinModal');
+  const cheatPanel = document.getElementById('cheatPanel');
+  const cheatPinInput = document.getElementById('cheatPinInput');
+  const cheatPinError = document.getElementById('cheatPinError');
+
+  function openCheatPanel() {
+    if (settingsOpen) toggleSettings();
+    cheatPanel.style.display = 'block';
+    playPanelOpenAnim(cheatPanel);
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+  }
+  bindTap(document.getElementById('cheatUnlockBtn'), () => {
+    if (cheatState.unlocked) { openCheatPanel(); return; }
+    if (settingsOpen) toggleSettings();
+    cheatPinInput.value = '';
+    cheatPinError.textContent = '';
+    cheatPinModal.style.display = 'block';
+    setTimeout(() => cheatPinInput.focus(), 0);
+  });
+  function submitCheatPin() {
+    if (cheatPinInput.value === CHEAT_PIN) {
+      cheatState.unlocked = true;
+      localStorage.setItem('blazingice_cheatsUnlocked', '1');
+      cheatPinModal.style.display = 'none';
+      openCheatPanel();
+    } else {
+      cheatPinError.textContent = 'Incorrect PIN';
+      cheatPinInput.value = '';
+    }
+  }
+  bindTap(document.getElementById('cheatPinSubmitBtn'), submitCheatPin);
+  cheatPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitCheatPin(); });
+  bindTap(document.getElementById('cheatPinCancelBtn'), () => { cheatPinModal.style.display = 'none'; });
+  bindTap(document.getElementById('cheatPanelClose'), () => { cheatPanel.style.display = 'none'; });
+
+  const cheatSpeedSlider = document.getElementById('cheatSpeedSlider');
+  cheatSpeedSlider.addEventListener('input', () => {
+    cheatState.speedMult = parseFloat(cheatSpeedSlider.value);
+    document.getElementById('cheatSpeedVal').textContent = cheatState.speedMult.toFixed(2) + 'x';
+  });
+
+  const cheatHitboxBtn = document.getElementById('cheatHitboxBtn');
+  bindTap(cheatHitboxBtn, () => {
+    cheatState.showHitboxes = !cheatState.showHitboxes;
+    cheatHitboxBtn.textContent = cheatState.showHitboxes ? 'ON' : 'OFF';
+    cheatHitboxBtn.classList.toggle('off', !cheatState.showHitboxes);
+    cheatHitboxGroup.visible = cheatState.showHitboxes;
+    if (cheatState.showHitboxes) buildStaticHitboxHelpers();
+  });
+
+  const cheatFlyBtn = document.getElementById('cheatFlyBtn');
+  bindTap(cheatFlyBtn, () => {
+    cheatState.flying = !cheatState.flying;
+    if (cheatState.flying) player.velY = 0;
+    cheatFlyBtn.textContent = cheatState.flying ? 'ON' : 'OFF';
+    cheatFlyBtn.classList.toggle('off', !cheatState.flying);
+  });
+
+  const cheatFreecamBtn = document.getElementById('cheatFreecamBtn');
+  bindTap(cheatFreecamBtn, () => {
+    cheatState.freecam = !cheatState.freecam;
+    if (cheatState.freecam) {
+      freecamPos.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
+      freecamYaw = player.yaw; freecamPitch = player.pitch;
+      if (settingsOpen) toggleSettings();
+      cheatPanel.style.display = 'none';
+    }
+    cheatFreecamBtn.textContent = cheatState.freecam ? 'ON' : 'OFF';
+    cheatFreecamBtn.classList.toggle('off', !cheatState.freecam);
+  });
+
+  const cheatGodBtn = document.getElementById('cheatGodBtn');
+  bindTap(cheatGodBtn, () => {
+    cheatState.godMode = !cheatState.godMode;
+    cheatGodBtn.textContent = cheatState.godMode ? 'ON' : 'OFF';
+    cheatGodBtn.classList.toggle('off', !cheatState.godMode);
+  });
+
+  // Move Mode: grab a bot/zombie by looking at it and clicking, it then
+  // follows your crosshair at a fixed distance until you click again to
+  // drop it. Their normal AI/movement is paused (heldByCheat) while held.
+  // Houses aren't offered here — their walls/floors/stairs and loot spawn
+  // points are baked in as separate absolute-position data at world-gen
+  // time, not attached to the visual mesh, so moving the mesh alone would
+  // leave the collision/loot behind at the old spot. Ask if you want that
+  // anyway (visual-only, for scouting) and I'll add it as its own thing.
+  function releaseHeldEntity() {
+    const e = cheatState.heldEntity;
+    if (!e) return;
+    e.heldByCheat = false;
+    const floorY = groundHeightAt(e.pos.x, e.pos.z, e.pos.y + 0.5);
+    if (e.pos.y < floorY) e.pos.y = floorY;
+    cheatState.heldEntity = null;
+  }
+  function tryCheatGrabOrRelease() {
+    if (cheatState.heldEntity) { releaseHeldEntity(); return; }
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera({ x: 0, y: 0 }, camera);
+    const candidates = bots.concat(zombies).filter(e => e.alive && e.hitMeshes && e !== cheatState.heldEntity);
+    let best = null, bestDist = 40;
+    for (const e of candidates) {
+      const hits = rc.intersectObjects(e.hitMeshes, false);
+      if (hits.length && hits[0].distance < bestDist) { bestDist = hits[0].distance; best = e; }
+    }
+    if (best) { best.heldByCheat = true; cheatState.heldEntity = best; }
+  }
+  function updateCheatHeldEntity() {
+    const e = cheatState.heldEntity;
+    if (!e) return;
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const dist = 4;
+    e.pos.set(camera.position.x + dir.x * dist, camera.position.y + dir.y * dist, camera.position.z + dir.z * dist);
+  }
+
+  const cheatMoveBtn = document.getElementById('cheatMoveBtn');
+  bindTap(cheatMoveBtn, () => {
+    cheatState.moveMode = !cheatState.moveMode;
+    if (!cheatState.moveMode) releaseHeldEntity();
+    cheatMoveBtn.textContent = cheatState.moveMode ? 'ON' : 'OFF';
+    cheatMoveBtn.classList.toggle('off', !cheatState.moveMode);
+  });
+
+  // Item spawner: every weapon/ability type the game knows how to build a
+  // pickup for, spawned a couple meters in front of wherever the player is
+  // currently facing/standing (same spot weapons drop to when you drop them).
+  const cheatItemSelect = document.getElementById('cheatItemSelect');
+  const CHEAT_SPAWNABLE_ITEMS = Object.keys(WEAPON_BUILDERS).concat(ABILITY_TYPES);
+  for (const type of CHEAT_SPAWNABLE_ITEMS) {
+    const opt = document.createElement('option');
+    opt.value = type;
+    opt.textContent = type;
+    cheatItemSelect.appendChild(opt);
+  }
+  bindTap(document.getElementById('cheatSpawnBtn'), () => {
+    const type = cheatItemSelect.value;
+    const forward = getForward(player.yaw);
+    const x = player.pos.x + forward.x * 2;
+    const z = player.pos.z + forward.z * 2;
+    spawnWeaponPickup(type, x, player.pos.y, z, false);
+  });
+
   // ---------- Customizable control positions ----------
   // Every draggable control is repositioned by converting its rendered
   // position (however it's normally anchored — left/right/bottom/transform)
@@ -6047,6 +6347,12 @@
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === canvas) {
       const mult = settings.sens * (isScoped ? settings.scopeSensMult : 1);
+      if (cheatState.freecam) {
+        freecamYaw -= e.movementX * MOUSE_SENS * mult;
+        freecamPitch -= e.movementY * MOUSE_SENS * mult * (settings.invertY ? -1 : 1);
+        freecamPitch = Math.max(-1.5, Math.min(1.5, freecamPitch));
+        return;
+      }
       player.yaw -= e.movementX * MOUSE_SENS * mult;
       player.pitch -= e.movementY * MOUSE_SENS * mult * (settings.invertY ? -1 : 1);
       player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
@@ -6059,6 +6365,8 @@
     // the (hidden) cursor visually is, so this guard only matters for that
     // very first click.
     if (!isMobile && document.pointerLockElement !== canvas) return;
+    if (cheatState.freecam) return;
+    if (cheatState.moveMode) { if (e.button === 0) tryCheatGrabOrRelease(); return; }
     if (e.button === 0) { firing = true; primaryAction(); }
     if (e.button === 2) startScope();
   });
@@ -6317,6 +6625,7 @@
   let crouchVisualScale = 1;
 
   function updateMovement(dt) {
+    if (cheatState.freecam) { updateFreecamMovement(dt); return; }
     if (!player.alive || matchWon) return;
     if (drop.active) {
       let inputX = 0, inputZ = 0;
@@ -6384,8 +6693,8 @@
       move.addScaledVector(forward, inputZ);
       move.addScaledVector(right, inputX);
       if (move.lengthSq() > 0) move.normalize();
-      player.pos.x += move.x * player.speed * speedMult * dt;
-      player.pos.z += move.z * player.speed * speedMult * dt;
+      player.pos.x += move.x * player.speed * speedMult * cheatState.speedMult * dt;
+      player.pos.z += move.z * player.speed * speedMult * cheatState.speedMult * dt;
       playerGroup.rotation.y = player.yaw;
       if (player.dashTimeLeft > 0) player.dashDir = move.clone();
     } else if (player.dashTimeLeft > 0 && !player.dashDir) {
@@ -6420,12 +6729,14 @@
 
     resolveCollisions(player.pos, player.radius, player.pos.y);
 
-    if (player.flying) {
+    if (player.flying || cheatState.flying) {
       // Free flight: no gravity, no floor snap, no fall damage. Jump/crouch
       // keys move straight up/down instead of their normal ground meaning.
+      // (cheatState.flying reuses this exact branch for the cheat-menu Fly
+      // toggle — same behavior, just without an ability pickup/cooldown.)
       player.velY = 0;
       player.grounded = false;
-      const flySpeed = 8;
+      const flySpeed = 8 * cheatState.speedMult;
       if (keys[keyBindings.jump]) player.pos.y += flySpeed * dt;
       if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight'] || mobileCrouchHeld) player.pos.y -= flySpeed * dt;
       const floorClamp = groundHeightAt(player.pos.x, player.pos.z, player.pos.y + 0.5);
@@ -6474,6 +6785,17 @@
   const camDesired = new THREE.Vector3();
   const camDir = new THREE.Vector3();
   function updateCamera() {
+    if (cheatState.freecam) {
+      playerGroup.visible = true;
+      try {
+        camera.position.copy(freecamPos);
+        camera.rotation.set(freecamPitch, freecamYaw, 0, 'YXZ');
+      } catch (err) {
+        console.error('[cheat] freecam camera update failed, disabling freecam:', err);
+        cheatState.freecam = false;
+      }
+      return;
+    }
     playerGroup.visible = (viewMode === 'third');
     // Eye height (and the third-person pivot) follow the same crouch lerp
     // used for the model's visual squash, so the camera settles in step
@@ -6678,42 +7000,53 @@
     const dt = Math.min(0.05, rawDt);
     updateFpsCounter(rawDt);
 
-    if (firing && !drop.active) {
-      const def = currentWeaponDef();
-      if (MELEE_DEFS[player.weapon] || (def && def.auto)) primaryAction();
-    }
-
-    updateDrop(dt);
-    updateMovement(dt);
-    if (!drop.active && matchStarted) {
-      updateAmmoCratePickups();
-      updatePickups(dt);
-      updateGrenades(dt);
-      updateTrampolines(dt);
-      updateForcefields(dt);
-      updateFlyTimer(dt);
-      updateAbilityCooldown(dt);
-      if (gameMode === 'zombie') {
-        for (const zom of zombies) updateZombie(zom, dt);
-      } else {
-        for (const bot of bots) updateBot(bot, dt);
-        updateZone(dt);
+    // Everything below is wrapped so a bug in any single system (very much
+    // including the cheat/debug tools above) logs to console and skips this
+    // frame instead of throwing out of the rAF callback and freezing the
+    // game on a dead frame — this is the difference between "the freecam
+    // preview glitches for a frame" and "the whole tab looks crashed."
+    try {
+      if (firing && !drop.active) {
+        const def = currentWeaponDef();
+        if (MELEE_DEFS[player.weapon] || (def && def.auto)) primaryAction();
       }
-    }
-    updateExplosionFX(dt);
-    updateSmokeClouds(dt);
-    updateFireZones(dt);
-    updateCamera();
-    updateMobileAimSystems(dt);
-    updateWeaponAnim(dt);
-    updateFX(dt);
-    updateStreetlamps(dt);
-    updateShadowLOD();
-    updateCharacterAnimations(dt);
-    updateBuildGhost();
-    if (matchStarted) updateMinimap();
 
-    renderer.render(scene, camera);
+      updateDrop(dt);
+      updateMovement(dt);
+      if (!drop.active && matchStarted) {
+        updateAmmoCratePickups();
+        updatePickups(dt);
+        updateGrenades(dt);
+        updateTrampolines(dt);
+        updateForcefields(dt);
+        updateFlyTimer(dt);
+        updateAbilityCooldown(dt);
+        if (gameMode === 'zombie') {
+          for (const zom of zombies) updateZombie(zom, dt);
+        } else {
+          for (const bot of bots) updateBot(bot, dt);
+          updateZone(dt);
+        }
+      }
+      updateExplosionFX(dt);
+      updateSmokeClouds(dt);
+      updateFireZones(dt);
+      updateCheatHeldEntity();
+      updateCheatHitboxes();
+      updateCamera();
+      updateMobileAimSystems(dt);
+      updateWeaponAnim(dt);
+      updateFX(dt);
+      updateStreetlamps(dt);
+      updateShadowLOD();
+      updateCharacterAnimations(dt);
+      updateBuildGhost();
+      if (matchStarted) updateMinimap();
+
+      renderer.render(scene, camera);
+    } catch (err) {
+      console.error('[frame error] skipping this frame:', err);
+    }
   }
   updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
   updateAbilityUI();
