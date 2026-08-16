@@ -2208,6 +2208,7 @@
   // nothing here can crash or block the game.
   const CHARACTER_MODEL_URL = 'soldier.glb'; // rename your downloaded .glb to this, or edit this string to match your exact filename
   const CHARACTER_TARGET_HEIGHT = 0.034; // meters — 50x smaller than the previous 1.7m target
+  const CHARACTER_MODEL_ROTATION_X = -Math.PI / 2; // convert common Z-up exports to Three.js Y-up
 
   // This character's Meshy export has 10 animation clips. Five kept the
   // names you gave them in the Meshy UI (Arise, Attack, Dead, Running,
@@ -2349,6 +2350,7 @@
     if (!THREE.SkeletonUtils) { console.warn('[character] THREE.SkeletonUtils not loaded — keeping placeholder body.'); return; }
 
     const model = THREE.SkeletonUtils.clone(gltf.scene);
+    model.rotation.x = CHARACTER_MODEL_ROTATION_X;
 
     // Auto-fit: rescale to a consistent height and drop it so the feet
     // sit at local y=0 — same idea as the gun auto-fit above, since an
