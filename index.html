@@ -704,6 +704,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (function(){
   "use strict";
@@ -2164,6 +2165,7 @@
     player.chuteOpen = false;
     planeGroup.visible = false;
     document.getElementById('dropOverlay').style.display = 'none';
+    triggerCharOneShot(player.charAnim, 'arise', { clampLast: false });
   }
   function updateDrop(dt) {
     if (!drop.active) return;
@@ -2195,6 +2197,282 @@
   document.getElementById('deployChuteBtn').addEventListener('click', deployParachute);
   document.getElementById('deployChuteBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); deployParachute(); }, {passive:false});
   canvas.addEventListener('touchstart', () => { if (drop.active && player.falling && !player.chuteOpen) deployParachute(); });
+
+  // ---------- Character model (rigged soldier + animations) ----------
+  // Drop your Meshy character export next to this HTML file (same folder as
+  // pistol.glb etc. above) and it replaces the blocky placeholder body on
+  // the player's third-person model and on every bot, crossfading between
+  // its animation clips based on what's actually happening in-game. If the
+  // file is missing, still uploading to the repo, or fails to load for any
+  // reason, everyone quietly stays on the original placeholder body —
+  // nothing here can crash or block the game.
+  const CHARACTER_MODEL_URL = 'soldier.glb'; // rename your downloaded .glb to this, or edit this string to match your exact filename
+  const CHARACTER_TARGET_HEIGHT = 1.85; // meters — roughly matches the old placeholder's height
+
+  // This character's Meshy export has 10 animation clips. Five kept the
+  // names you gave them in the Meshy UI (Arise, Attack, Dead, Running,
+  // Walking) and get matched below by keyword. The other five —
+  // Crouching, jump2.0, Reload, Shoot, and "Walking while Crouching" —
+  // came out of the GLB with generic auto-generated IDs instead of
+  // names, so there's no label left to match them by keyword. They're
+  // identified below by the exact ID Meshy assigned each one in THIS
+  // export, worked out by inspecting how each clip actually moves the
+  // skeleton (e.g. the "jump" clip is the one where the hips launch far
+  // upward, "reload" is the one where only the arms move while the legs
+  // stay planted, "shoot" is a long, mostly-stationary firing-stance
+  // loop, and "walking while crouching" is the one that actually travels
+  // across the floor with the shorter, more compact stride a crouched
+  // gait would have).
+  //
+  // If you ever add more animations on Meshy and re-download a fresh
+  // export, these IDs will very likely regenerate and stop matching —
+  // that's fine, nothing breaks, those five just quietly fall back to
+  // whatever the keyword matcher can find (probably nothing, for
+  // ID-named clips) until you tell me the new ones. After the model
+  // loads, open your browser's dev console (in Safari on iPad: Settings
+  // > Safari > Advanced > Web Inspector, then plug into a Mac — or just
+  // test the page in a desktop browser's console) to see every clip name
+  // Meshy actually shipped and which role each one got matched to, so a
+  // mismatch is easy to spot and fix.
+  const CHAR_ANIM_ID_ROLES = {
+    '019fff90-b098-7c72-83e9-429158543185': 'crouch',
+    '019fff95-12f8-7918-901a-a0f8a23b826e': 'jump',
+    '019fff95-db20-7938-ad68-0f13733a5d7a': 'shoot',
+    '019fff99-68d7-79de-98bc-86d57072a17c': 'crouchWalk',
+    '019fff9b-4457-7e90-8b0c-7a1dd1ff6c0d': 'reload',
+  };
+  // Keyword fallback — covers the 5 named clips above, and is what kicks
+  // in for the ID-named ones if you ever re-export and the IDs above go
+  // stale. Order matters: more specific aliases are checked first so e.g.
+  // a clip actually named "Walking while Crouching" doesn't get grabbed
+  // by the plain "walk" bucket meant for a clip named just "Walking".
+  const CHAR_ANIM_ALIASES = [
+    ['crouchWalk', ['walkingwhile', 'crouchwalk', 'walkcrouch', 'crouchingwalk', 'duckwalk']],
+    ['walk',    ['walking', 'walk']],
+    ['run',     ['running', 'sprint', 'run']],
+    ['crouch',  ['crouching', 'crouch']],
+    ['jump',    ['jump']],
+    ['arise',   ['arise', 'getup', 'standup', 'wake']],
+    ['attack',  ['attack', 'melee', 'swing']],
+    ['dead',    ['dead', 'death', 'die']],
+    ['shoot',   ['shooting', 'shoot', 'fire']],
+    ['reload',  ['reloading', 'reload']],
+    ['idle',    ['idle', 'breathing', 'breath']],
+  ];
+  function normalizeClipName(n) { return (n || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function buildCharClipMap(clips) {
+    const used = new Set();
+    const map = {};
+    for (const clip of clips) {
+      const role = CHAR_ANIM_ID_ROLES[clip.name];
+      if (role && !map[role]) { map[role] = clip; used.add(clip); }
+    }
+    for (const [key, aliases] of CHAR_ANIM_ALIASES) {
+      if (map[key]) continue;
+      let found = null;
+      for (const alias of aliases) {
+        found = clips.find(c => !used.has(c) && normalizeClipName(c.name).includes(alias));
+        if (found) break;
+      }
+      if (found) { map[key] = found; used.add(found); }
+    }
+    return map;
+  }
+
+  // Meshy's clips bake real forward/side travel onto the Hips bone (the
+  // "jump" clip's hips drift sideways over a full unit on their own,
+  // entirely separate from this game's own physics) — since every
+  // character's position here is 100% controlled by game code
+  // (player.pos / bot.pos), not by animation, any translation baked into
+  // a clip only fights that and causes sliding, moonwalking, or a visible
+  // "pop" back into place every time a clip restarts. This zeroes out the
+  // Hips bone's X/Z translation on every keyframe of every clip (once,
+  // right after loading) so the game's own movement code is always the
+  // only thing that moves a character through the world. Vertical (Y)
+  // motion is left completely untouched, so jumping, standing up, and
+  // collapsing still play out exactly as animated.
+  function stripHorizontalRootMotion(clip) {
+    if (!clip) return clip;
+    for (const track of clip.tracks) {
+      if (!/hip/i.test(track.name) || track.name.indexOf('.position') === -1) continue;
+      const values = track.values;
+      for (let i = 0; i < values.length; i += 3) {
+        values[i] = 0;
+        values[i + 2] = 0;
+      }
+    }
+    return clip;
+  }
+
+  let soldierGLTF = null;
+  let soldierLoadFailed = false;
+  let soldierLoadCallbacks = [];
+  function loadSoldierModel(cb) {
+    if (soldierGLTF) { cb(soldierGLTF); return; }
+    if (soldierLoadFailed) { cb(null); return; }
+    soldierLoadCallbacks.push(cb);
+    if (soldierLoadCallbacks.length > 1) return; // a load is already in flight — just wait for it
+    gltfLoader.load(
+      CHARACTER_MODEL_URL,
+      (gltf) => {
+        const clipMap = buildCharClipMap(gltf.animations);
+        for (const key in clipMap) stripHorizontalRootMotion(clipMap[key]);
+        const boneNames = [];
+        gltf.scene.traverse(o => { if (o.isBone) boneNames.push(o.name); });
+        console.log('[character] loaded ' + CHARACTER_MODEL_URL + ' — raw clip names:', gltf.animations.map(a => a.name));
+        const matchedSummary = {};
+        for (const key in clipMap) matchedSummary[key] = clipMap[key].name;
+        console.log('[character] matched roles:', matchedSummary);
+        console.log('[character] skeleton bones:', boneNames);
+        soldierGLTF = gltf;
+        const cbs = soldierLoadCallbacks; soldierLoadCallbacks = [];
+        cbs.forEach(f => f(gltf));
+      },
+      undefined,
+      (err) => {
+        console.warn('[character] Could not load ' + CHARACTER_MODEL_URL + ' — keeping placeholder bodies.', err);
+        soldierLoadFailed = true;
+        const cbs = soldierLoadCallbacks; soldierLoadCallbacks = [];
+        cbs.forEach(f => f(null));
+      }
+    );
+  }
+
+  // Where in a locomotion clip both legs sit closest together — used to
+  // freeze a reasonable-looking "standing" pose on characters that have no
+  // dedicated idle clip (this export doesn't ship one). Worked out from the
+  // actual Walking clip rather than guessed.
+  const CHAR_IDLE_POSE_FRACTION = 0.97;
+
+  function attachCharacterModel(holder, rootGroup, oldMeshes, gltf) {
+    if (!gltf) return;
+    if (!THREE.SkeletonUtils) { console.warn('[character] THREE.SkeletonUtils not loaded — keeping placeholder body.'); return; }
+
+    const model = THREE.SkeletonUtils.clone(gltf.scene);
+
+    // Auto-fit: rescale to a consistent height and drop it so the feet
+    // sit at local y=0 — same idea as the gun auto-fit above, since an
+    // imported model's raw export scale/origin essentially never matches
+    // this game's units.
+    model.scale.setScalar(1);
+    model.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(model);
+    const rawHeight = box.max.y - box.min.y;
+    if (rawHeight > 0 && isFinite(rawHeight)) model.scale.setScalar(CHARACTER_TARGET_HEIGHT / rawHeight);
+    model.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(model);
+    model.position.y -= box.min.y;
+
+    model.traverse(o => {
+      if (o.isMesh || o.isSkinnedMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false; // an animated pose's bounds can otherwise make it pop out of view early
+      }
+    });
+    rootGroup.add(model);
+
+    // The old placeholder shapes stay exactly where they are (bots are
+    // still hit-tested against them — see hitMeshes below) but become
+    // fully invisible. Each material is cloned first: head/leg materials
+    // are shared across every bot, so mutating one directly would blank
+    // out every OTHER bot still waiting on the model to finish loading.
+    // Visibility itself stays true on purpose — three.js's Raycaster skips
+    // objects with visible=false entirely, which would silently break hit
+    // detection on that mesh.
+    for (const m of oldMeshes) {
+      if (!m) continue;
+      m.material = m.material.clone();
+      m.material.transparent = true;
+      m.material.opacity = 0;
+      m.material.depthWrite = false;
+      m.castShadow = false;
+    }
+
+    const mixer = new THREE.AnimationMixer(model);
+    const clipMap = buildCharClipMap(gltf.animations);
+    const idleIsFallback = !clipMap.idle;
+    if (idleIsFallback) clipMap.idle = clipMap.walk || clipMap.run || null;
+    const actions = {};
+    for (const key in clipMap) { if (clipMap[key]) actions[key] = mixer.clipAction(clipMap[key]); }
+
+    const charAnim = { mixer, actions, model, mode: 'loop', loopState: null, oneshotKey: null, activeLoopAction: null, idleIsFallback };
+    mixer.addEventListener('finished', (e) => {
+      if (charAnim.mode === 'oneshot' && charAnim.oneshotKey !== 'dead' && e.action === charAnim.actions[charAnim.oneshotKey]) {
+        charAnim.mode = 'loop';
+        charAnim.loopState = null;
+        charAnim.activeLoopAction = null;
+      }
+    });
+    holder.charAnim = charAnim;
+
+    // Hand the distance-based shadow LOD system (updateShadowLOD, near the
+    // bottom of the file) the real visible meshes instead of the
+    // now-invisible placeholder shapes, so it keeps managing shadows
+    // correctly instead of casting the wrong silhouette.
+    if (holder.shadowMeshes) {
+      const meshes = [];
+      model.traverse(o => { if (o.isMesh || o.isSkinnedMesh) meshes.push(o); });
+      holder.shadowMeshes = meshes;
+    }
+  }
+
+  function tickCharAnim(ca, desiredLoopState, dt) {
+    if (!ca) return;
+    if (ca.mode !== 'oneshot' && desiredLoopState && desiredLoopState !== ca.loopState) {
+      const next = ca.actions[desiredLoopState];
+      if (next && next !== ca.activeLoopAction) {
+        if (ca.activeLoopAction) ca.activeLoopAction.fadeOut(0.2);
+        next.reset();
+        if (desiredLoopState === 'idle' && ca.idleIsFallback) {
+          next.fadeIn(0.2).play();
+          const dur = next.getClip().duration;
+          next.time = dur > 0 ? dur * CHAR_IDLE_POSE_FRACTION : 0;
+          next.paused = true; // frozen pose — closest thing to standing still without a real idle clip
+        } else {
+          next.setLoop(THREE.LoopRepeat, Infinity);
+          next.fadeIn(0.2).play();
+        }
+        ca.activeLoopAction = next;
+      }
+      ca.loopState = desiredLoopState;
+    }
+    ca.mixer.update(dt);
+  }
+
+  function triggerCharOneShot(ca, key, opts) {
+    if (!ca || !ca.actions[key]) return;
+    opts = opts || {};
+    const act = ca.actions[key];
+    act.reset();
+    act.setLoop(THREE.LoopOnce, 1);
+    act.clampWhenFinished = !!opts.clampLast;
+    const clipDur = act.getClip().duration;
+    act.timeScale = (opts.durationSeconds && clipDur > 0) ? (clipDur / opts.durationSeconds) : 1;
+    if (ca.activeLoopAction && ca.activeLoopAction !== act) ca.activeLoopAction.fadeOut(0.1);
+    act.fadeIn(0.1).play();
+    ca.mode = 'oneshot';
+    ca.oneshotKey = key;
+  }
+
+  function computePlayerLoopState() {
+    if (!player.alive) return null; // death is handled purely by the one-shot 'dead' trigger below
+    if (drop.active) return 'idle'; // no dedicated skydive/parachute clip — hold a neutral pose while airborne
+    if (player.crouching) return player.moving ? 'crouchWalk' : 'crouch';
+    if (player.moving) return player.sprinting ? 'run' : 'walk';
+    return 'idle';
+  }
+
+  function updateCharacterAnimations(dt) {
+    if (player.charAnim) tickCharAnim(player.charAnim, computePlayerLoopState(), dt);
+    const camPos = camera.position;
+    for (const bot of activeEnemies()) {
+      if (!bot.charAnim) continue;
+      const dx = bot.group.position.x - camPos.x, dz = bot.group.position.z - camPos.z;
+      if ((dx * dx + dz * dz) > CHAR_SHADOW_RANGE_SQ) continue; // far enough that a frozen pose for a frame is imperceptible — reuses the shadow LOD's own range
+      tickCharAnim(bot.charAnim, bot.moving ? 'run' : 'idle', dt);
+    }
+  }
 
   // ---------- Player ----------
   const player = {
@@ -2264,6 +2542,7 @@
   const legs = new THREE.Mesh(humanoidLegsGeo, legMat);
   legs.position.y = 0.45; legs.castShadow = true;
   playerGroup.add(torso, head, legs);
+  loadSoldierModel((gltf) => attachCharacterModel(player, playerGroup, [torso, head, legs], gltf));
 
   tpWeaponRig.position.set(0.32, 1.15, 0.15);
   torso.add(tpWeaponRig);
@@ -2437,6 +2716,7 @@
     eHead.userData.botRef = bot;
     equipBotWeapon(bot, 'pistol');
     updateHealthSprite(bot);
+    loadSoldierModel((gltf) => attachCharacterModel(bot, group, [eBody, eHead, eLegs], gltf));
     bots.push(bot);
   }
 
@@ -2463,8 +2743,15 @@
   function markCorpse(ref) {
     if (!settings.showCorpses) { ref.group.visible = false; return; }
     ref.group.visible = true;
-    ref.group.rotation.x = Math.PI/2;
-    ref.group.position.y = Math.max(0, ref.pos.y - 0.15);
+    if (ref.charAnim) {
+      // A real fall-down animation exists — let it do the work instead of
+      // the flat tip-over hack below (stacking both would look like a
+      // double flip).
+      triggerCharOneShot(ref.charAnim, 'dead', { clampLast: true });
+    } else {
+      ref.group.rotation.x = Math.PI/2;
+      ref.group.position.y = Math.max(0, ref.pos.y - 0.15);
+    }
     corpseList.push(ref);
     if (corpseList.length > MAX_CORPSES) {
       const old = corpseList.shift();
@@ -3172,6 +3459,7 @@
     if (bot.ammo.mag <= 0) return;
     bot.ammo.mag--;
     playGunshot(bot.weaponType, bot.pos.distanceTo(player.pos));
+    triggerCharOneShot(bot.charAnim, 'shoot', { durationSeconds: 0.18 });
     const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
     const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
     const hitChance = Math.max(tier.hitFloor, tier.hitBase - dist/tier.hitFalloff);
@@ -3206,6 +3494,7 @@
         bot.falling = false;
         bot.chuteGroup.visible = false;
         bot.target.copy(bot.pos);
+        triggerCharOneShot(bot.charAnim, 'arise', { clampLast: false });
       }
       bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
       bot.healthSprite.quaternion.copy(camera.quaternion);
@@ -3248,6 +3537,7 @@
       if (bot.waitTimer <= 0) pickNewTarget(bot);
     }
 
+    bot.moving = false;
     const dir = new THREE.Vector3().subVectors(bot.target, bot.pos); dir.y = 0;
     const dist = dir.length();
     // Low-health bots keep more distance and try to disengage rather than
@@ -3259,11 +3549,13 @@
       bot.pos.z += dir.z * bot.speed * dt;
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
       bot.yaw = Math.atan2(dir.x, dir.z);
+      bot.moving = true;
     } else if (combatTarget && combatDist < desiredRange - 2) {
       dir.normalize();
       bot.pos.x -= dir.x * bot.speed * 0.6 * dt;
       bot.pos.z -= dir.z * bot.speed * 0.6 * dt;
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
+      bot.moving = true;
     }
     if (combatTarget) {
       bot.strafeTimer = (bot.strafeTimer === undefined ? 0 : bot.strafeTimer) - dt;
@@ -3277,6 +3569,7 @@
         bot.pos.x += perp.x * bot.strafeDir * bot.speed * 0.55 * dt;
         bot.pos.z += perp.z * bot.strafeDir * bot.speed * 0.55 * dt;
         resolveCollisions(bot.pos, 0.5, bot.pos.y);
+        bot.moving = true;
       }
       bot.yaw = Math.atan2(toTarget.x, toTarget.z);
     }
@@ -3567,11 +3860,16 @@
     addShake(heldType === 'sniper' ? 0.85 : (heldType === 'minigun' ? 0.22 : (heldType === 'shotgun' ? 0.65 : (heldType === 'flamethrower' ? 0.1 : 0.5))));
     playGunshot(currentMeshType());
     fireBullet(def);
+    triggerCharOneShot(player.charAnim, 'shoot', { durationSeconds: 0.18 });
     if (st.mag === 0) reload();
   }
 
   let meleeSwingT = 0, meleeSwingType = null;
-  function swingMelee(type) { meleeSwingT = 1; meleeSwingType = type; }
+  function swingMelee(type) {
+    meleeSwingT = 1; meleeSwingType = type;
+    const rate = (MELEE_DEFS[type] || {}).rate;
+    triggerCharOneShot(player.charAnim, 'attack', rate ? { durationSeconds: rate / 1000 } : undefined);
+  }
 
   function reload() {
     if (MELEE_DEFS[player.weapon]) return;
@@ -3587,6 +3885,7 @@
       return;
     }
     player.isReloading = true;
+    triggerCharOneShot(player.charAnim, 'reload', { durationSeconds: (def.reloadTime || 1200) / 1000 });
     playReloadClack(1500);
     document.getElementById('reloadText').style.display = 'block';
     setTimeout(() => {
@@ -4181,6 +4480,7 @@
   }
   function playerDie() {
     player.alive = false;
+    triggerCharOneShot(player.charAnim, 'dead', { clampLast: true });
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
     endScope();
@@ -4191,6 +4491,7 @@
   }
   function respawnPlayer() {
     player.alive = true; player.health = player.maxHealth;
+    if (player.charAnim) { player.charAnim.mode = 'loop'; player.charAnim.loopState = null; player.charAnim.activeLoopAction = null; }
     player.ammoState.pistol = { mag: 12, reserve: 36 };
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
@@ -5669,7 +5970,10 @@
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
   function tryJump() {
-    if (player.grounded && player.alive && !drop.active) { player.velY = 8; player.grounded = false; }
+    if (player.grounded && player.alive && !drop.active) {
+      player.velY = 8; player.grounded = false;
+      triggerCharOneShot(player.charAnim, 'jump', { durationSeconds: 0.8 });
+    }
   }
 
   // ---------- Mouse look (desktop) ----------
@@ -5967,6 +6271,7 @@
         if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
       }
       const len = Math.hypot(inputX, inputZ);
+      player.moving = len > 0.001;
       if (len > 0.001) {
         if (len > 1) { inputX /= len; inputZ /= len; }
         const forward = getForward(player.yaw);
@@ -5995,6 +6300,7 @@
     }
     const len = Math.hypot(inputX, inputZ);
     if (len > 1) { inputX /= len; inputZ /= len; }
+    player.moving = len > 0.001;
 
     // Crouching disables sprint (same intent as real shooters: you can't
     // sprint while hunkered down) and only applies on the ground - crouch
@@ -6051,7 +6357,7 @@
     // Smoothly squash the third-person model toward a crouch pose. The
     // model's origin sits at the feet (torso/head are built upward from
     // local y=0), so scaling y alone keeps feet planted with no offset.
-    const targetCrouchScale = player.crouching ? 0.62 : 1;
+    const targetCrouchScale = (player.crouching && !player.charAnim) ? 0.62 : 1;
     crouchVisualScale += (targetCrouchScale - crouchVisualScale) * Math.min(1, dt * 10);
     playerGroup.scale.y = crouchVisualScale;
 
@@ -6346,6 +6652,7 @@
     updateFX(dt);
     updateStreetlamps(dt);
     updateShadowLOD();
+    updateCharacterAnimations(dt);
     updateBuildGhost();
     if (matchStarted) updateMinimap();
 
