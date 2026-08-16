@@ -2208,8 +2208,8 @@
   // nothing here can crash or block the game.
   const CHARACTER_MODEL_URL = 'soldier.glb'; // rename your downloaded .glb to this, or edit this string to match your exact filename
   const CHARACTER_TARGET_HEIGHT = 0.034; // meters — 50x smaller than the previous 1.7m target
-  const CHARACTER_MODEL_ROTATION_X = Math.PI / 2; // this export needs the opposite sign to stand on feet
-  const CHARACTER_MODEL_ROTATION_Y = Math.PI; // turn model to face gameplay forward direction
+  const CHARACTER_MODEL_ROTATION_X = -Math.PI / 2; // keep model upright on feet for this export
+  const CHARACTER_MODEL_ROTATION_Y = 0; // avoid turning to face the camera
 
   // This character's Meshy export has 10 animation clips. Five kept the
   // names you gave them in the Meshy UI (Arise, Attack, Dead, Running,
