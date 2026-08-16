@@ -2215,6 +2215,11 @@
   // maps that old "up" axis onto Y correctly. If a future re-export or a
   // different character comes in already Y-up, set this to 0.
   const CHARACTER_MODEL_ROTATION_X = Math.PI / 2;
+  // The model faces the camera by default in third person (should face
+  // away, since the camera sits behind the character looking at their
+  // back) — this spins it 180° around its own now-vertical axis to fix
+  // that, applied after the X correction above.
+  const CHARACTER_MODEL_ROTATION_Y = Math.PI;
 
   // This character's Meshy export has 10 animation clips. Five kept the
   // names you gave them in the Meshy UI (Arise, Attack, Dead, Running,
@@ -2356,7 +2361,14 @@
     if (!THREE.SkeletonUtils) { console.warn('[character] THREE.SkeletonUtils not loaded — keeping placeholder body.'); return; }
 
     const model = THREE.SkeletonUtils.clone(gltf.scene);
-    model.rotation.set(CHARACTER_MODEL_ROTATION_X, 0, 0);
+    // Applied as two separate sequential rotations (not a combined Euler
+    // triple) so each one has an unambiguous, easy-to-reason-about effect:
+    // rotateX first corrects the Z-up export onto Y-up, THEN rotateY spins
+    // the now-upright model around its own vertical axis to face away from
+    // the camera in third person (it was facing the camera before).
+    model.rotation.set(0, 0, 0);
+    model.rotateX(CHARACTER_MODEL_ROTATION_X);
+    model.rotateY(CHARACTER_MODEL_ROTATION_Y);
 
     // Auto-fit: rescale to a consistent height and drop it so the feet
     // sit at local y=0. We measure using the Head and toe bones' actual
@@ -2365,42 +2377,42 @@
     // and doesn't reliably reflect the real posed/rotated size right
     // after cloning, which is what caused the character to balloon to a
     // huge size the first time around. Bones are plain Object3D nodes, so
-    // their world positions are always correct.
+    // their world positions are always correct. Everything is measured
+    // once at scale 1 and the final foot offset is computed by scaling
+    // that single measurement (rather than re-measuring a second time
+    // after rescaling), since re-measuring produced a wrong offset that
+    // sank the model into the ground.
     model.scale.setScalar(1);
     model.position.set(0, 0, 0);
     model.updateMatrixWorld(true);
 
-    function findBone(name) { let found = null; model.traverse(o => { if (!found && o.name === name) found = o; }); return found; }
+    function findBone(name) { let found = null; model.traverse(o => { if (!found && o.isBone && o.name === name) found = o; }); return found; }
     const headBone = findBone('Head');
     const toeBone = findBone('LeftToeBase') || findBone('RightToeBase') || findBone('LeftFoot') || findBone('RightFoot');
 
-    let rawHeight = 0;
+    let rawHeight = 0, rawFootY = 0, usedBones = false;
     if (headBone && toeBone) {
       const headPos = new THREE.Vector3(), toePos = new THREE.Vector3();
       headBone.getWorldPosition(headPos);
       toeBone.getWorldPosition(toePos);
       rawHeight = Math.abs(headPos.y - toePos.y) * 1.12; // the Head joint sits at the neck, not the top of the skull — pad a bit so the whole head is included
+      rawFootY = toePos.y;
+      usedBones = true;
     } else {
       const box = new THREE.Box3().setFromObject(model);
       rawHeight = box.max.y - box.min.y;
+      rawFootY = box.min.y;
     }
 
     let scaleFactor = (rawHeight > 0 && isFinite(rawHeight)) ? (CHARACTER_TARGET_HEIGHT / rawHeight) : 1;
     if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 50 || scaleFactor < 0.001) {
       console.warn('[character] Auto-fit produced an unreasonable scale (' + scaleFactor + ') — falling back to a fixed 1.3x, which matched this export when inspected directly.');
       scaleFactor = 1.3;
+      rawFootY = usedBones ? rawFootY : 0;
     }
     model.scale.setScalar(scaleFactor);
+    model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
     model.updateMatrixWorld(true);
-
-    if (headBone && toeBone) {
-      const toePos2 = new THREE.Vector3();
-      toeBone.getWorldPosition(toePos2);
-      model.position.y -= toePos2.y;
-    } else {
-      const box2 = new THREE.Box3().setFromObject(model);
-      model.position.y -= box2.min.y;
-    }
 
     model.traverse(o => {
       if (o.isMesh || o.isSkinnedMesh) {
