@@ -2207,10 +2207,14 @@
   // reason, everyone quietly stays on the original placeholder body —
   // nothing here can crash or block the game.
   const CHARACTER_MODEL_URL = 'soldier.glb'; // rename your downloaded .glb to this, or edit this string to match your exact filename
-  const CHARACTER_TARGET_HEIGHT = 0.034; // meters — 50x smaller than the previous 1.7m target
-  const CHARACTER_MODEL_ROTATION_X = -Math.PI / 2; // keep model upright on feet for this export
-  const CHARACTER_MODEL_ROTATION_Y = 0; // avoid turning to face the camera
-  const CHARACTER_MODEL_ROTATION_Z = Math.PI; // flip head-down orientation to feet-down
+  const CHARACTER_TARGET_HEIGHT = 1.85; // meters
+  // This export was authored Z-up (Blender's native convention) instead of
+  // glTF's usual Y-up, confirmed by reading the file's own skeleton data
+  // directly: in the raw bind pose the Head and foot bones sit almost
+  // exactly above/below each other along Z, not Y. Rotating +90° around X
+  // maps that old "up" axis onto Y correctly. If a future re-export or a
+  // different character comes in already Y-up, set this to 0.
+  const CHARACTER_MODEL_ROTATION_X = Math.PI / 2;
 
   // This character's Meshy export has 10 animation clips. Five kept the
   // names you gave them in the Meshy UI (Arise, Attack, Dead, Running,
@@ -2352,20 +2356,51 @@
     if (!THREE.SkeletonUtils) { console.warn('[character] THREE.SkeletonUtils not loaded — keeping placeholder body.'); return; }
 
     const model = THREE.SkeletonUtils.clone(gltf.scene);
-    model.rotation.set(CHARACTER_MODEL_ROTATION_X, CHARACTER_MODEL_ROTATION_Y, CHARACTER_MODEL_ROTATION_Z);
+    model.rotation.set(CHARACTER_MODEL_ROTATION_X, 0, 0);
 
     // Auto-fit: rescale to a consistent height and drop it so the feet
-    // sit at local y=0 — same idea as the gun auto-fit above, since an
-    // imported model's raw export scale/origin essentially never matches
-    // this game's units.
+    // sit at local y=0. We measure using the Head and toe bones' actual
+    // world positions rather than Box3 on the mesh geometry — a
+    // SkinnedMesh's bounding box is computed from its own vertex buffer
+    // and doesn't reliably reflect the real posed/rotated size right
+    // after cloning, which is what caused the character to balloon to a
+    // huge size the first time around. Bones are plain Object3D nodes, so
+    // their world positions are always correct.
     model.scale.setScalar(1);
+    model.position.set(0, 0, 0);
     model.updateMatrixWorld(true);
-    let box = new THREE.Box3().setFromObject(model);
-    const rawHeight = box.max.y - box.min.y;
-    if (rawHeight > 0 && isFinite(rawHeight)) model.scale.setScalar(CHARACTER_TARGET_HEIGHT / rawHeight);
+
+    function findBone(name) { let found = null; model.traverse(o => { if (!found && o.name === name) found = o; }); return found; }
+    const headBone = findBone('Head');
+    const toeBone = findBone('LeftToeBase') || findBone('RightToeBase') || findBone('LeftFoot') || findBone('RightFoot');
+
+    let rawHeight = 0;
+    if (headBone && toeBone) {
+      const headPos = new THREE.Vector3(), toePos = new THREE.Vector3();
+      headBone.getWorldPosition(headPos);
+      toeBone.getWorldPosition(toePos);
+      rawHeight = Math.abs(headPos.y - toePos.y) * 1.12; // the Head joint sits at the neck, not the top of the skull — pad a bit so the whole head is included
+    } else {
+      const box = new THREE.Box3().setFromObject(model);
+      rawHeight = box.max.y - box.min.y;
+    }
+
+    let scaleFactor = (rawHeight > 0 && isFinite(rawHeight)) ? (CHARACTER_TARGET_HEIGHT / rawHeight) : 1;
+    if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 50 || scaleFactor < 0.001) {
+      console.warn('[character] Auto-fit produced an unreasonable scale (' + scaleFactor + ') — falling back to a fixed 1.3x, which matched this export when inspected directly.');
+      scaleFactor = 1.3;
+    }
+    model.scale.setScalar(scaleFactor);
     model.updateMatrixWorld(true);
-    box = new THREE.Box3().setFromObject(model);
-    model.position.y -= box.min.y;
+
+    if (headBone && toeBone) {
+      const toePos2 = new THREE.Vector3();
+      toeBone.getWorldPosition(toePos2);
+      model.position.y -= toePos2.y;
+    } else {
+      const box2 = new THREE.Box3().setFromObject(model);
+      model.position.y -= box2.min.y;
+    }
 
     model.traverse(o => {
       if (o.isMesh || o.isSkinnedMesh) {
