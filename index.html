@@ -27,6 +27,11 @@
   }
   #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-1px); }
   #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-1px); }
+  #cheatHoldLabel {
+    position: absolute; top: calc(50% + 20px); left: 50%; transform: translateX(-50%);
+    color: #ff8080; font-size: 12px; font-weight: bold; text-shadow: 0 0 4px #000, 0 0 4px #000;
+    letter-spacing: 0.5px; white-space: nowrap; display: none;
+  }
   #hitmarker {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
     width: 30px; height: 30px; opacity: 0; pointer-events: none;
@@ -152,6 +157,9 @@
   #screenFlash { position: absolute; inset: 0; background: rgba(255,255,255,0.12); opacity: 0; pointer-events: none; }
   #screenFlash.show { animation: sflash 0.1s ease-out; }
   @keyframes sflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+  #nukeFlash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 30; }
+  #nukeFlash.show { animation: nflash 1.3s ease-out; }
+  @keyframes nflash { 0% { opacity: 1; } 15% { opacity: 0.85; } 100% { opacity: 0; } }
   #damageDirWrap {
     position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none;
   }
@@ -195,13 +203,14 @@
   #scopeOverlay .reticleDot { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); }
 
   #topRightBtns { position: absolute; top: 100px; right: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  #viewToggleBtn, #settingsBtn, #homeSettingsBtn, #homeCreditsBtn {
+  #viewToggleBtn, #settingsBtn, #homeSettingsBtn, #homeCreditsBtn, #nukeHudBtn, #ownerBatHudBtn {
     pointer-events: auto;
     background: rgba(20,20,20,0.55); border: 2px solid rgba(255,255,255,0.3); color: #fff;
     border-radius: 8px; padding: 8px 12px; font-size: 12px; letter-spacing: 0.5px;
     cursor: pointer; text-align: center;
   }
-  #viewToggleBtn:active, #settingsBtn:active, #homeSettingsBtn:active, #homeCreditsBtn:active { background: rgba(255,255,255,0.25); }
+  #viewToggleBtn:active, #settingsBtn:active, #homeSettingsBtn:active, #homeCreditsBtn:active, #nukeHudBtn:active, #ownerBatHudBtn:active { background: rgba(255,255,255,0.25); }
+  #nukeHudBtn, #ownerBatHudBtn { font-size: 14px; font-weight: bold; padding: 10px 14px; }
   #homeSettingsBtn { position: absolute; top: 16px; right: 16px; z-index: 21; }
   #homeCreditsBtn { position: absolute; top: 60px; right: 16px; z-index: 21; }
 
@@ -531,8 +540,10 @@
   </audio>
   <div id="hud">
     <div id="crosshair"></div>
+    <div id="cheatHoldLabel"></div>
     <div id="hitmarker"></div>
     <div id="screenFlash"></div>
+    <div id="nukeFlash"></div>
     <div id="damageVignette"></div>
     <div id="damageDirWrap"></div>
     <div id="pickupToast"></div>
@@ -604,6 +615,8 @@
     <div id="topRightBtns">
       <button id="viewToggleBtn">⇄ VIEW (P)</button>
       <button id="settingsBtn">⚙ SETTINGS</button>
+      <button id="nukeHudBtn" style="display:none; background:linear-gradient(180deg,#c23b3b,#7a1c1c); border-color:#ff8080;">☢ NUKE</button>
+      <button id="ownerBatHudBtn" style="display:none; background:linear-gradient(180deg,#8a5a2b,#4a2f14); border-color:#e0b26a;">🏏 BAT</button>
     </div>
 
     <div id="moveTouchZone"></div>
@@ -673,7 +686,9 @@
     <div class="row"><span>Fly</span><button id="cheatFlyBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Freecam</span><button id="cheatFreecamBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>God Mode</span><button id="cheatGodBtn" class="miniToggleBtn off">OFF</button></div>
-    <div class="row"><span>Move Mode (click a bot/zombie to grab, click again to drop)</span><button id="cheatMoveBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Move Mode (tap a bot/zombie/house to grab, tap again to drop)</span><button id="cheatMoveBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Nuke (wherever you're looking)</span><button id="cheatNukeBtn" style="background:linear-gradient(180deg,#c23b3b,#7a1c1c); border-color:#ff8080;">☢ DROP</button></div>
+    <div class="row"><span>Owner Bat (equip, 0 dmg, ragdolls hit target 10s)</span><button id="cheatBatBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Item Spawner</span>
       <span style="display:flex; gap:6px;">
         <select id="cheatItemSelect"></select>
@@ -950,6 +965,7 @@
 
   const floors = []; // {x,z,hw,hd,y,fl}
   const ramps = [];  // {cx,cz,cosR,sinR,localX,zStart,len,halfWidth,baseY,floorH}
+  const houses = []; // { group, solids, floors, ramps, pickups, collisionMeshes, pos, heldByCheat } — see makeHouse()
 
   // world-space height contributed by a ramp at (x,z), or null if outside it
   function rampHeightAt(ramp, x, z) {
@@ -963,11 +979,31 @@
   }
 
   // floor height at a position (for multi-floor houses & ramps): returns highest
-  // walkable surface at/under given y, so the player can climb stairs gradually
+  // walkable surface at/under given y, so the player can climb stairs gradually.
+  //
+  // Each floor's slab is a flat rectangle covering the WHOLE house footprint,
+  // stairwell opening included — there's no cutout in the mesh/collision data
+  // for where the stairs actually poke through. Without accounting for that,
+  // a climber's height can come within "close enough" of the flat slab above
+  // partway up the stairs (before they've actually walked to the top), and
+  // since the flat floor is checked as its own candidate surface, it wins
+  // and yanks them straight up to full floor height — the stairs-teleport
+  // bug. The fix: each ramp knows which floor's slab it opens through
+  // (holeFloor); a flat floor candidate is skipped anywhere inside that
+  // opening, leaving only the ramp's own gradual height there instead.
+  function pointInRampFootprint(ramp, x, z) {
+    const dx = x - ramp.cx, dz = z - ramp.cz;
+    const localX = dx*ramp.cosR - dz*ramp.sinR;
+    const localZ = dx*ramp.sinR + dz*ramp.cosR;
+    return Math.abs(localX - ramp.localX) <= ramp.halfWidth && localZ >= ramp.zStart && localZ <= ramp.zStart + ramp.len;
+  }
   function groundHeightAt(x, z, maxY) {
     let best = terrainHeightAt(x, z);
-    for (const f of floors) {
+    floorLoop: for (const f of floors) {
       if (Math.abs(x - f.x) <= f.hw && Math.abs(z - f.z) <= f.hd) {
+        for (const r of ramps) {
+          if (r.holeFloor === f.fl && pointInRampFootprint(r, x, z)) continue floorLoop;
+        }
         if (f.y <= maxY + 0.6 && f.y > best) best = f.y;
       }
     }
@@ -976,6 +1012,63 @@
       if (h !== null && h <= maxY + 0.7 && h > best) best = h;
     }
     return best;
+  }
+
+  // Shared falling/landing physics for anything that isn't the player (bots,
+  // zombies) — gravity in, snap to whatever groundHeightAt says is directly
+  // below once it lands. Used every frame rather than only right after
+  // spawn, so walking up stairs, off a ledge, or having the ground moved out
+  // from under something (e.g. a house dragged away) all fall out of the
+  // same real physics instead of needing separate one-off position snaps.
+  function applyEntityGravity(entity, dt) {
+    const floorY = groundHeightAt(entity.pos.x, entity.pos.z, entity.pos.y + 0.5);
+    if (entity.velY === undefined) entity.velY = 0;
+    entity.velY -= 20 * dt;
+    entity.pos.y += entity.velY * dt;
+    if (entity.pos.y <= floorY) {
+      entity.pos.y = floorY;
+      entity.velY = 0;
+      entity.grounded = true;
+    } else {
+      entity.grounded = false;
+    }
+  }
+
+  // ---------- Ragdoll (used by the owner bat) ----------
+  // A lightweight fake-physics tumble: launch the entity with a random
+  // velocity + spin, let gravity pull it down, bounce/friction it to a
+  // stop, then hand control back once the timer runs out. Works for the
+  // player and for bots/zombies alike since all three already expose the
+  // same .pos vector this reads and writes.
+  function startRagdoll(entity, duration) {
+    entity.ragdollTimeLeft = duration;
+    const ang = Math.random() * Math.PI * 2;
+    const power = 6 + Math.random() * 5;
+    entity.ragdollVel = new THREE.Vector3(Math.cos(ang) * power, 9 + Math.random() * 5, Math.sin(ang) * power);
+    entity.ragdollSpin = { x: (Math.random()*2-1) * 9, y: (Math.random()*2-1) * 9, z: (Math.random()*2-1) * 9 };
+  }
+  function tickRagdoll(entity, dt, groupObj, radius) {
+    entity.ragdollTimeLeft -= dt;
+    entity.ragdollVel.y -= 20 * dt;
+    entity.pos.x += entity.ragdollVel.x * dt;
+    entity.pos.y += entity.ragdollVel.y * dt;
+    entity.pos.z += entity.ragdollVel.z * dt;
+    const floorY = groundHeightAt(entity.pos.x, entity.pos.z, entity.pos.y + 1.2);
+    if (entity.pos.y <= floorY) {
+      entity.pos.y = floorY;
+      entity.ragdollVel.y = Math.abs(entity.ragdollVel.y) * 0.22;
+      entity.ragdollVel.x *= 0.68; entity.ragdollVel.z *= 0.68;
+      entity.ragdollSpin.x *= 0.8; entity.ragdollSpin.y *= 0.8; entity.ragdollSpin.z *= 0.8;
+    }
+    resolveCollisions(entity.pos, radius || 0.5, entity.pos.y);
+    groupObj.position.set(entity.pos.x, entity.pos.y, entity.pos.z);
+    groupObj.rotation.x += entity.ragdollSpin.x * dt;
+    groupObj.rotation.y += entity.ragdollSpin.y * dt;
+    groupObj.rotation.z += entity.ragdollSpin.z * dt;
+    if (entity.ragdollTimeLeft <= 0) {
+      entity.ragdollTimeLeft = 0;
+      groupObj.rotation.set(0, entity.yaw || 0, 0);
+    }
   }
 
   // ---------- Trees ----------
@@ -1309,10 +1402,17 @@
     let houseHasGun = false;
     let houseHasThrowable = false;
     let houseHasAbility = false;
+    // Tracked so the Move Houses cheat can relocate this house as a whole —
+    // walls/roof/windows are children of `group` and move for free, but
+    // solids/floors/ramps/loot pickups are separate absolute-position data
+    // (created below) that has to be dragged along by hand.
+    const house = { group, solids: [], floors: [], ramps: [], pickups: [], collisionMeshes: [], pos: { x: cx, y: 0, z: cz }, heldByCheat: false };
+    houses.push(house);
     function spawnHousePickup(type, lx, lz, y) {
       const wx = cx + lx*cosR + lz*sinR;
       const wz = cz - lx*sinR + lz*cosR;
-      spawnWeaponPickup(type, wx, y, wz);
+      const p = spawnWeaponPickup(type, wx, y, wz);
+      house.pickups.push(p);
     }
 
     for (let fl = 0; fl < numFloors; fl++) {
@@ -1324,7 +1424,9 @@
       const cosR90 = Math.cos(rotY||0), sinR90 = Math.sin(rotY||0);
       const floorHw = Math.abs(w/2*cosR90) + Math.abs(d/2*sinR90);
       const floorHd = Math.abs(w/2*sinR90) + Math.abs(d/2*cosR90);
-      floors.push({ x: cx, z: cz, hw: floorHw, hd: floorHd, y: baseY + 0.12, fl });
+      const floorEntry = { x: cx, z: cz, hw: floorHw, hd: floorHd, y: baseY + 0.12, fl };
+      floors.push(floorEntry);
+      house.floors.push(floorEntry);
 
       const wallH = floorH;
       const doorWidth = 3.2;
@@ -1339,20 +1441,26 @@
       for (const p of backPieces) {
         p.mesh.position.set(p.longCenter, baseY + p.yCenter, -d/2);
         group.add(p.mesh);
+        p.mesh.userData.cheatHouse = house;
         collisionMeshes.push(p.mesh);
+        house.collisionMeshes.push(p.mesh);
       }
       const sideWinLen = Math.min(2.4, d*0.3);
       const leftPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
       for (const p of leftPieces) {
         p.mesh.position.set(-w/2, baseY + p.yCenter, p.longCenter);
         group.add(p.mesh);
+        p.mesh.userData.cheatHouse = house;
         collisionMeshes.push(p.mesh);
+        house.collisionMeshes.push(p.mesh);
       }
       const rightPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
       for (const p of rightPieces) {
         p.mesh.position.set(w/2, baseY + p.yCenter, p.longCenter);
         group.add(p.mesh);
+        p.mesh.userData.cheatHouse = house;
         collisionMeshes.push(p.mesh);
+        house.collisionMeshes.push(p.mesh);
       }
       const frontL = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
       frontL.position.set(-(doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontL.castShadow = true; frontL.receiveShadow = true;
@@ -1360,7 +1468,10 @@
       const frontR = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
       frontR.position.set((doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontR.castShadow = true; frontR.receiveShadow = true;
       group.add(frontR);
+      frontL.userData.cheatHouse = house; frontR.userData.cheatHouse = house;
       collisionMeshes.push(frontL, frontR);
+      house.collisionMeshes.push(frontL, frontR);
+
 
       // the actual window panes that fill each wall's gap
       const backWin = buildWindow(backWinLen, winH, wt);
@@ -1382,7 +1493,8 @@
         const wz = cz - lx*sinR + lz*cosR;
         const eff_hw = Math.abs(hw*cosR) + Math.abs(hd*sinR);
         const eff_hd = Math.abs(hw*sinR) + Math.abs(hd*cosR);
-        addSolid(wx, wz, eff_hw, eff_hd, baseY, baseY+wallH);
+        const s = addSolid(wx, wz, eff_hw, eff_hd, baseY, baseY+wallH);
+        house.solids.push(s);
       }
       worldSolid(0, -d/2, w/2, wt/2+0.1);
       worldSolid(-w/2, 0, wt/2+0.1, d/2);
@@ -1408,12 +1520,16 @@
         ramp.rotation.x = -Math.atan2(floorH, rampLen);
         ramp.castShadow = true; ramp.receiveShadow = true;
         group.add(ramp);
-        ramps.push({
+        const rampEntry = {
           cx, cz, cosR, sinR,
           localX: rampLocalX, zStart: rampLocalZStart, len: rampLen,
-          halfWidth: 0.9, baseY: baseY + 0.12, floorH
-        });
+          halfWidth: 0.9, baseY: baseY + 0.12, floorH,
+          holeFloor: fl + 1 // this stairwell punches through the slab of the floor it leads up to
+        };
+        ramps.push(rampEntry);
+        house.ramps.push(rampEntry);
       }
+
 
       // chance to spawn a looted primary weapon on any floor of any house
       if (Math.random() < 0.55) {
@@ -1787,7 +1903,30 @@
     g.scale.set(s,s,s);
     return { group: g, muzzleLocal: null };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, scythe: buildScytheMesh, shield: buildShieldMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
+  // A long baseball bat — noticeably longer-reaching than the axe/scythe so
+  // it can tag someone before they're right on top of the admin. Held, not
+  // thrown: swung the same way the axe/knife/scythe are (see MELEE_DEFS.bat
+  // and primaryAction's melee branch), just with 0 damage and a ragdoll
+  // effect on hit instead of health loss.
+  function buildBatMesh(s) {
+    const g = new THREE.Object3D();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0xc4924f, roughness: 0.75 });
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x2b2320, roughness: 0.9 });
+    const capMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6, metalness: 0.3 });
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.075, 0.95, 12), woodMat);
+    barrel.position.set(0, 0.55, 0);
+    g.add(barrel);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.032, 0.32, 10), gripMat);
+    grip.position.set(0, 0.02, 0);
+    g.add(grip);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), capMat);
+    cap.position.set(0, -0.15, 0);
+    g.add(cap);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, scythe: buildScytheMesh, shield: buildShieldMesh, bat: buildBatMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
   function buildPistolMesh(s) {
     const g = new THREE.Object3D();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.11,0.11,0.32), matMidShared); g.add(body);
@@ -1984,12 +2123,14 @@
   scene.add(camera);
   const tpWeaponRig = new THREE.Object3D();
 
-  const WEAPON_TYPES = ['axe','knife','scythe','shield','pistol','ak47','minigun','sniper','shotgun','flamethrower'];
+  const WEAPON_TYPES = ['axe','knife','scythe','shield','bat','pistol','ak47','minigun','sniper','shotgun','flamethrower'];
   // Fixed equip-bar order the weaponSwitchBtn cycles through (mirrors the
   // slot layout: axe, primary, secondary/pistol, melee). ak47/minigun/sniper/
   // shotgun/flamethrower aren't listed individually since they all live in
   // the single 'primary' slot; knife/scythe/shield all sit in the single
   // melee slot and the "owned" check below skips whichever ones aren't held.
+  // 'bat' isn't in this cycle at all — it's an admin-only weapon toggled on
+  // from the cheat menu, not something found in normal loot rotation.
   const WEAPON_CYCLE = ['axe','primary','pistol','knife','scythe','shield'];
   const fpMeshes = {}, tpMeshes = {};
   function placeFP(entry, type) {
@@ -1997,6 +2138,7 @@
     else if (type === 'knife') { entry.group.position.set(0.26,-0.24,-0.36); entry.group.rotation.set(0.15, Math.PI, 0); }
     else if (type === 'scythe') { entry.group.position.set(0.3,-0.3,-0.48); entry.group.rotation.set(0.32, Math.PI, 0); }
     else if (type === 'shield') { entry.group.position.set(0.24,-0.2,-0.4); entry.group.rotation.set(0.25, 0, 0); }
+    else if (type === 'bat') { entry.group.position.set(0.3,-0.32,-0.55); entry.group.rotation.set(0.3, Math.PI, 0); }
     else { entry.group.position.set(0.28,-0.24,-0.55); entry.group.rotation.set(0, Math.PI, 0); }
   }
   function placeTP(entry, type) {
@@ -2004,6 +2146,7 @@
     else if (type === 'knife') { entry.group.rotation.set(0.1, Math.PI/2, 0); }
     else if (type === 'scythe') { entry.group.rotation.set(0.22, Math.PI/2, 0); }
     else if (type === 'shield') { entry.group.rotation.set(0.2, 0, 0); }
+    else if (type === 'bat') { entry.group.rotation.set(0.2, Math.PI/2, 0); }
     else { entry.group.rotation.set(0, Math.PI/2, 0); }
   }
   for (const type of WEAPON_TYPES) {
@@ -2627,7 +2770,10 @@
     dashDir: null,
     isPlayer: true,
     falling: false,
-    chuteOpen: false
+    chuteOpen: false,
+    ragdollTimeLeft: 0,
+    ragdollVel: null,
+    ragdollSpin: null
   };
 
   // Shared body-shape geometry for the player AND every bot/zombie (they're
@@ -2715,7 +2861,7 @@
       if (keys[keyBindings.back]) inputZ -= 1;
       if (keys[keyBindings.right]) inputX += 1;
       if (keys[keyBindings.left]) inputX -= 1;
-      if (keys[keyBindings.jump]) inputY += 1;
+      if (keys[keyBindings.jump] || freecamAscendHeld) inputY += 1;
       if (keys[keyBindings.crouch] || keys['ControlLeft'] || keys['ControlRight'] || mobileCrouchHeld) inputY -= 1;
       if (joyState.active) { inputX += joyState.x; inputZ += -joyState.y; }
     }
@@ -2907,7 +3053,12 @@
       chuteOpen: false,
       chuteDeployAlt: 14 + Math.random()*22,
       chuteGroup,
-      dropDelay: Math.random()*3.5
+      dropDelay: Math.random()*3.5,
+      velY: 0,
+      grounded: false,
+      ragdollTimeLeft: 0,
+      ragdollVel: null,
+      ragdollSpin: null
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
@@ -3309,6 +3460,11 @@
       aimHeight: 1.05 * cfg.scale,
       stompCooldown: type === 'boss' ? 4 : null,
       stompPulseT: 0,
+      velY: 0,
+      grounded: false,
+      ragdollTimeLeft: 0,
+      ragdollVel: null,
+      ragdollSpin: null,
     };
     eBody.userData.botRef = zom;
     eHead.userData.botRef = zom;
@@ -3475,6 +3631,11 @@
       if (t >= 1) { zom.rising = false; zom.pos.y = 0; }
       return;
     }
+    if (zom.ragdollTimeLeft > 0) {
+      tickRagdoll(zom, dt, zom.group, zom.radius);
+      if (zom.healthSprite) zom.healthSprite.quaternion.copy(camera.quaternion);
+      return;
+    }
     if (!player.alive) {
       zom.group.position.set(zom.pos.x, zom.pos.y, zom.pos.z);
       return;
@@ -3490,6 +3651,11 @@
     } else {
       zom.yaw = Math.atan2(dir.x, dir.z);
     }
+    // Same reasoning as bots: guarantee this runs every frame regardless of
+    // whether the zombie moved this tick, and give it real continuous
+    // gravity instead of only ever setting height once at spawn.
+    resolveCollisions(zom.pos, zom.radius, zom.pos.y);
+    applyEntityGravity(zom, dt);
     zom.group.position.set(zom.pos.x, zom.pos.y, zom.pos.z);
     zom.group.rotation.y = zom.yaw;
     if (zom.healthSprite) zom.healthSprite.quaternion.copy(camera.quaternion);
@@ -3672,6 +3838,11 @@
   function updateBot(bot, dt) {
     if (!bot.alive) return;
     if (bot.heldByCheat) { bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z); if (bot.healthSprite) bot.healthSprite.quaternion.copy(camera.quaternion); return; }
+    if (bot.ragdollTimeLeft > 0) {
+      tickRagdoll(bot, dt, bot.group, 0.5);
+      bot.healthSprite.quaternion.copy(camera.quaternion);
+      return;
+    }
 
     if (bot.falling) {
       if (bot.dropDelay > 0) {
@@ -3772,10 +3943,19 @@
       }
       bot.yaw = Math.atan2(toTarget.x, toTarget.z);
     }
+    // Guaranteed once-per-frame, regardless of which movement branch (if
+    // any) ran above — a bot standing still waiting/fighting used to only
+    // get pushed by solids while it happened to be actively pathing, so an
+    // idle bot a house was shoved into just sat there unaffected. Real
+    // gravity now runs every frame too instead of only during the initial
+    // parachute landing, so a bot losing its footing (stairs, a house
+    // dragged out from under it, whatever) actually falls instead of
+    // staying wherever it last was.
+    resolveCollisions(bot.pos, 0.5, bot.pos.y);
+    applyEntityGravity(bot, dt);
     bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
     bot.group.rotation.y = bot.yaw;
     bot.healthSprite.quaternion.copy(camera.quaternion);
-
     bot.attackCooldown -= dt;
     if (combatTarget && bot.attackCooldown <= 0) {
       if (bot.ammo.mag <= 0 && bot.weaponType !== 'pistol') {
@@ -3901,7 +4081,13 @@
     // Slow, heavy, long-reaching — a big wide swing that hits harder than the
     // axe and reaches further, at the cost of the slowest cooldown of any
     // melee weapon in the game.
-    scythe: { rate: 700, range: 3.9, wallDmg: 42, headDmg: 72, bodyDmg: 48, shake: 0.3,  canChopTrees: true,  swingDecay: 3.2, swingAmp: 1.4, restFP: 0.32, restTP: 0.22 }
+    scythe: { rate: 700, range: 3.9, wallDmg: 42, headDmg: 72, bodyDmg: 48, shake: 0.3,  canChopTrees: true,  swingDecay: 3.2, swingAmp: 1.4, restFP: 0.32, restTP: 0.22 },
+    // Admin-only held weapon (toggled from the cheat menu, not found as
+    // loot): by far the longest reach of any melee weapon, but headDmg/
+    // bodyDmg/wallDmg are all 0 — instead `ragdoll`/`ragdollDuration` tell
+    // primaryAction's melee branch to knock whoever it connects with into
+    // a 10-second ragdoll instead of dealing damage.
+    bat:    { rate: 550, range: 100, wallDmg: 0,  headDmg: 0,  bodyDmg: 0,  shake: 0.3,  canChopTrees: false, swingDecay: 4,   swingAmp: 1.2, restFP: 0.28, restTP: 0.18, ragdoll: true, ragdollDuration: 10 }
   };
 
   // Casts one hitscan ray along `dir` and applies its damage/FX — this is the
@@ -3986,7 +4172,7 @@
   }
 
   function primaryAction() {
-    if (!player.alive || drop.active || matchWon) return;
+    if (!player.alive || drop.active || matchWon || player.ragdollTimeLeft > 0) return;
     const now = performance.now();
     const melee = MELEE_DEFS[player.weapon];
     if (melee) {
@@ -4034,11 +4220,17 @@
           const isHead = bh[0].object.userData.isHead === true;
           const botRef = bh[0].object.userData.botRef;
           if (botRef && botRef.alive) {
-            botRef.health -= isHead ? melee.headDmg : melee.bodyDmg;
-            updateHealthSprite(botRef);
-            showHitMarker(isHead);
-            playHitConfirm(isHead);
-            if (botRef.health <= 0) killEnemy(botRef, true);
+            if (melee.ragdoll) {
+              startRagdoll(botRef, melee.ragdollDuration || 10);
+              showHitMarker(isHead);
+              playHitConfirm(isHead);
+            } else {
+              botRef.health -= isHead ? melee.headDmg : melee.bodyDmg;
+              updateHealthSprite(botRef);
+              showHitMarker(isHead);
+              playHitConfirm(isHead);
+              if (botRef.health <= 0) killEnemy(botRef, true);
+            }
           }
         }
       }
@@ -5429,7 +5621,8 @@
     freecam: false,
     godMode: false,
     moveMode: false,
-    heldEntity: null
+    heldEntity: null,
+    heldHouse: null
   };
   const cheatPinModal = document.getElementById('cheatPinModal');
   const cheatPanel = document.getElementById('cheatPanel');
@@ -5455,6 +5648,8 @@
       cheatState.unlocked = true;
       localStorage.setItem('blazingice_cheatsUnlocked', '1');
       cheatPinModal.style.display = 'none';
+      document.getElementById('nukeHudBtn').style.display = 'flex';
+      document.getElementById('ownerBatHudBtn').style.display = 'flex';
       openCheatPanel();
     } else {
       cheatPinError.textContent = 'Incorrect PIN';
@@ -5517,47 +5712,185 @@
     cheatGodBtn.classList.toggle('off', !cheatState.godMode);
   });
 
-  // Move Mode: grab a bot/zombie by looking at it and clicking, it then
-  // follows your crosshair at a fixed distance until you click again to
-  // drop it. Their normal AI/movement is paused (heldByCheat) while held.
-  // Houses aren't offered here — their walls/floors/stairs and loot spawn
-  // points are baked in as separate absolute-position data at world-gen
-  // time, not attached to the visual mesh, so moving the mesh alone would
-  // leave the collision/loot behind at the old spot. Ask if you want that
-  // anyway (visual-only, for scouting) and I'll add it as its own thing.
+  // Move Mode: grab a bot/zombie/house by looking at it and clicking, it
+  // then follows your crosshair at a fixed distance until you click again
+  // to drop it. Bots/zombies' normal AI pauses (heldByCheat) while held.
+  // Houses relocate as a full unit — walls/roof/windows just ride along as
+  // children of the house's group, and its solids/floors/ramps/loot pickups
+  // (which are separate absolute-position data, not attached to the mesh)
+  // get the same per-frame delta applied so collision and loot move with it.
   function releaseHeldEntity() {
     const e = cheatState.heldEntity;
     if (!e) return;
     e.heldByCheat = false;
-    const floorY = groundHeightAt(e.pos.x, e.pos.z, e.pos.y + 0.5);
-    if (e.pos.y < floorY) e.pos.y = floorY;
+    e.velY = 0; // let the normal per-frame gravity (now running every tick, see applyEntityGravity) carry it down from here — no instant snap
     cheatState.heldEntity = null;
+  }
+  function releaseHeldHouse() {
+    const h = cheatState.heldHouse;
+    if (!h) return;
+    h.heldByCheat = false;
+    // Actually fall instead of teleporting to the ground — see
+    // updateFallingHouses(), which ticks this down every frame afterward.
+    h.falling = true;
+    h.velY = 0;
+    cheatState.heldHouse = null;
+  }
+  // Houses are big but their actual collision meshes are thin walls with
+  // real gaps in them (doors, windows) — aiming precisely at a wall from a
+  // touchscreen is fiddly, and a tap that lands on a door/window gap would
+  // silently miss and look like grabbing "just doesn't work". So houses use
+  // a generous bounding-sphere test instead of an exact mesh raycast: if
+  // the crosshair ray passes anywhere through/near the house's footprint,
+  // that's a hit, regardless of which exact wall pixel it lines up with.
+  function cheatHouseRadius(h) {
+    let r = 6;
+    for (const f of h.floors) r = Math.max(r, Math.hypot(f.hw, f.hd));
+    return r + 3; // pad a bit for the roof overhang
+  }
+  function rayHitsSphere(rc, center, radius) {
+    const ox = rc.ray.origin.x - center.x, oy = rc.ray.origin.y - center.y, oz = rc.ray.origin.z - center.z;
+    const dx = rc.ray.direction.x, dy = rc.ray.direction.y, dz = rc.ray.direction.z;
+    const b = ox*dx + oy*dy + oz*dz;
+    const c = ox*ox + oy*oy + oz*oz - radius*radius;
+    const disc = b*b - c;
+    if (disc < 0) return null;
+    const sq = Math.sqrt(disc);
+    const t1 = -b - sq, t2 = -b + sq;
+    if (t1 > 0) return t1;
+    if (t2 > 0) return 0.01; // camera is already inside the sphere
+    return null;
+  }
+  function cheatFindHouseUnderCrosshair() {
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera({ x: 0, y: 0 }, camera);
+    let best = null, bestDist = 60;
+    for (const h of houses) {
+      const t = rayHitsSphere(rc, h.pos, cheatHouseRadius(h));
+      if (t !== null && t < bestDist) { bestDist = t; best = h; }
+    }
+    return best ? { house: best, dist: bestDist } : null;
+  }
+  function cheatFindGrabTarget() {
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera({ x: 0, y: 0 }, camera);
+    const entityCandidates = bots.concat(zombies).filter(e => e.alive && e.hitMeshes);
+    let bestEntity = null, bestEntityDist = 60;
+    for (const e of entityCandidates) {
+      const hits = rc.intersectObjects(e.hitMeshes, false);
+      if (hits.length && hits[0].distance < bestEntityDist) { bestEntityDist = hits[0].distance; bestEntity = e; }
+    }
+    const houseHit = cheatFindHouseUnderCrosshair();
+    if (bestEntity && (!houseHit || bestEntityDist <= houseHit.dist)) return { kind: 'entity', ref: bestEntity };
+    if (houseHit) return { kind: 'house', ref: houseHit.house };
+    return null;
   }
   function tryCheatGrabOrRelease() {
     if (cheatState.heldEntity) { releaseHeldEntity(); return; }
-    const rc = new THREE.Raycaster();
-    rc.setFromCamera({ x: 0, y: 0 }, camera);
-    const candidates = bots.concat(zombies).filter(e => e.alive && e.hitMeshes && e !== cheatState.heldEntity);
-    let best = null, bestDist = 40;
-    for (const e of candidates) {
-      const hits = rc.intersectObjects(e.hitMeshes, false);
-      if (hits.length && hits[0].distance < bestDist) { bestDist = hits[0].distance; best = e; }
-    }
-    if (best) { best.heldByCheat = true; cheatState.heldEntity = best; }
+    if (cheatState.heldHouse) { releaseHeldHouse(); return; }
+    const target = cheatFindGrabTarget();
+    if (!target) return;
+    if (target.kind === 'entity') { target.ref.heldByCheat = true; cheatState.heldEntity = target.ref; }
+    else { target.ref.heldByCheat = true; target.ref.falling = false; cheatState.heldHouse = target.ref; }
+  }
+  // Both held-object updaters aim from the player's own yaw/pitch, not the
+  // live camera position/direction. In third person the camera orbits
+  // behind/above the player and tilts to look back at a pivot point, so
+  // camera.getWorldDirection() swings around in a way that doesn't match
+  // "where the player is facing" at all — at some pitches that direction's
+  // vertical component gets exaggerated enough that multiplying it out by
+  // the hold distance flings the held object far above the terrain with no
+  // way to bring it back down. Building the direction straight from
+  // player.pitch/player.yaw (the same convention the first-person camera
+  // uses) is stable in both view modes.
+  function playerAimDir() {
+    return new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
   }
   function updateCheatHeldEntity() {
     const e = cheatState.heldEntity;
     if (!e) return;
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
+    const dir = playerAimDir();
     const dist = 4;
-    e.pos.set(camera.position.x + dir.x * dist, camera.position.y + dir.y * dist, camera.position.z + dir.z * dist);
+    const originY = player.pos.y + player.eyeHeight;
+    e.pos.set(player.pos.x + dir.x * dist, originY + dir.y * dist, player.pos.z + dir.z * dist);
+  }
+  function shiftHouse(h, dx, dy, dz) {
+    h.pos.x += dx; h.pos.y += dy; h.pos.z += dz;
+    h.group.position.x += dx; h.group.position.y += dy; h.group.position.z += dz;
+    for (const s of h.solids) { s.x += dx; s.z += dz; s.minY += dy; s.maxY += dy; }
+    for (const f of h.floors) { f.x += dx; f.z += dz; f.y += dy; }
+    for (const r of h.ramps) { r.cx += dx; r.cz += dz; r.baseY += dy; }
+    for (const p of h.pickups) {
+      p.x += dx; p.y += dy; p.z += dz;
+      p.group.position.x += dx; p.group.position.y += dy; p.group.position.z += dz;
+      p.ring.position.x += dx; p.ring.position.y += dy; p.ring.position.z += dz;
+    }
+  }
+  function updateFallingHouses(dt) {
+    for (const h of houses) {
+      if (!h.falling) continue;
+      h.velY = (h.velY || 0) - 20 * dt;
+      const dy = h.velY * dt;
+      const bottomY = Math.min(...h.solids.map(s => s.minY));
+      const groundY = terrainHeightAt(h.pos.x, h.pos.z);
+      if (bottomY + dy <= groundY) {
+        shiftHouse(h, 0, groundY - bottomY, 0);
+        h.falling = false;
+        h.velY = 0;
+      } else {
+        shiftHouse(h, 0, dy, 0);
+      }
+    }
+  }
+
+  function updateCheatHeldHouse() {
+    const h = cheatState.heldHouse;
+    if (!h) return;
+    const dir = playerAimDir();
+    const dist = 10; // houses are big — hold them further out so you're not standing inside walls
+    const originY = player.pos.y + player.eyeHeight;
+    const tx = player.pos.x + dir.x * dist;
+    const tz = player.pos.z + dir.z * dist;
+    let ty = originY + dir.y * dist;
+    // Clamp how high/low it can be pushed relative to the ground under it —
+    // still lets you lift a house well above head height (or push it down
+    // into a dip) to see what happens, without it being able to fly off
+    // into the sky (or through the floor) with no way back.
+    const groundY = terrainHeightAt(tx, tz);
+    ty = Math.max(groundY - 2, Math.min(groundY + 25, ty));
+    shiftHouse(h, tx - h.pos.x, ty - h.pos.y, tz - h.pos.z);
+  }
+
+  const cheatHoldLabelEl = document.getElementById('cheatHoldLabel');
+  function updateCheatHoldLabel() {
+    if (cheatState.heldHouse) { cheatHoldLabelEl.textContent = 'HOLDING HOUSE — tap FIRE to drop'; cheatHoldLabelEl.style.display = 'block'; return; }
+    if (cheatState.heldEntity) {
+      const kind = zombies.includes(cheatState.heldEntity) ? 'ZOMBIE' : 'BOT';
+      cheatHoldLabelEl.textContent = 'HOLDING ' + kind + ' — tap FIRE to drop';
+      cheatHoldLabelEl.style.display = 'block';
+      return;
+    }
+    if (cheatState.moveMode) {
+      // Full target check every frame (entity + house) — this used to skip
+      // the entity raycast here for cost reasons, but that meant bots gave
+      // zero feedback until you actually tapped, which just looked like
+      // grabbing people didn't work. Bot/zombie counts here are small
+      // enough that doing this every frame is fine.
+      const target = cheatFindGrabTarget();
+      if (target) {
+        const label = target.kind === 'house' ? 'HOUSE' : (zombies.includes(target.ref) ? 'ZOMBIE' : 'BOT');
+        cheatHoldLabelEl.textContent = label + ' — tap FIRE to grab';
+        cheatHoldLabelEl.style.display = 'block';
+        return;
+      }
+    }
+    cheatHoldLabelEl.style.display = 'none';
   }
 
   const cheatMoveBtn = document.getElementById('cheatMoveBtn');
   bindTap(cheatMoveBtn, () => {
     cheatState.moveMode = !cheatState.moveMode;
-    if (!cheatState.moveMode) releaseHeldEntity();
+    if (!cheatState.moveMode) { releaseHeldEntity(); releaseHeldHouse(); }
     cheatMoveBtn.textContent = cheatState.moveMode ? 'ON' : 'OFF';
     cheatMoveBtn.classList.toggle('off', !cheatState.moveMode);
   });
@@ -5580,6 +5913,98 @@
     const z = player.pos.z + forward.z * 2;
     spawnWeaponPickup(type, x, player.pos.y, z, false);
   });
+
+  // Nuke: strikes wherever the crosshair is aimed (raycast onto the
+  // terrain; falls back to a spot ahead of the player if the crosshair
+  // isn't over ground) — as 100 molotovs raining down out of the sky onto
+  // that spot. Each one is a real molotov: it flies in on its own falling
+  // physics through the existing throwable-grenade system, shatters on
+  // impact, and starts a genuine fire zone that ticks damage for a few
+  // seconds — same mechanism as manually throwing one, just 100 of them
+  // scattered over a wide patch of ground and staggered so they don't all
+  // land in the same instant. Fire zones spawned this way use a cheaper
+  // "lightweight" look (fewer flames, no per-zone point light) since 100
+  // full ones landing within a few seconds of each other would tank
+  // framerate — a single manually-thrown molotov is unaffected.
+  const cheatNukeRaycaster = new THREE.Raycaster();
+  function triggerCheatNuke() {
+    cheatNukeRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
+    const hits = cheatNukeRaycaster.intersectObject(ground, false);
+    let tx, tz;
+    if (hits.length) {
+      tx = hits[0].point.x; tz = hits[0].point.z;
+    } else {
+      const dir = playerAimDir();
+      tx = player.pos.x + dir.x * 40;
+      tz = player.pos.z + dir.z * 40;
+    }
+
+    addShake(1.2);
+    playExplosionSound(0);
+    const nukeFlashEl = document.getElementById('nukeFlash');
+    nukeFlashEl.classList.remove('show'); void nukeFlashEl.offsetWidth; nukeFlashEl.classList.add('show');
+
+    const COUNT = 220, SPREAD = 34, RAIN_MS = 3200;
+    for (let i = 0; i < COUNT; i++) {
+      const delay = Math.random() * RAIN_MS;
+      setTimeout(() => {
+        // sqrt() on the radius sample keeps the drops evenly spread across
+        // the circle's *area* instead of bunching up near the center.
+        const ang = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * SPREAD;
+        const x = tx + Math.cos(ang) * rad;
+        const z = tz + Math.sin(ang) * rad;
+        const groundY = terrainHeightAt(x, z);
+        const startPos = new THREE.Vector3(x, groundY + 34 + Math.random()*14, z);
+        const built = buildMolotovMesh(1);
+        const mesh = built.group;
+        mesh.position.copy(startPos);
+        scene.add(mesh);
+        activeGrenades.push({
+          mesh, pos: startPos.clone(),
+          vel: new THREE.Vector3((Math.random()-0.5)*1.5, -2, (Math.random()-0.5)*1.5),
+          fuse: 8, isSmoke: false, isMolotov: true, lightweight: true
+        });
+      }, delay);
+    }
+  }
+  bindTap(document.getElementById('cheatNukeBtn'), triggerCheatNuke);
+  bindTap(document.getElementById('nukeHudBtn'), triggerCheatNuke);
+  if (cheatState.unlocked) document.getElementById('nukeHudBtn').style.display = 'flex';
+
+  // ---------- Owner Bat ----------
+  // Admin-only held weapon: toggling this equips the bat as the player's
+  // active weapon (same equip mechanism as any other melee weapon — see
+  // MELEE_DEFS.bat and the ragdoll branch in primaryAction), so it's swung
+  // by hand, in melee range, by whoever unlocked cheats. Toggling again (or
+  // switching weapons manually) puts back whatever was equipped before.
+  let weaponBeforeBat = null;
+  let batEquipped = false;
+  function setOwnerBatButtonsUI() {
+    const hudBtn = document.getElementById('ownerBatHudBtn');
+    const cheatBtn = document.getElementById('cheatBatBtn');
+    hudBtn.textContent = batEquipped ? '🏏 UNEQUIP' : '🏏 BAT';
+    hudBtn.classList.toggle('active', batEquipped);
+    cheatBtn.textContent = batEquipped ? 'ON' : 'OFF';
+    cheatBtn.classList.toggle('off', !batEquipped);
+  }
+  function toggleOwnerBat() {
+    if (!cheatState.unlocked || !player.alive) return;
+    if (batEquipped) {
+      batEquipped = false;
+      setWeapon(weaponBeforeBat || 'pistol');
+      weaponBeforeBat = null;
+      showPickupToast('BAT PUT AWAY');
+    } else {
+      batEquipped = true;
+      weaponBeforeBat = player.weapon;
+      setWeapon('bat');
+      showPickupToast('BAT EQUIPPED — SWING TO RAGDOLL (0 DMG)');
+    }
+    setOwnerBatButtonsUI();
+  }
+  bindTap(document.getElementById('cheatBatBtn'), toggleOwnerBat);
+  bindTap(document.getElementById('ownerBatHudBtn'), toggleOwnerBat);
+  if (cheatState.unlocked) document.getElementById('ownerBatHudBtn').style.display = 'flex';
 
   // ---------- Customizable control positions ----------
   // Every draggable control is repositioned by converting its rendered
@@ -6084,7 +6509,7 @@
         // instead of bouncing like the frag/smoke canisters do.
         if (g.isMolotov) {
           g.mesh.position.copy(g.pos);
-          spawnFireZone(g.pos);
+          spawnFireZone(g.pos, g.lightweight);
           scene.remove(g.mesh);
           activeGrenades.splice(i, 1);
           continue;
@@ -6096,7 +6521,7 @@
       g.mesh.rotation.x += dt * 6;
       g.fuse -= dt;
       if (g.fuse <= 0) {
-        if (g.isSmoke) spawnSmokeCloud(g.pos); else if (g.isMolotov) spawnFireZone(g.pos); else explodeGrenade(g.pos);
+        if (g.isSmoke) spawnSmokeCloud(g.pos); else if (g.isMolotov) spawnFireZone(g.pos, g.lightweight); else explodeGrenade(g.pos);
         scene.remove(g.mesh);
         activeGrenades.splice(i, 1);
       }
@@ -6206,20 +6631,26 @@
   // since fire on the ground doesn't care what's between you and its source.
   const fireZones = [];
   const FIRE_RADIUS = 5.6, FIRE_DURATION = 5.5, FIRE_TICK = 0.5, FIRE_TICK_DMG = 9;
-  function spawnFireZone(pos) {
+  function spawnFireZone(pos, lightweight) {
     const floorY = groundHeightAt(pos.x, pos.z, pos.y + 2);
     const group = new THREE.Object3D();
     group.position.set(pos.x, floorY, pos.z);
     scene.add(group);
     const scorch = new THREE.Mesh(
-      new THREE.CircleGeometry(FIRE_RADIUS, 32),
+      new THREE.CircleGeometry(FIRE_RADIUS, lightweight ? 12 : 32),
       new THREE.MeshBasicMaterial({ color: 0xff5a16, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
     );
     scorch.rotation.x = -Math.PI/2;
     scorch.position.y = 0.025;
     group.add(scorch);
     const flames = [];
-    for (let i = 0; i < 16; i++) {
+    // `lightweight` skips the point light and thins out the flame cones —
+    // used when a lot of these can land in the same few seconds (the nuke
+    // cheat drops 100 at once), since dozens of full fire zones each with
+    // their own real-time PointLight would tank framerate fast. A single
+    // thrown molotov always gets the full version.
+    const flameCount = lightweight ? 5 : 16;
+    for (let i = 0; i < flameCount; i++) {
       const flame = new THREE.Mesh(
         new THREE.ConeGeometry(0.34 + Math.random()*0.22, 0.95 + Math.random()*0.65, 6),
         new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff6a1a : 0xffb347, transparent: true, opacity: 0.85 })
@@ -6229,9 +6660,12 @@
       group.add(flame);
       flames.push(flame);
     }
-    const light = new THREE.PointLight(0xff7a2a, 4.2, 22, 2);
-    light.position.set(0, 1.4, 0);
-    group.add(light);
+    let light = null;
+    if (!lightweight) {
+      light = new THREE.PointLight(0xff7a2a, 4.2, 22, 2);
+      light.position.set(0, 1.4, 0);
+      group.add(light);
+    }
     const camDist = pos.distanceTo(camera.position);
     playMolotovShatter(camDist);
     if (camDist < 30) addShake(0.2);
@@ -6269,7 +6703,7 @@
       const fz = fireZones[i];
       fz.life += dt;
       const flicker = 0.75 + Math.sin(fz.life*14)*0.15 + Math.random()*0.1;
-      fz.light.intensity = 4.2 * flicker;
+      if (fz.light) fz.light.intensity = 4.2 * flicker;
       fz.scorch.material.opacity = Math.max(0, 0.22 * (1 - fz.life / FIRE_DURATION));
       for (const fl of fz.flames) fl.scale.set(1, flicker * (0.9 + Math.random()*0.2), 1);
       if (fz.life >= fz.nextTickAt) {
@@ -6299,6 +6733,7 @@
   // ---------- Keyboard ----------
   const keys = {};
   let mobileCrouchHeld = false; // set by the touch/mouse crouch button below
+  let freecamAscendHeld = false; // set by the touch/mouse jump button, freecam-only
   window.addEventListener('keydown', (e) => {
     if (rebindingAction) {
       e.preventDefault();
@@ -6481,8 +6916,14 @@
 
   // ---------- Buttons ----------
   bindTap(document.getElementById('viewToggleBtn'), toggleView);
-  document.getElementById('jumpBtn').addEventListener('touchstart', (e) => { e.preventDefault(); tryJump(); }, {passive:false});
-  document.getElementById('jumpBtn').addEventListener('mousedown', tryJump);
+  document.getElementById('jumpBtn').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (cheatState.freecam) freecamAscendHeld = true; else tryJump();
+  }, {passive:false});
+  document.getElementById('jumpBtn').addEventListener('touchend', (e) => { freecamAscendHeld = false; });
+  document.getElementById('jumpBtn').addEventListener('touchcancel', (e) => { freecamAscendHeld = false; });
+  document.getElementById('jumpBtn').addEventListener('mousedown', () => { if (cheatState.freecam) freecamAscendHeld = true; else tryJump(); });
+  window.addEventListener('mouseup', () => { freecamAscendHeld = false; });
 
   // Crouch button: hold to crouch, like a hold-down modifier rather than a
   // one-shot action button (mirrors how ShiftLeft/sprint works on desktop).
@@ -6517,6 +6958,8 @@
     fireDragState.id = e.pointerId;
     fireDragState.lastX = e.clientX;
     fireDragState.lastY = e.clientY;
+    if (cheatState.freecam) return; // drag-look only, handled by fireMove below
+    if (cheatState.moveMode) { tryCheatGrabOrRelease(); return; }
     if (firing) return; // ignore duplicate pointerdown (e.g. extra touch point)
     firing = true;
     fireBtnEl.classList.add('engaged');
@@ -6635,6 +7078,12 @@
   function updateMovement(dt) {
     if (cheatState.freecam) { updateFreecamMovement(dt); return; }
     if (!player.alive || matchWon) return;
+    if (player.ragdollTimeLeft > 0) {
+      tickRagdoll(player, dt, playerGroup, player.radius);
+      player.moving = false;
+      firing = false;
+      return;
+    }
     if (drop.active) {
       let inputX = 0, inputZ = 0;
       if (player.chuteOpen && !invOpen && !layoutEditMode) {
@@ -7040,6 +7489,9 @@
       updateSmokeClouds(dt);
       updateFireZones(dt);
       updateCheatHeldEntity();
+      updateCheatHeldHouse();
+      updateFallingHouses(dt);
+      updateCheatHoldLabel();
       updateCheatHitboxes();
       updateCamera();
       updateMobileAimSystems(dt);
