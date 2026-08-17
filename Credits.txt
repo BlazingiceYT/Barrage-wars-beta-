@@ -28,4 +28,7 @@ https://sketchfab.com/3d-models/scythe-3286bd5abfce43a2ada69c6528fd6175#download
 “shield protection” by christian.brittanier
 https://sketchfab.com/3d-models/shield-protection-7c197fae5c21479dae1cc45e2074d957
 
+"SMG_M32" by Frostoise
+https://sketchfab.com/3d-models/smg-m32-3a5f98f75e804e5888379cbe640cc883
+
 All charcters are made with meshy ai
