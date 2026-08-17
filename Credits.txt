@@ -31,4 +31,6 @@ https://sketchfab.com/3d-models/shield-protection-7c197fae5c21479dae1cc45e2074d9
 "SMG_M32" by Frostoise
 https://sketchfab.com/3d-models/smg-m32-3a5f98f75e804e5888379cbe640cc883
 
+"Laser Gun" by Delincoter.
+https://sketchfab.com/3d-models/laser-gun-40d21fa900cc42ee9393e4459e1d4e60
 All charcters are made with meshy ai
