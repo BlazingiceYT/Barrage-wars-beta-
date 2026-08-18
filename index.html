@@ -2572,7 +2572,10 @@
     sniper:  { dmg: [42, 68], cooldown: [1.4, 2.1] },
   };
   function equipBotWeapon(bot, type) {
-    if (bot.gunMesh) bot.wRig.remove(bot.gunMesh);
+    if (bot.gunMesh) {
+      bot.wRig.remove(bot.gunMesh);
+      disposeMeshGeometriesOnly(bot.gunMesh); // materials (matMidShared etc.) are shared — only the box geometries are this build's own
+    }
     const built = WEAPON_BUILDERS[type](1.15);
     built.group.rotation.y = Math.PI/2;
     bot.wRig.add(built.group);
@@ -3597,6 +3600,27 @@
     }
   }
 
+  // ---------- Disposal helpers ----------
+  // Most of a bot/zombie's visual data is intentionally SHARED (the
+  // humanoid placeholder geometries, per-zombie-type materials, the loaded
+  // character GLB's own geometries/materials once cloned via
+  // THREE.SkeletonUtils, the bot gun's box materials) so disposing it here
+  // would corrupt every other still-alive instance referencing the same
+  // object. These helpers only ever touch resources that are genuinely
+  // unique to a single instance — the canvas-backed sprite textures, and
+  // the bot gun's own (per-build, not shared) box geometries.
+  function disposeSprite(spr) {
+    if (!spr) return;
+    if (spr.material) {
+      if (spr.material.map) spr.material.map.dispose();
+      spr.material.dispose();
+    }
+  }
+  function disposeMeshGeometriesOnly(root) {
+    if (!root) return;
+    root.traverse(o => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+  }
+
   function killBot(bot, killedByPlayer) {
     if (!bot.alive) return;
     bot.alive = false;
@@ -4159,7 +4183,23 @@
   // starts wave 1 again, same as a brand new zombie match.
   function resetZombieWave() {
     if (waveAdvanceTimeoutId) { clearTimeout(waveAdvanceTimeoutId); waveAdvanceTimeoutId = null; }
-    for (const zom of zombies) scene.remove(zom.group);
+    for (const zom of zombies) {
+      scene.remove(zom.group);
+      disposeSprite(zom.healthSprite);
+      // find and dispose the type-tag sprite too, if this zombie had one (label !== null, e.g. runner/tank/boss)
+      for (const child of zom.group.children) {
+        if (child.isSprite && child !== zom.healthSprite) disposeSprite(child);
+      }
+      // eHead's material is created fresh per zombie (colored to its own
+      // skin tone); bodyMat/legsMat come from ZOMBIE_TYPES and are shared
+      // across every zombie of that type, so they're left alone.
+      const eHead = zom.hitMeshes && zom.hitMeshes[1];
+      if (eHead && eHead.material) eHead.material.dispose();
+      if (zom.charAnim && zom.charAnim.mixer) {
+        zom.charAnim.mixer.stopAllAction();
+        zom.charAnim.mixer.uncacheRoot(zom.charAnim.model);
+      }
+    }
     zombies.length = 0;
     zombiesAliveCount = 0;
     corpseList.length = 0;
@@ -5619,7 +5659,27 @@
   // Play Again after a win) dropped you into an already-empty lobby. This
   // clears out the old bots and spawns a fresh set alongside the player.
   function resetFFAMatch() {
-    for (const bot of bots) scene.remove(bot.group);
+    for (const bot of bots) {
+      scene.remove(bot.group);
+      disposeSprite(bot.healthSprite);
+      if (bot.chuteGroup) {
+        bot.chuteGroup.traverse(o => {
+          if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+        });
+      }
+      // eBody's body material is always this bot's own; the head material is
+      // only its own when a glow tier cloned it (see spawnBot) — otherwise
+      // it's the shared botHeadMat and must not be touched. eLegs always
+      // uses the shared botLegsMat, so it's skipped entirely.
+      const [eBody, eHead] = bot.hitMeshes;
+      if (eBody && eBody.material) eBody.material.dispose();
+      if (eHead && eHead.material && BOT_TIERS[bot.tier] && BOT_TIERS[bot.tier].glow) eHead.material.dispose();
+      if (bot.gunMesh) disposeMeshGeometriesOnly(bot.gunMesh);
+      if (bot.charAnim && bot.charAnim.mixer) {
+        bot.charAnim.mixer.stopAllAction();
+        bot.charAnim.mixer.uncacheRoot(bot.charAnim.model); // release cached property bindings; the model's own geometry/material are shared with the source GLB and are never disposed here
+      }
+    }
     bots.length = 0;
     corpseList.length = 0;
     for (const g of activeGrenades) scene.remove(g.mesh);
