@@ -6,8 +6,7 @@
 Created a basic 3D shooter using Three.js and HTML.
 
 **Update 0.11** — *Committed by BlazingiceYT on 4 Aug 2026*
-Expanded the world to 400×400 with 160 trees, scattered grass, and 14 multi-floor houses (1–3 floors) featuring open doorways, interior floors, and walkable ramps. Added blocky first-person and third-person held weapons (gun and axe). 49 AI bots spawn alongside you (50 total), each armed and shooting back when in range, with individual health bars. Axe doubles as a tree-chopping tool (raycast, 5 wood per tree) and a heavy melee weapon. Equipment slots at the bottom (Axe = 1, Gun = 2) — click or press number keys to switch. Inventory system: bag icon or Tab opens a panel showing wood count and a "Build Wall" button. Spend 5 wood to place a wall in front of you (B key, build button, or from inventory). Added full mobile support: dedicated fire button, joystick, jump, and view-toggle, alongside desktop WASD/mouse/P controls.
-
+Expanded the world . Added blocky first-person and third-person held weapons (gun and axe). 49 AI bots spawn alongside you (50 total),  Axe doubles as a tree-chopping tool ( and a heavy melee weapon. Equipment slots at the bottom Inventory system: bag icon or Tab opens a panel showing wood count and a "Build Wall" button.  Added full mobile support
 **Update 0.12** — *Committed by BlazingiceYT on 5 Aug 2026*
 Bots now use raycasting. Players launch from a parachute at match start.
 
@@ -69,29 +68,18 @@ Added mini map andSmarter bots.
 
 **Update0.30** - *Commited by BlazingiceYT on 10 Aug 2026*
 Fire/scope button overlap — while scoped, the scope button slides over to sit right on the fire button (computed from its live on-screen position, so it still respects a custom control layout), and snaps back when you unscope.
-Bots deal more damage — damage bumped ~60-70% across all bot weapons.
-Expandable minimap — tap the ⤢ button in its corner to grow it from 150px to 280px (crisp at both sizes since the canvas resolution scales too).
-Graphics settings — new GRAPHICS section in the settings panel:
-Render Distance slider (Low/Medium/High) — scales fog and camera draw distance
-Show Dead Bodies toggle — corpses now stay on the ground (tipped over) instead of vanishing, capped at 60 at once so Zombie Mode's endless waves can't quietly tank your framerate over a long session
-Grenades — full throw mechanic, not just a pickup:
-Spawn in houses on their own independent 35% roll per floor (separate from the 55% gun roll, so one doesn't crowd out the other)
-Green pickup ring, HUD counter (💣 button, max 4 held)
-Bound to F / the grenade button — throws with a real arc (gravity + a bit of bounce off terrain), fuse timer, then explodes with a radius-falloff blast (up to 95 dmg at the center, tapering to 0 at the 9-unit edge), checks line-of-sight so walls actually block the blast, damages you, bots, and zombies alike, with a light/flash FX and a synthesized boom sound plus screen shake if you're close
+Bots deal more damage, added Expandable minimap Graphics settings Render Distance slider Show Dead Bodies toggle Grenades
 
 **Patch0.31** - *Commited by BlazingiceYT on 10 Aug 2026*
 Grenade button invisible and Mini-map wouldn't expand gliteches fixed
 
 **Update0.32** - *Commited by BlazingiceYT on 10 Aug 2026*
-Footsteps — a soft low-passed noise thud plays on a timer while you're moving on the ground, cadence changes with sprint/walk/crouch (faster when sprinting, slower and quieter when crouched), and it goes silent mid-air or in menus.
-Crouching — hold Ctrl/C (desktop) or the new crouch button next to Jump (mobile, drag it in the HUD editor like any other control). Crouching drops your speed to ~45%, disables sprint, lowers your camera/eye height, and squashes the third-person model down smoothly. Only works while grounded.
-Fall damage — tracks your peak height during a fall (whether you jumped or walked off a ledge) and compares it to landing height. Falls under ~4.2m are free; beyond that it's ~11 damage per meter over, using the same damagePlayer hit-flash/vignette/death flow as combat damage.
-
+Added footsteps crouching fall damage
 **Update0.33** - *Commited by BlazingiceYT on 11 Aug 2026*
 Added auto shoot and aim assist for mobile
 
 **Update0.34** - *Commited by BlazingiceYT on 11 Aug 2026*
-Added a hit-confirm sound alongside the existing hitmarker — a quick two-tick chirp that plays the moment a bullet or axe swing actually lands on a bot or zombie. Headshots layer a brighter ringing tone on top so they're audibly distinct from a body shot.
+Added a hit-confirm sound alongside the existing hitmarker
 
 **Update0.35** - *Commited by BlazingiceYT on 11 Aug 2026*
 Added runner tank boss zombie
@@ -112,9 +100,7 @@ Fixed zombie mode bugs
 Added smoke bomb
 
 **Update0.41** - *Commited by BlazingiceYT on 12 Aug 2026*
-Field of View slider (60–110°, default 70) — right under Scope Sensitivity. Changes apply live (smoothly eased in, same mechanism that already handles the sprint FOV bump), and correctly returns to your chosen value when you unscope.
-Invert Look Y toggle — flips vertical look on mouse drag, touch drag, and the fire-button drag-to-aim, so it works the same on desktop and mobile.
-Colorblind-Friendly Colors toggle (new "Accessibility" section) — swaps the red/yellow/green enemy-health-bar and hitmarker scheme for blue/amber/red, since red vs. green is the pairing most colorblind players struggle with. Applies immediately to any bots/zombies/boss already on screen, not just future ones.
+Added Field of View slider Invert Look Y toggle Colorblind-Friendly Colors 
 
 **Update0.43** - *Commited by BlazingiceYT on 12 Aug 2026*
 Added better UI and molotov
@@ -156,4 +142,7 @@ Added laser and smg
 Added new map for zombie mode
 
 **Optimization.56** - *Commited by BlazingiceYT on 18 Aug 2026*
-Higher fps
+Used instnaced mesh more for higher fps
+
+**Optimization.56** - *Commited by BlazingiceYT on 18 Aug 2026*
+Fixed game thinking that ur on mac if ur on ipad, now deletes everything between games so ur phone dont go boom
