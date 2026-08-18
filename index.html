@@ -1317,24 +1317,77 @@
   // a lot with no visual difference, since only the scale changes per tree.
   const trunkUnitGeo = new THREE.CylinderGeometry(0.28, 0.36, 1, 7);
   const leafUnitGeo = new THREE.IcosahedronGeometry(1, 0);
+  // Trees are rendered as two InstancedMesh objects (one for every trunk,
+  // one for every set of leaves) instead of ~260 separate trunk+leaf Mesh
+  // pairs — hundreds of draw calls become 2. makeTree() only records each
+  // tree's data now; the actual InstancedMesh objects are built once by
+  // buildTreeInstancedMeshes(), after generateTrees() below has finished and
+  // the final tree count is known (InstancedMesh needs a fixed count up front).
+  let treeTrunkMesh = null, treeLeafMesh = null;
   function makeTree(x, z) {
-    const group = new THREE.Object3D();
     const h = 3 + Math.random()*2.5;
-    const trunk = new THREE.Mesh(trunkUnitGeo, trunkMat);
-    trunk.scale.y = h;
-    trunk.position.y = h/2; trunk.castShadow = true; trunk.receiveShadow = true;
     const leafScale = 1.6 + Math.random()*0.9;
-    const leaves = new THREE.Mesh(leafUnitGeo, leafMat);
-    leaves.position.y = h + leafScale*0.6; leaves.castShadow = true;
-    leaves.scale.set(leafScale, leafScale*1.2, leafScale);
-    group.add(trunk, leaves);
-    group.position.set(x, terrainHeightAt(x, z), z);
-    scene.add(group);
-    const tree = { group, x, z, wood: 5, alive: true, radius: 0.5, h, hitsLeft: 5, maxHits: 5 };
-    trunk.userData.treeRef = tree;
-    leaves.userData.treeRef = tree;
+    const gy = terrainHeightAt(x, z);
+    const tree = { x, z, gy, h, leafScale, wood: 5, alive: true, radius: 0.5, hitsLeft: 5, maxHits: 5, index: trees.length, wobbleTimeout: null };
     trees.push(tree);
     return tree;
+  }
+  const _treeMat4 = new THREE.Matrix4();
+  const _treeQuat = new THREE.Quaternion();
+  const _treeEuler = new THREE.Euler();
+  const _treeVec = new THREE.Vector3();
+  const _treeScale = new THREE.Vector3();
+  // Writes a tree's current trunk+leaf instance matrices, optionally kicked
+  // by `kickZ` radians around Z (the chop-hit wobble) — mirrors what the old
+  // per-tree group.rotation.z did: both trunk and leaves tilt together
+  // around the tree's base/root point.
+  function setTreeInstanceMatrices(tree, kickZ) {
+    _treeEuler.set(0, 0, kickZ || 0);
+    _treeQuat.setFromEuler(_treeEuler);
+    _treeVec.set(0, tree.h/2, 0).applyQuaternion(_treeQuat);
+    _treeVec.x += tree.x; _treeVec.y += tree.gy; _treeVec.z += tree.z;
+    _treeScale.set(1, tree.h, 1);
+    _treeMat4.compose(_treeVec, _treeQuat, _treeScale);
+    treeTrunkMesh.setMatrixAt(tree.index, _treeMat4);
+    _treeVec.set(0, tree.h + tree.leafScale*0.6, 0).applyQuaternion(_treeQuat);
+    _treeVec.x += tree.x; _treeVec.y += tree.gy; _treeVec.z += tree.z;
+    _treeScale.set(tree.leafScale, tree.leafScale*1.2, tree.leafScale);
+    _treeMat4.compose(_treeVec, _treeQuat, _treeScale);
+    treeLeafMesh.setMatrixAt(tree.index, _treeMat4);
+  }
+  // Felled trees are "hidden" by shrinking their instances to a near-zero
+  // scale (not exactly zero — a truly zero scale produces a singular matrix
+  // that can misbehave under raycasting) tucked below the ground, rather
+  // than removing/re-adding anything from the shared mesh.
+  function hideTreeInstance(tree) {
+    _treeMat4.compose(
+      new THREE.Vector3(tree.x, tree.gy - 40, tree.z),
+      _treeQuat.identity(),
+      new THREE.Vector3(0.0001, 0.0001, 0.0001)
+    );
+    treeTrunkMesh.setMatrixAt(tree.index, _treeMat4);
+    treeLeafMesh.setMatrixAt(tree.index, _treeMat4);
+  }
+  function buildTreeInstancedMeshes() {
+    const count = Math.max(1, trees.length);
+    treeTrunkMesh = new THREE.InstancedMesh(trunkUnitGeo, trunkMat, count);
+    treeLeafMesh = new THREE.InstancedMesh(leafUnitGeo, leafMat, count);
+    treeTrunkMesh.castShadow = true; treeTrunkMesh.receiveShadow = true;
+    treeLeafMesh.castShadow = true;
+    // Trees are scattered across the whole map, same as grass. Without this,
+    // three.js's automatic per-mesh frustum culling would judge visibility
+    // using just a single unscattered trunk/leaf's own tiny local bounding
+    // sphere near the world origin — which could make every tree in the
+    // world flicker in and out depending on where the camera happens to be
+    // relative to (0,0,0), instead of each tree culling correctly on its
+    // own. Tree triangle counts are tiny (~260 trees), so disabling culling
+    // outright costs nothing noticeable and guarantees trees never glitch.
+    treeTrunkMesh.frustumCulled = false;
+    treeLeafMesh.frustumCulled = false;
+    for (const tree of trees) setTreeInstanceMatrices(tree, 0);
+    treeTrunkMesh.instanceMatrix.needsUpdate = true;
+    treeLeafMesh.instanceMatrix.needsUpdate = true;
+    scene.add(treeTrunkMesh, treeLeafMesh);
   }
   // Trees now take 5 chops to fell. Each chop gives a little wood right away
   // (so chopping never feels wasted) and the tree visibly wobbles harder as
@@ -1345,74 +1398,124 @@
     player.wood += 1;
     updateWoodUI();
     if (tree.hitsLeft > 0) {
-      const g = tree.group;
-      const kick = 0.12;
-      g.rotation.z = (Math.random() < 0.5 ? -1 : 1) * kick;
-      setTimeout(() => { g.rotation.z = 0; }, 120);
+      const kick = (Math.random() < 0.5 ? -1 : 1) * 0.12;
+      setTreeInstanceMatrices(tree, kick);
+      treeTrunkMesh.instanceMatrix.needsUpdate = true;
+      treeLeafMesh.instanceMatrix.needsUpdate = true;
+      // Clear any wobble-reset already queued from a rapid previous chop, so
+      // two quick chops can't race and leave the tree stuck mid-kick.
+      if (tree.wobbleTimeout) clearTimeout(tree.wobbleTimeout);
+      tree.wobbleTimeout = setTimeout(() => {
+        tree.wobbleTimeout = null;
+        if (!tree.alive) return; // fell while the wobble timer was pending — hideTreeInstance already owns its matrix
+        setTreeInstanceMatrices(tree, 0);
+        treeTrunkMesh.instanceMatrix.needsUpdate = true;
+        treeLeafMesh.instanceMatrix.needsUpdate = true;
+      }, 120);
       return;
     }
+    if (tree.wobbleTimeout) { clearTimeout(tree.wobbleTimeout); tree.wobbleTimeout = null; }
     tree.alive = false;
-    tree.group.visible = false;
-    setTimeout(() => { tree.alive = true; tree.group.visible = true; tree.hitsLeft = tree.maxHits; }, 15000);
+    hideTreeInstance(tree);
+    treeTrunkMesh.instanceMatrix.needsUpdate = true;
+    treeLeafMesh.instanceMatrix.needsUpdate = true;
+    setTimeout(() => {
+      tree.alive = true;
+      tree.hitsLeft = tree.maxHits;
+      setTreeInstanceMatrices(tree, 0);
+      treeTrunkMesh.instanceMatrix.needsUpdate = true;
+      treeLeafMesh.instanceMatrix.needsUpdate = true;
+    }, 15000);
   }
 
   // ---------- Grass ----------
-  // Several InstancedMeshes with different blade colors/heights/widths so the
-  // field reads as thick and lush rather than a thin, uniform lawn. Blades are
-  // biased toward loose "clumps" (a jittered scatter around random clump
-  // centers) instead of pure uniform-random placement, which is what makes a
-  // real field look uneven/lush instead of evenly sprinkled.
+  // Grass is built as a GRID OF CHUNKS, each its own small InstancedMesh,
+  // instead of one giant mesh spanning the whole map. Instancing only cuts
+  // down draw calls — it does NOT automatically hide instances that are
+  // off-screen or far away, since three.js can only show/hide an entire
+  // mesh at once. A single map-spanning mesh's "extent" covers the whole
+  // map, so it almost never gets culled and every blade gets pushed to the
+  // GPU every frame regardless of what's actually on screen — that was the
+  // real cause of the frame-rate hit, not the blade count by itself.
+  // Chunking gives each piece a correctly-sized bounding sphere so normal
+  // frustum culling can skip whole chunks that are behind/beside the
+  // camera, and updateGrassVisibility() below also hides chunks that are
+  // simply too far from the player to matter, on top of that.
+  const grassChunks = [];
+  const GRASS_VISIBLE_DIST = 240; // roughly matches the FFA map's high-setting fog distance
   function scatterGrass() {
-    const GRASS_COUNT = 16000; // was 5200 — much denser field
-    const colors = [0x4f9a4f, 0x5cae52, 0x468a42, 0x6bbf5e, 0x3d7a3a];
-    const CLUMP_COUNT = 340;
-    const clumpRadius = 3.2;
-    const clumps = [];
-    for (let i = 0; i < CLUMP_COUNT; i++) {
-      clumps.push({
-        x: (Math.random()-0.5) * (WORLD_SIZE-10),
-        z: (Math.random()-0.5) * (WORLD_SIZE-10)
-      });
-    }
+    const GRASS_COUNT = 160000; // moreee — now safe to push since it's chunked+culled
+    const colors = [0x4f9a4f, 0x5cae52, 0x468a42, 0x6bbf5e];
     // Two blade shapes (a plain thin cone + a slightly flatter/broader one)
     // mixed together so the field isn't made of one repeated silhouette.
     const bladeGeoThin = new THREE.ConeGeometry(0.05, 0.55, 4);
     const bladeGeoWide = new THREE.ConeGeometry(0.09, 0.42, 4);
     const geos = [bladeGeoThin, bladeGeoWide];
-    for (const color of colors) {
-      for (const bladeGeo of geos) {
-        const count = Math.round(GRASS_COUNT / colors.length / geos.length);
-        const bladeMat = new THREE.MeshStandardMaterial({ color });
-        const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
-        const dummy = new THREE.Object3D();
-        for (let i=0;i<count;i++){
-          // ~75% of blades cluster loosely around a random clump center for a
-          // patchy, lush look; the rest scatter freely to fill gaps evenly.
-          let x, z;
-          if (Math.random() < 0.75) {
-            const c = clumps[(Math.random()*clumps.length)|0];
-            const ang = Math.random()*Math.PI*2;
-            const rad = Math.random()*Math.random()*clumpRadius; // biased toward clump center
-            x = c.x + Math.cos(ang)*rad;
-            z = c.z + Math.sin(ang)*rad;
-          } else {
-            x = (Math.random()-0.5) * (WORLD_SIZE-10);
-            z = (Math.random()-0.5) * (WORLD_SIZE-10);
+
+    const CHUNK_SIZE = 110;
+    // Every chunk mesh is the same physical size, so they can all share one
+    // bounding sphere per blade shape (sized to comfortably contain a full
+    // chunk's worth of instances) instead of relying on InstancedMesh's
+    // default, which is just the single unscattered blade's own tiny sphere.
+    const chunkRadius = CHUNK_SIZE * 0.82;
+    for (const geo of geos) geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,0,0), chunkRadius);
+
+    const half = WORLD_SIZE / 2 - 4;
+    const chunkCols = Math.ceil((half*2) / CHUNK_SIZE);
+    const totalChunks = chunkCols * chunkCols;
+    const perChunkTotal = Math.max(20, Math.round(GRASS_COUNT / totalChunks));
+
+    for (let cx = 0; cx < chunkCols; cx++) {
+      for (let cz = 0; cz < chunkCols; cz++) {
+        const chunkCenterX = -half + (cx + 0.5) * CHUNK_SIZE;
+        const chunkCenterZ = -half + (cz + 0.5) * CHUNK_SIZE;
+        for (const color of colors) {
+          for (const bladeGeo of geos) {
+            const count = Math.round(perChunkTotal / colors.length / geos.length);
+            if (count <= 0) continue;
+            const bladeMat = new THREE.MeshStandardMaterial({ color });
+            const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
+            mesh.position.set(chunkCenterX, 0, chunkCenterZ);
+            const dummy = new THREE.Object3D();
+            for (let i=0;i<count;i++){
+              const lx = (Math.random()-0.5) * CHUNK_SIZE;
+              const lz = (Math.random()-0.5) * CHUNK_SIZE;
+              const gy = terrainHeightAt(chunkCenterX + lx, chunkCenterZ + lz);
+              dummy.position.set(lx, gy + 0.22, lz);
+              dummy.rotation.y = Math.random()*Math.PI;
+              const s = 0.65 + Math.random()*1.15;
+              dummy.scale.set(s,s,s);
+              dummy.updateMatrix();
+              mesh.setMatrixAt(i, dummy.matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            mesh.castShadow = false;
+            mesh.userData.chunkX = chunkCenterX;
+            mesh.userData.chunkZ = chunkCenterZ;
+            scene.add(mesh);
+            grassChunks.push(mesh);
           }
-          const gy = terrainHeightAt(x, z);
-          dummy.position.set(x, gy + 0.22, z);
-          dummy.rotation.y = Math.random()*Math.PI;
-          const s = 0.65 + Math.random()*1.15;
-          dummy.scale.set(s,s,s);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(i, dummy.matrix);
         }
-        mesh.castShadow = false;
-        scene.add(mesh);
       }
     }
   }
   scatterGrass();
+  // Called a few times a second (not every frame — chunks are wide enough
+  // that the player can't cross one in a single frame) to hide any chunk
+  // whose center is farther from the player than GRASS_VISIBLE_DIST. This
+  // catches the case frustum culling alone can't: a chunk technically in
+  // view but far enough away to be buried in fog anyway.
+  let grassLodTick = 0;
+  function updateGrassVisibility() {
+    grassLodTick++;
+    if (grassLodTick % 15 !== 0) return;
+    if (gameMode !== 'ffa') return; // grass chunks only exist on the FFA map
+    const px = player.pos.x, pz = player.pos.z;
+    for (const mesh of grassChunks) {
+      const dx = mesh.userData.chunkX - px, dz = mesh.userData.chunkZ - pz;
+      mesh.visible = (dx*dx + dz*dz) < GRASS_VISIBLE_DIST * GRASS_VISIBLE_DIST;
+    }
+  }
 
   // ---------- Weapon pickups (declared before houses so makeHouse can spawn them) ----------
   const pickups = [];
@@ -1936,18 +2039,38 @@
 
   // ---------- Ammo crates ----------
   const ammoCrates = [];
+  const crateGeo = new THREE.BoxGeometry(0.7, 0.5, 0.7);
+  const crateStripeGeo = new THREE.BoxGeometry(0.74, 0.1, 0.74);
   const crateMat = new THREE.MeshStandardMaterial({ color: 0xd6b23a, roughness: 0.7, metalness: 0.2 });
   const crateStripeMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7 });
+  // Two InstancedMesh (box + stripe) shared by every crate instead of ~28
+  // separate crate groups. makeAmmoCrate() just records each crate's data;
+  // buildAmmoCrateInstancedMeshes() builds the actual meshes once
+  // generateAmmoCrates() below knows the final count.
+  let crateBoxMesh = null, crateStripeMesh = null;
+  const _crateMat4 = new THREE.Matrix4();
+  const _crateQuat = new THREE.Quaternion();
+  function setAmmoCrateVisible(crate, visible) {
+    if (visible) {
+      _crateMat4.makeTranslation(crate.x, crate.gy + 0.25, crate.z);
+    } else {
+      // Same near-zero-scale trick as the trees: shrinks it to invisible
+      // and effectively un-hittable without ever touching a truly-zero
+      // (singular) matrix.
+      _crateMat4.compose(
+        new THREE.Vector3(crate.x, crate.gy - 40, crate.z),
+        _crateQuat.identity(),
+        new THREE.Vector3(0.0001, 0.0001, 0.0001)
+      );
+    }
+    crateBoxMesh.setMatrixAt(crate.index, _crateMat4);
+    crateStripeMesh.setMatrixAt(crate.index, _crateMat4);
+    crateBoxMesh.instanceMatrix.needsUpdate = true;
+    crateStripeMesh.instanceMatrix.needsUpdate = true;
+  }
   function makeAmmoCrate(x, z) {
-    const group = new THREE.Object3D();
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.7), crateMat);
-    box.position.y = 0.25; box.castShadow = true; box.receiveShadow = true;
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.1, 0.74), crateStripeMat);
-    stripe.position.y = 0.25;
-    group.add(box, stripe);
-    group.position.set(x, terrainHeightAt(x, z), z);
-    scene.add(group);
-    ammoCrates.push({ group, x, z, active: true, amount: 60 });
+    const gy = terrainHeightAt(x, z);
+    ammoCrates.push({ x, z, gy, active: true, amount: 60, index: ammoCrates.length });
   }
   function generateAmmoCrates() {
     let placed = 0, attempts = 0;
@@ -1960,16 +2083,31 @@
       placed++;
     }
   }
+  function buildAmmoCrateInstancedMeshes() {
+    const count = Math.max(1, ammoCrates.length);
+    crateBoxMesh = new THREE.InstancedMesh(crateGeo, crateMat, count);
+    crateStripeMesh = new THREE.InstancedMesh(crateStripeGeo, crateStripeMat, count);
+    crateBoxMesh.castShadow = true; crateBoxMesh.receiveShadow = true;
+    crateStripeMesh.castShadow = true;
+    // Same reasoning as the trees: crates are scattered across the whole
+    // map, so per-mesh frustum culling would otherwise judge visibility
+    // off a single unscattered crate's tiny local bounding sphere near the
+    // origin. Only ~28 crates total, so disabling culling is free.
+    crateBoxMesh.frustumCulled = false;
+    crateStripeMesh.frustumCulled = false;
+    for (const crate of ammoCrates) setAmmoCrateVisible(crate, true);
+    scene.add(crateBoxMesh, crateStripeMesh);
+  }
   function updateAmmoCratePickups() {
     for (const crate of ammoCrates) {
       if (!crate.active) continue;
       if (Math.hypot(player.pos.x - crate.x, player.pos.z - crate.z) < 1.6) {
         crate.active = false;
-        crate.group.visible = false;
+        setAmmoCrateVisible(crate, false);
         player.ammoState.secondary.reserve += crate.amount;
         if (player.primaryType) player.ammoState.primary.reserve += crate.amount;
         updateAmmoUI();
-        setTimeout(() => { crate.active = true; crate.group.visible = true; }, 20000);
+        setTimeout(() => { crate.active = true; setAmmoCrateVisible(crate, true); }, 20000);
       }
     }
   }
@@ -4699,13 +4837,14 @@
       raycaster.set(aimOrigin, dir); raycaster.far = melee.range;
       let handled = false;
       if (melee.canChopTrees) {
-        const treeMeshes = trees.filter(t=>t.alive).flatMap(t=>t.group.children);
-        const hits = raycaster.intersectObjects(treeMeshes, false);
-        if (hits.length > 0) {
-          const hit = hits[0].object;
-          const treeRef = hit.userData.treeRef;
-          if (treeRef && treeRef.alive) { chopTree(treeRef); showHitMarker(false); }
-          handled = true;
+        const hits = raycaster.intersectObjects([treeTrunkMesh, treeLeafMesh], false);
+        if (hits.length > 0 && hits[0].instanceId !== undefined) {
+          const treeRef = trees[hits[0].instanceId];
+          if (treeRef && treeRef.alive) {
+            chopTree(treeRef);
+            showHitMarker(false);
+            handled = true;
+          }
         }
       }
       if (!handled) {
@@ -7640,7 +7779,9 @@
   // ---------- World generation (order matters: houses before trees/crates) ----------
   generateHouses();
   generateTrees();
+  buildTreeInstancedMeshes();
   generateAmmoCrates();
+  buildAmmoCrateInstancedMeshes();
   generateCars();
 
   // boundary walls
@@ -8057,7 +8198,6 @@
   // anything looks up close. Checked ~10x/sec (not every frame) since
   // distances don't need to be perfectly up to the millisecond.
   const CHAR_SHADOW_RANGE_SQ = 90 * 90;
-  const TREE_SHADOW_RANGE_SQ = 120 * 120;
   let shadowLodTick = 0;
   function updateShadowLOD() {
     shadowLodTick++;
@@ -8068,12 +8208,6 @@
       const dx = c.group.position.x - camPos.x, dz = c.group.position.z - camPos.z;
       const near = (dx*dx + dz*dz) < CHAR_SHADOW_RANGE_SQ;
       for (const m of c.shadowMeshes) m.castShadow = near;
-    }
-    for (const t of trees) {
-      if (!t.alive) continue;
-      const dx = t.x - camPos.x, dz = t.z - camPos.z;
-      const near = (dx*dx + dz*dz) < TREE_SHADOW_RANGE_SQ;
-      t.group.traverse(o => { if (o.isMesh) o.castShadow = near; });
     }
   }
 
@@ -8127,6 +8261,7 @@
       updateStreetlamps(dt);
       updateEmbers(dt);
       updateShadowLOD();
+      updateGrassVisibility();
       updateCharacterAnimations(dt);
       updateBuildGhost();
       if (matchStarted) updateMinimap();
