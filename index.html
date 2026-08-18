@@ -776,7 +776,7 @@
 
   <div class="overlayScreen" id="zombieIntroScreen" style="display:none;">
     <h1 style="color:#8fe36b;">ZOMBIE MODE</h1>
-    <p>A smaller stretch of the island, overrun. Zombies claw up out of the ground and always know exactly where you are &mdash; they will sprint straight at you. Survive wave after wave, each one bigger than the last. Clear a wave, or skip it to bring on more without losing the ones still standing.</p>
+    <p>A ruined city scorched into a volcanic wasteland, far from the island &mdash; lava-cracked streets, burning fire vents, and drifting embers. Zombies claw up out of the ground and always know exactly where you are &mdash; they will sprint straight at you. Survive wave after wave, each one bigger than the last. Clear a wave, or skip it to bring on more without losing the ones still standing.</p>
     <button class="bigBtn" id="startZombieBtn" style="background:linear-gradient(180deg,#5fae3d,#2f6b1f);">DROP IN</button>
     <button class="bigBtn" id="backToModeBtn" style="background:linear-gradient(180deg,#666,#333); margin-top:10px;">BACK</button>
   </div>
@@ -1357,30 +1357,59 @@
   }
 
   // ---------- Grass ----------
-  // Two InstancedMeshes with slightly different blade colors/sizes so the
-  // field reads as lusher and less uniform than a single flat-colored patch.
+  // Several InstancedMeshes with different blade colors/heights/widths so the
+  // field reads as thick and lush rather than a thin, uniform lawn. Blades are
+  // biased toward loose "clumps" (a jittered scatter around random clump
+  // centers) instead of pure uniform-random placement, which is what makes a
+  // real field look uneven/lush instead of evenly sprinkled.
   function scatterGrass() {
-    const GRASS_COUNT = 5200;
-    const colors = [0x4f9a4f, 0x5cae52, 0x468a42];
-    const bladeGeo = new THREE.ConeGeometry(0.06, 0.5, 4);
+    const GRASS_COUNT = 16000; // was 5200 — much denser field
+    const colors = [0x4f9a4f, 0x5cae52, 0x468a42, 0x6bbf5e, 0x3d7a3a];
+    const CLUMP_COUNT = 340;
+    const clumpRadius = 3.2;
+    const clumps = [];
+    for (let i = 0; i < CLUMP_COUNT; i++) {
+      clumps.push({
+        x: (Math.random()-0.5) * (WORLD_SIZE-10),
+        z: (Math.random()-0.5) * (WORLD_SIZE-10)
+      });
+    }
+    // Two blade shapes (a plain thin cone + a slightly flatter/broader one)
+    // mixed together so the field isn't made of one repeated silhouette.
+    const bladeGeoThin = new THREE.ConeGeometry(0.05, 0.55, 4);
+    const bladeGeoWide = new THREE.ConeGeometry(0.09, 0.42, 4);
+    const geos = [bladeGeoThin, bladeGeoWide];
     for (const color of colors) {
-      const count = Math.round(GRASS_COUNT / colors.length);
-      const bladeMat = new THREE.MeshStandardMaterial({ color });
-      const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
-      const dummy = new THREE.Object3D();
-      for (let i=0;i<count;i++){
-        const x = (Math.random()-0.5) * (WORLD_SIZE-10);
-        const z = (Math.random()-0.5) * (WORLD_SIZE-10);
-        const gy = terrainHeightAt(x, z);
-        dummy.position.set(x, gy + 0.22, z);
-        dummy.rotation.y = Math.random()*Math.PI;
-        const s = 0.7 + Math.random()*0.8;
-        dummy.scale.set(s,s,s);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
+      for (const bladeGeo of geos) {
+        const count = Math.round(GRASS_COUNT / colors.length / geos.length);
+        const bladeMat = new THREE.MeshStandardMaterial({ color });
+        const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
+        const dummy = new THREE.Object3D();
+        for (let i=0;i<count;i++){
+          // ~75% of blades cluster loosely around a random clump center for a
+          // patchy, lush look; the rest scatter freely to fill gaps evenly.
+          let x, z;
+          if (Math.random() < 0.75) {
+            const c = clumps[(Math.random()*clumps.length)|0];
+            const ang = Math.random()*Math.PI*2;
+            const rad = Math.random()*Math.random()*clumpRadius; // biased toward clump center
+            x = c.x + Math.cos(ang)*rad;
+            z = c.z + Math.sin(ang)*rad;
+          } else {
+            x = (Math.random()-0.5) * (WORLD_SIZE-10);
+            z = (Math.random()-0.5) * (WORLD_SIZE-10);
+          }
+          const gy = terrainHeightAt(x, z);
+          dummy.position.set(x, gy + 0.22, z);
+          dummy.rotation.y = Math.random()*Math.PI;
+          const s = 0.65 + Math.random()*1.15;
+          dummy.scale.set(s,s,s);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(i, dummy.matrix);
+        }
+        mesh.castShadow = false;
+        scene.add(mesh);
       }
-      mesh.castShadow = false;
-      scene.add(mesh);
     }
   }
   scatterGrass();
@@ -3437,27 +3466,37 @@
     if (gameMode === 'ffa' && aliveBotCount <= 0 && player.alive && !matchWon) playerWin();
   }
 
-  // ---------- Zombie Mode: abandoned city map ----------
+  // ---------- Zombie Mode: fiery volcanic wasteland map ----------
   function activeEnemies() { return gameMode === 'zombie' ? zombies : bots; }
 
+  // Charred volcanic rock ground, veined with glowing lava cracks instead of
+  // plain grey asphalt cracks.
   function makeCityGroundTexture() {
     const size = 512;
     const cnv = document.createElement('canvas'); cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
-    ctx.fillStyle = '#23262b'; ctx.fillRect(0,0,size,size);
-    for (let i=0;i<2200;i++){
-      const v = 15 + Math.random()*25;
-      ctx.fillStyle = `rgba(${v},${v+2},${v+4},0.55)`;
+    ctx.fillStyle = '#1c1310'; ctx.fillRect(0,0,size,size);
+    for (let i=0;i<2400;i++){
+      const v = 12 + Math.random()*22;
+      ctx.fillStyle = `rgba(${v+8},${v},${v-2},0.55)`;
       ctx.fillRect(Math.random()*size, Math.random()*size, 2, 2);
     }
-    // cracks
-    ctx.strokeStyle = 'rgba(5,5,6,0.5)';
-    for (let i=0;i<26;i++){
-      ctx.beginPath();
+    // glowing lava cracks
+    for (let i=0;i<30;i++){
       let x = Math.random()*size, y = Math.random()*size;
-      ctx.moveTo(x,y);
-      for (let s=0;s<5;s++){ x += (Math.random()-0.5)*60; y += (Math.random()-0.5)*60; ctx.lineTo(x,y); }
-      ctx.lineWidth = 1 + Math.random()*1.5;
+      const segs = [];
+      segs.push([x,y]);
+      for (let s=0;s<6;s++){ x += (Math.random()-0.5)*60; y += (Math.random()-0.5)*60; segs.push([x,y]); }
+      // soft outer glow first, then a bright hot core on top
+      ctx.strokeStyle = 'rgba(255,90,20,0.35)';
+      ctx.lineWidth = 5 + Math.random()*3;
+      ctx.beginPath(); ctx.moveTo(segs[0][0], segs[0][1]);
+      for (let s=1;s<segs.length;s++) ctx.lineTo(segs[s][0], segs[s][1]);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,${170+Math.random()*60|0},60,0.95)`;
+      ctx.lineWidth = 1.2 + Math.random()*1.3;
+      ctx.beginPath(); ctx.moveTo(segs[0][0], segs[0][1]);
+      for (let s=1;s<segs.length;s++) ctx.lineTo(segs[s][0], segs[s][1]);
       ctx.stroke();
     }
     const tex = new THREE.CanvasTexture(cnv);
@@ -3466,26 +3505,37 @@
     return tex;
   }
 
+  // Building facades: instead of windows, jagged glowing lava veins running
+  // through cracked charred rock.
   function makeCityWindowTexture() {
     const size = 256;
     const cnv = document.createElement('canvas'); cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
-    ctx.fillStyle = '#1a1c20'; ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = '#141010'; ctx.fillRect(0,0,size,size);
     const cell = 32;
     for (let y=8; y<size-8; y+=cell) {
       for (let x=8; x<size-8; x+=cell) {
-        const broken = Math.random() < 0.35;
-        const lit = !broken && Math.random() < 0.12;
-        ctx.fillStyle = lit ? 'rgba(255,196,110,0.9)' : (broken ? 'rgba(8,8,9,0.9)' : 'rgba(60,68,78,0.55)');
+        const dark = Math.random() < 0.5;
+        const hot = !dark && Math.random() < 0.35;
+        ctx.fillStyle = hot ? 'rgba(255,140,40,0.95)' : (dark ? 'rgba(10,7,6,0.9)' : 'rgba(70,40,30,0.5)');
         ctx.fillRect(x, y, cell-10, cell-14);
       }
+    }
+    // a few extra thin glowing crack veins running across the facade
+    for (let i=0;i<8;i++){
+      let x = Math.random()*size, y = 0;
+      ctx.strokeStyle = 'rgba(255,120,40,0.75)';
+      ctx.lineWidth = 1 + Math.random();
+      ctx.beginPath(); ctx.moveTo(x,y);
+      for (let s=0;s<6;s++){ x += (Math.random()-0.5)*30; y += size/6; ctx.lineTo(x,y); }
+      ctx.stroke();
     }
     const tex = new THREE.CanvasTexture(cnv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     return tex;
   }
   const cityWindowBaseTex = makeCityWindowTexture();
-  const cityBuildingColors = [0x33342f, 0x2b2d2f, 0x393530, 0x2f302c, 0x363330];
+  const cityBuildingColors = [0x2c1c14, 0x241512, 0x2a1a13, 0x231411, 0x281812];
 
   function makeCityBuilding(lx, lz, w, d, h) {
     const x = CITY_CX + lx, z = CITY_CZ + lz;
@@ -3494,7 +3544,7 @@
     tex.repeat.set(Math.max(1, Math.round(w/2.4)), Math.max(1, Math.round(h/3)));
     const mat = new THREE.MeshStandardMaterial({
       color: cityBuildingColors[Math.floor(Math.random()*cityBuildingColors.length)],
-      map: tex, roughness: 0.95
+      map: tex, roughness: 0.95, emissive: 0x4a1a06, emissiveIntensity: 0.25
     });
     const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     box.position.set(x, h/2, z);
@@ -3503,8 +3553,8 @@
     collisionMeshes.push(box);
     addSolid(x, z, w/2, d/2, 0, h);
 
-    // jagged rooftop debris for a damaged skyline silhouette
-    const debrisMat = new THREE.MeshStandardMaterial({ color: 0x201f1d, roughness: 1 });
+    // jagged, scorched rooftop debris for a damaged, molten skyline silhouette
+    const debrisMat = new THREE.MeshStandardMaterial({ color: 0x120c0a, roughness: 1, emissive: 0x3a1206, emissiveIntensity: 0.3 });
     const debrisCount = 1 + Math.floor(Math.random()*3);
     for (let i=0;i<debrisCount;i++) {
       const dw = 0.6 + Math.random()*1.4, dh = 0.4 + Math.random()*1.6, dd = 0.6 + Math.random()*1.4;
@@ -3518,42 +3568,46 @@
   }
 
   const cityLamps = [];
-  // Pole/arm/lamp shapes are identical for every streetlamp, so the geometry
+  // Pole/arm/lamp shapes are identical for every fire vent, so the geometry
   // is shared. poleMat is also shared since it never changes. lampMat is kept
-  // PER-LAMP (not shared) because each lamp's glow flickers independently -
-  // sharing that material would make every lamp flicker in sync.
-  const lampPoleGeo = new THREE.CylinderGeometry(0.06, 0.08, 4.2, 6);
-  const lampArmGeo = new THREE.BoxGeometry(0.7, 0.06, 0.06);
-  const lampBulbGeo = new THREE.SphereGeometry(0.13, 8, 8);
-  const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.7, metalness: 0.4 });
+  // PER-VENT (not shared) because each flame flickers independently -
+  // sharing that material would make every flame flicker in sync.
+  const lampPoleGeo = new THREE.CylinderGeometry(0.09, 0.16, 1.1, 7);
+  const lampArmGeo = new THREE.ConeGeometry(0.16, 0.55, 8);
+  const lampBulbGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x1c1310, roughness: 0.85 });
+  // A ground-level fire vent / brazier instead of a hanging streetlamp — a
+  // squat charred rock stack with a burning flame jetting out the top.
   function makeStreetlamp(lx, lz) {
     const x = CITY_CX + lx, z = CITY_CZ + lz;
     const group = new THREE.Object3D();
     const pole = new THREE.Mesh(lampPoleGeo, lampPoleMat);
-    pole.position.y = 2.1; pole.castShadow = true;
+    pole.position.y = 0.55; pole.castShadow = true;
     group.add(pole);
-    const arm = new THREE.Mesh(lampArmGeo, lampPoleMat);
-    arm.position.set(0.35, 4.15, 0);
-    group.add(arm);
-    const lampMat = new THREE.MeshStandardMaterial({ color: 0xffcf7a, emissive: 0xffaa33, emissiveIntensity: 1.2 });
-    const lamp = new THREE.Mesh(lampBulbGeo, lampMat);
-    lamp.position.set(0.68, 4.05, 0);
-    group.add(lamp);
+    const lampMat = new THREE.MeshStandardMaterial({ color: 0xffcf7a, emissive: 0xff7a1a, emissiveIntensity: 1.4 });
+    const flame = new THREE.Mesh(lampArmGeo, lampMat);
+    flame.position.set(0, 1.35, 0);
+    group.add(flame);
+    const ember = new THREE.Mesh(lampBulbGeo, lampMat);
+    ember.position.set(0, 1.1, 0);
+    ember.scale.set(0.8, 0.6, 0.8);
+    group.add(ember);
     group.position.set(x, 0, z);
     scene.add(group);
 
-    const light = new THREE.PointLight(0xffaa55, 1.1, 14, 2);
-    light.position.set(x + 0.68, 4.05, z);
+    const light = new THREE.PointLight(0xff8a33, 1.6, 15, 2);
+    light.position.set(x, 1.3, z);
     scene.add(light);
 
-    cityLamps.push({ light, lampMat, base: 1.1 });
+    cityLamps.push({ light, lampMat, flame, base: 1.6 });
   }
 
+  // Burnt-out, scorched car wreck instead of a plain husk.
   function makeCarHusk(lx, lz, rotY) {
     const x = CITY_CX + lx, z = CITY_CZ + lz;
     const group = new THREE.Object3D();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a2018, roughness: 1 });
-    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x241511, roughness: 1 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c0f0a, roughness: 1, emissive: 0x3a1206, emissiveIntensity: 0.2 });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x140a07, roughness: 1 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.6, 4.0), bodyMat);
     body.position.y = 0.45; body.castShadow = true; body.receiveShadow = true;
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 2.0), cabinMat);
@@ -3569,13 +3623,16 @@
     addSolid(x, z, hw, hd, 0, 1.2);
   }
 
+  // Blackened volcanic rock / obsidian rubble, with a couple of chunks
+  // glowing faintly like cooling lava rock.
   function makeRubblePile(lx, lz) {
     const x = CITY_CX + lx, z = CITY_CZ + lz;
-    const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28, roughness: 1 });
+    const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1 });
+    const hotRubbleMat = new THREE.MeshStandardMaterial({ color: 0x2a1108, roughness: 0.9, emissive: 0xaa3810, emissiveIntensity: 0.6 });
     const n = 3 + Math.floor(Math.random()*3);
     for (let i=0;i<n;i++) {
       const s = 0.3 + Math.random()*0.6;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(s, s*0.7, s), rubbleMat);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(s, s*0.7, s), Math.random() < 0.25 ? hotRubbleMat : rubbleMat);
       b.position.set(x + (Math.random()-0.5)*1.6, s*0.35, z + (Math.random()-0.5)*1.6);
       b.rotation.y = Math.random()*Math.PI;
       b.castShadow = true; b.receiveShadow = true;
@@ -3587,28 +3644,63 @@
     if (cityLamps.length === 0) return;
     const t = performance.now() * 0.001;
     for (const l of cityLamps) {
-      let mult = 0.85 + Math.sin(t*3 + l.base*10) * 0.1;
-      if (Math.random() < 0.01) mult *= 0.25; // occasional flicker-out
+      let mult = 0.8 + Math.sin(t*5 + l.base*10) * 0.18 + Math.random()*0.1;
+      if (Math.random() < 0.015) mult *= 0.4; // occasional flame dip
       l.light.intensity = l.base * mult;
-      l.lampMat.emissiveIntensity = 1.0 * mult;
+      l.lampMat.emissiveIntensity = 1.4 * mult;
+      if (l.flame) l.flame.scale.set(1, 0.85 + mult*0.3, 1);
     }
+  }
+
+  // ---------- Floating embers ----------
+  // A field of small glowing points drifting slowly upward and resetting
+  // near the ground once they rise too high, for a hazy, hot-air atmosphere
+  // over the volcanic map. Pure visual flourish (no collision).
+  let emberPoints = null, emberVelY = null;
+  function spawnEmbers() {
+    const COUNT = 500;
+    const positions = new Float32Array(COUNT * 3);
+    emberVelY = new Float32Array(COUNT);
+    for (let i = 0; i < COUNT; i++) {
+      positions[i*3] = CITY_CX + (Math.random()-0.5) * CITY_SIZE;
+      positions[i*3+1] = Math.random() * 22;
+      positions[i*3+2] = CITY_CZ + (Math.random()-0.5) * CITY_SIZE;
+      emberVelY[i] = 0.6 + Math.random()*1.3;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xff9a3d, size: 0.22, transparent: true, opacity: 0.85, depthWrite: false, sizeAttenuation: true });
+    emberPoints = new THREE.Points(geo, mat);
+    scene.add(emberPoints);
+  }
+  function updateEmbers(dt) {
+    if (!emberPoints || gameMode !== 'zombie') return;
+    const pos = emberPoints.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      let y = pos.getY(i) + emberVelY[i] * dt;
+      if (y > 22) y = 0;
+      pos.setY(i, y);
+      // gentle horizontal drift
+      pos.setX(i, pos.getX(i) + Math.sin(performance.now()*0.0003 + i) * 0.01);
+    }
+    pos.needsUpdate = true;
   }
 
   function buildZombieCity() {
     if (cityBuilt) return;
     cityBuilt = true;
 
-    // dark cracked-asphalt ground, separate from and far away from the FFA map
+    // scorched volcanic-rock ground, separate from and far away from the FFA map
     const cityGround = new THREE.Mesh(
       new THREE.PlaneGeometry(CITY_SIZE, CITY_SIZE),
-      new THREE.MeshStandardMaterial({ map: makeCityGroundTexture(), roughness: 1 })
+      new THREE.MeshStandardMaterial({ map: makeCityGroundTexture(), roughness: 1, emissive: 0x2a0d02, emissiveIntensity: 0.35 })
     );
     cityGround.rotation.x = -Math.PI/2;
     cityGround.position.set(CITY_CX, 0, CITY_CZ);
     cityGround.receiveShadow = true;
     scene.add(cityGround);
 
-    // grid of abandoned tower blocks with streets between them; the center
+    // grid of scorched tower ruins with streets between them; the center
     // cell is left open as a spawn plaza, and a few random cells are skipped
     // for rubble-filled gaps so the grid doesn't feel too uniform
     const spacing = 24, cells = 5, half = Math.floor(cells/2);
@@ -3623,7 +3715,7 @@
       }
     }
 
-    // streetlamps along the grid lines
+    // fire vents along the grid lines
     for (let i = -half; i <= half; i++) {
       makeStreetlamp(i*spacing + 6, -half*spacing - 8);
       makeStreetlamp(i*spacing + 6, half*spacing + 8);
@@ -3631,7 +3723,7 @@
     makeStreetlamp(6, 6);
     makeStreetlamp(-10, -6);
 
-    // wrecked cars scattered along the streets for cover and atmosphere
+    // burnt-out cars scattered along the streets for cover and atmosphere
     for (let k=0;k<10;k++) {
       const lx = (Math.random()-0.5) * (CITY_HALF*2 - 20);
       const lz = (Math.random()-0.5) * (CITY_HALF*2 - 20);
@@ -3644,10 +3736,10 @@
       makeRubblePile(lx, lz);
     }
 
-    // rubble/barricade boundary wall around the city
+    // scorched-rock/lava-striped boundary wall around the map
     const h = 3.4;
-    const barricadeMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38, roughness: 1 });
-    const stripeMat = new THREE.MeshStandardMaterial({ color: 0x7a5a1f, roughness: 0.9 });
+    const barricadeMat = new THREE.MeshStandardMaterial({ color: 0x241511, roughness: 1 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xff7a1f, emissive: 0xff5a10, emissiveIntensity: 0.9, roughness: 0.6 });
     for (const sign of [-1,1]) {
       const g1 = new THREE.Mesh(new THREE.BoxGeometry(CITY_HALF*2, h, 1), barricadeMat);
       g1.position.set(CITY_CX, h/2, CITY_CZ + sign*CITY_HALF); g1.castShadow = true; scene.add(g1);
@@ -3663,6 +3755,8 @@
       addSolid(CITY_CX + sign*CITY_HALF, CITY_CZ, 0.5, CITY_HALF, 0, h);
       collisionMeshes.push(g2);
     }
+
+    spawnEmbers();
   }
 
   let zombieIdCounter = 0;
@@ -4098,18 +4192,18 @@
     for (const b of bots) { b.alive = false; b.falling = false; if (b.chuteGroup) b.chuteGroup.visible = false; b.group.visible = false; }
     aliveBotCount = 0;
 
-    // Swap the whole scene mood over to a dark, abandoned city instead of
-    // the bright green FFA map. The city itself lives far away in world
-    // space, so movement bounds and the sun's shadow target both need to
-    // shift there too.
-    scene.background = new THREE.Color(0x05070b);
-    scene.fog = new THREE.Fog(0x05070b, 16, 100);
+    // Swap the whole scene mood over to a hazy, fiery volcanic wasteland
+    // instead of the bright green FFA map. The map itself lives far away in
+    // world space, so movement bounds and the sun's shadow target both need
+    // to shift there too.
+    scene.background = new THREE.Color(0x1a0805);
+    scene.fog = new THREE.Fog(0x2a0f06, 16, 100);
     applyRenderDistance(settings.renderDistLevel);
-    hemiLight.color.setHex(0x26344a);
-    hemiLight.groundColor.setHex(0x08080a);
-    hemiLight.intensity = 0.4;
-    sun.color.setHex(0x8fa8c8);
-    sun.intensity = 0.4;
+    hemiLight.color.setHex(0xff8a44);
+    hemiLight.groundColor.setHex(0x1a0704);
+    hemiLight.intensity = 0.55;
+    sun.color.setHex(0xff6a2e);
+    sun.intensity = 0.55;
     sun.position.set(CITY_CX + 80, 120, CITY_CZ + 40);
     sun.target.position.set(CITY_CX, 0, CITY_CZ);
     boundCenterX = CITY_CX; boundCenterZ = CITY_CZ; boundHalf = CITY_HALF - 2;
@@ -8031,6 +8125,7 @@
       updateWeaponAnim(dt);
       updateFX(dt);
       updateStreetlamps(dt);
+      updateEmbers(dt);
       updateShadowLOD();
       updateCharacterAnimations(dt);
       updateBuildGhost();
