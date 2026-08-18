@@ -807,6 +807,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <script>
 (function(){
   "use strict";
@@ -1750,22 +1751,26 @@
   // it. axis 'x' is for walls whose long dimension runs along local x (e.g.
   // the back wall); axis 'z' is for walls running along local z (the side
   // walls) — same idea, just built with the box dimensions swapped.
-  function buildWallWithGap(axis, wallLen, wallH, wt, gapLen, gapH, gapY) {
+  // place(longCenter, yCenter) maps this piece's local (long-axis, height)
+  // position to its final x/y/z within the floor group, so the geometry can
+  // be translated and merged immediately instead of living as its own mesh.
+  function buildWallWithGap(axis, wallLen, wallH, wt, gapLen, gapH, gapY, place) {
     const sideLen = wallLen/2 - gapLen/2;
     const bottomH = Math.max(0.05, gapY - gapH/2);
     const topH = Math.max(0.05, wallH - (gapY + gapH/2));
-    const pieces = [];
+    const geos = [];
     function mk(size, height, longCenter, yCenter) {
+      // flat box, default 1x1x1 segments — no interior subdivisions needed
       const geo = axis === 'x' ? new THREE.BoxGeometry(size, height, wt) : new THREE.BoxGeometry(wt, height, size);
-      const mesh = new THREE.Mesh(geo, wallMat);
-      mesh.castShadow = true; mesh.receiveShadow = true;
-      pieces.push({ mesh, longCenter, yCenter });
+      const pos = place(longCenter, yCenter);
+      geo.translate(pos.x, pos.y, pos.z);
+      geos.push(geo);
     }
     mk(sideLen, wallH, -(wallLen/2 - sideLen/2), wallH/2); // near side piece
     mk(sideLen, wallH, (wallLen/2 - sideLen/2), wallH/2);  // far side piece
     mk(gapLen, bottomH, 0, bottomH/2);                     // under the window
     mk(gapLen, topH, 0, gapY + gapH/2 + topH/2);           // above the window
-    return pieces;
+    return geos;
   }
 
   function makeHouse(cx, cz, w, d, numFloors, rotY) {
@@ -1812,41 +1817,31 @@
       // window, so an intact window's glass is the only thing filling it —
       // once broken, the opening is genuinely open.
       const winH = 1.7, winY = wallH*0.58;
+      const wallGeos = [];
       const backWinLen = Math.min(2.4, w*0.3);
-      const backPieces = buildWallWithGap('x', w, wallH, wt, backWinLen, winH, winY);
-      for (const p of backPieces) {
-        p.mesh.position.set(p.longCenter, baseY + p.yCenter, -d/2);
-        group.add(p.mesh);
-        p.mesh.userData.cheatHouse = house;
-        collisionMeshes.push(p.mesh);
-        house.collisionMeshes.push(p.mesh);
-      }
+      wallGeos.push(...buildWallWithGap('x', w, wallH, wt, backWinLen, winH, winY,
+        (longCenter, yCenter) => ({ x: longCenter, y: baseY + yCenter, z: -d/2 })));
       const sideWinLen = Math.min(2.4, d*0.3);
-      const leftPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
-      for (const p of leftPieces) {
-        p.mesh.position.set(-w/2, baseY + p.yCenter, p.longCenter);
-        group.add(p.mesh);
-        p.mesh.userData.cheatHouse = house;
-        collisionMeshes.push(p.mesh);
-        house.collisionMeshes.push(p.mesh);
-      }
-      const rightPieces = buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY);
-      for (const p of rightPieces) {
-        p.mesh.position.set(w/2, baseY + p.yCenter, p.longCenter);
-        group.add(p.mesh);
-        p.mesh.userData.cheatHouse = house;
-        collisionMeshes.push(p.mesh);
-        house.collisionMeshes.push(p.mesh);
-      }
-      const frontL = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
-      frontL.position.set(-(doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontL.castShadow = true; frontL.receiveShadow = true;
-      group.add(frontL);
-      const frontR = new THREE.Mesh(new THREE.BoxGeometry(sideW, wallH, wt), wallMat);
-      frontR.position.set((doorWidth/2 + sideW/2), baseY + wallH/2, d/2); frontR.castShadow = true; frontR.receiveShadow = true;
-      group.add(frontR);
-      frontL.userData.cheatHouse = house; frontR.userData.cheatHouse = house;
-      collisionMeshes.push(frontL, frontR);
-      house.collisionMeshes.push(frontL, frontR);
+      wallGeos.push(...buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY,
+        (longCenter, yCenter) => ({ x: -w/2, y: baseY + yCenter, z: longCenter })));
+      wallGeos.push(...buildWallWithGap('z', d, wallH, wt, sideWinLen, winH, winY,
+        (longCenter, yCenter) => ({ x: w/2, y: baseY + yCenter, z: longCenter })));
+      const frontLGeo = new THREE.BoxGeometry(sideW, wallH, wt);
+      frontLGeo.translate(-(doorWidth/2 + sideW/2), baseY + wallH/2, d/2);
+      wallGeos.push(frontLGeo);
+      const frontRGeo = new THREE.BoxGeometry(sideW, wallH, wt);
+      frontRGeo.translate((doorWidth/2 + sideW/2), baseY + wallH/2, d/2);
+      wallGeos.push(frontRGeo);
+
+      // One merged mesh for the whole floor's walls instead of ~14 separate
+      // ones smushed edge-to-edge — same visuals, far fewer draw calls.
+      const mergedWallGeo = THREE.BufferGeometryUtils.mergeBufferGeometries(wallGeos);
+      const wallMesh = new THREE.Mesh(mergedWallGeo, wallMat);
+      wallMesh.castShadow = true; wallMesh.receiveShadow = true;
+      wallMesh.userData.cheatHouse = house;
+      group.add(wallMesh);
+      collisionMeshes.push(wallMesh);
+      house.collisionMeshes.push(wallMesh);
 
 
       // the actual window panes that fill each wall's gap
@@ -5785,6 +5780,7 @@
   const mctx = minimapCanvas.getContext('2d');
   let MM_SIZE = 150, MM_CENTER = MM_SIZE / 2;
   let minimapExpanded = false;
+  let mmFrameCounter = 0; // throttles minimap redraws to ~10fps (every 3rd frame) — a small canvas doesn't need per-frame updates
   function setMinimapExpanded(v) {
     minimapExpanded = v;
     const wrap = document.getElementById('minimapWrap');
@@ -8264,7 +8260,7 @@
       updateGrassVisibility();
       updateCharacterAnimations(dt);
       updateBuildGhost();
-      if (matchStarted) updateMinimap();
+      if (matchStarted && (++mmFrameCounter % 3 === 0)) updateMinimap();
 
       renderer.render(scene, camera);
     } catch (err) {
