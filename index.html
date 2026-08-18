@@ -832,12 +832,31 @@
   }
   window.addEventListener('orientationchange', () => setTimeout(syncViewportHeight, 100));
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // iPadOS Safari reports a desktop-Mac-style user agent by default, so the
+  // regex alone misses iPads — catch it via multi-touch support instead,
+  // which real Macs don't have. This has to run before the renderer is
+  // created so the mobile-tier quality settings below actually apply to
+  // iPads instead of silently falling through to desktop settings.
+  const isMobileOrTablet = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || ('ontouchstart' in window && window.innerWidth < 1000)
+    || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform || navigator.userAgent));
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    // Antialias is largely redundant once pixelRatio supersamples above 1x,
+    // and on mobile GPUs (tile-based, bandwidth-limited) MSAA is one of the
+    // more expensive toggles per pixel — skip it there and lean on the
+    // pixel-ratio supersampling instead.
+    antialias: !isMobileOrTablet
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileOrTablet ? 1.5 : 2));
   const initialViewportH = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
   renderer.setSize(window.innerWidth, initialViewportH);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCFSoftShadowMap's blur kernel is one of the costliest per-pixel shadow
+  // options on mobile tile-based GPUs; PCFShadowMap looks close enough at
+  // the shadow map size and distances this game uses, for a real fps win.
+  renderer.shadowMap.type = isMobileOrTablet ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x8fc6f0);
@@ -855,7 +874,7 @@
     renderer.setSize(window.innerWidth, h);
   });
 
-  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1000);
+  const isMobile = isMobileOrTablet;
   document.getElementById('instructions').textContent = isMobile
     ? "Left=Move | Drag=Look | FIRE=Shoot | RELOAD=Reload | SCOPE=Aim | Slots=Switch | Bag=Inventory"
     : "WASD=Move | Mouse=Look | Click=Attack/Shoot | RightClick=Scope | Ctrl/C=Crouch | R=Reload | 1/2/3=Weapon | P=View | Tab=Inventory";
@@ -886,7 +905,7 @@
   const sun = new THREE.DirectionalLight(0xfff2d8, 1.15);
   sun.position.set(80, 120, 40);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(isMobileOrTablet ? 1024 : 2048, isMobileOrTablet ? 1024 : 2048);
   sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
   sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
   sun.shadow.camera.far = 300;
