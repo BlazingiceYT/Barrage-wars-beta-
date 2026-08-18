@@ -149,7 +149,11 @@ Upgraded inventory slots
 **Update0.53** - *Commited by BlazingiceYT on 14 Aug 2026*
 Added shield
 
-**Update0.54** - *Commited by BlazingiceYT on 14 Aug 2026*
+**Update0.54** - *Commited by BlazingiceYT on 17 Aug 2026*
 Added laser and smg
 
+**Update0.55** - *Commited by BlazingiceYT on 18 Aug 2026*
+Added new map for zombie mode
 
+**Optimization.56** - *Commited by BlazingiceYT on 18 Aug 2026*
+Higher fps
