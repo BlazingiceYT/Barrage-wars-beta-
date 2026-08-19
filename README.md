@@ -25,6 +25,8 @@ Added home screen and zombie mode
 **Update 0.16** — *Committed by BlazingiceYT on 6 Aug 2026*
 Game now loads actual 3d models
 
+
+
 **Update 0.17** — *Committed by BlazingiceYT on 6 Aug 2026*
 Added customizable button layout via the settings menu.
 
@@ -144,5 +146,9 @@ Added new map for zombie mode
 **Optimization.56** - *Commited by BlazingiceYT on 18 Aug 2026*
 Used instnaced mesh more for higher fps
 
-**Optimization.56** - *Commited by BlazingiceYT on 18 Aug 2026*
+**Optimization.57 - *Commited by BlazingiceYT on 18 Aug 2026*
 Fixed game thinking that ur on mac if ur on ipad, now deletes everything between games so ur phone dont go boom
+
+**Update0.55** - *Commited by BlazingiceYT on 18 Aug 2026*
+ai
+
