@@ -2571,7 +2571,7 @@
     minigun: { dmg: [5, 9],   cooldown: [0.13, 0.26] },
     sniper:  { dmg: [42, 68], cooldown: [1.4, 2.1] },
   };
-  function equipBotWeapon(bot, type) {
+  function setBotGunMesh(bot, type) {
     if (bot.gunMesh) {
       bot.wRig.remove(bot.gunMesh);
       disposeMeshGeometriesOnly(bot.gunMesh); // materials (matMidShared etc.) are shared — only the box geometries are this build's own
@@ -2580,13 +2580,40 @@
     built.group.rotation.y = Math.PI/2;
     bot.wRig.add(built.group);
     bot.gunMesh = built.group;
+  }
+  function equipBotWeapon(bot, type) {
+    setBotGunMesh(bot, type);
     bot.weaponType = type;
     if (type === 'pistol') {
       bot.ammo = { mag: Infinity, reserve: Infinity };
     } else {
       const def = WEAPON_DEFS[type];
       bot.ammo = { mag: def.maxMag, reserve: def.maxMag * 2 };
+      bot.primaryType = type;
+      bot.primaryAmmo = bot.ammo; // same object reference — kept in sync automatically while the primary is equipped
     }
+  }
+  // Tactical swap between the bot's tracked primary and its always-available
+  // pistol, based on target distance (see updateBotWeaponChoice). Unlike
+  // equipBotWeapon this never resets ammo — it hands off to whichever ammo
+  // pool the target weapon already had.
+  function switchBotActiveWeapon(bot, type) {
+    setBotGunMesh(bot, type);
+    if (bot.weaponType === bot.primaryType) bot.primaryAmmo = bot.ammo; // stash the primary's current ammo before leaving it
+    bot.weaponType = type;
+    bot.ammo = type === 'pistol' ? { mag: Infinity, reserve: Infinity } : bot.primaryAmmo;
+  }
+  // Bots with a close-range-only primary (shotgun/flamethrower) or a
+  // long-range-only one (sniper) swap to the pistol outside their weapon's
+  // comfort zone instead of plinking uselessly, then swap back once the
+  // range suits the primary again.
+  const BOT_CLOSE_RANGE_ONLY = { shotgun: true, flamethrower: true };
+  const BOT_LONG_RANGE_ONLY = { sniper: true };
+  function updateBotWeaponChoice(bot, dist) {
+    if (!bot.primaryType || bot.primaryAmmo.mag + bot.primaryAmmo.reserve <= 0) return;
+    const wantsPistol = (BOT_CLOSE_RANGE_ONLY[bot.primaryType] && dist > 16) || (BOT_LONG_RANGE_ONLY[bot.primaryType] && dist < 9);
+    if (wantsPistol && bot.weaponType !== 'pistol') switchBotActiveWeapon(bot, 'pistol');
+    else if (!wantsPistol && bot.weaponType !== bot.primaryType) switchBotActiveWeapon(bot, bot.primaryType);
   }
 
   // simple gun model reused for AI bots (kept distinct from player's rig so bot
@@ -3464,10 +3491,11 @@
   // Elite: much more HP and a far gentler accuracy falloff with range, so they
   // stay dangerous at distance instead of becoming harmless once you back off.
   const BOT_TIERS = {
-    normal:     { health: 60,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null },
-    aggressive: { health: 85,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522 },
-    elite:      { health: 150, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f }
+    normal:     { health: 60,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null,       reaction: [0.45, 0.85] },
+    aggressive: { health: 85,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522,   reaction: [0.25, 0.5]  },
+    elite:      { health: 150, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f,   reaction: [0.08, 0.22] }
   };
+  const SQUAD_SIZE = 4;
   function pickBotTier() {
     const r = Math.random();
     if (r < 0.05) return 'elite';
@@ -3528,9 +3556,12 @@
     if (tier.scale !== 1.0) group.scale.setScalar(tier.scale);
     scene.add(group);
 
+    const squadId = Math.floor(idx / SQUAD_SIZE);
+    const squadSlot = idx % SQUAD_SIZE;
     const bot = {
       group, hitMeshes: [eBody, eHead], shadowMeshes: [eBody, eHead, eLegs], gunMesh: null, wRig,
       weaponType: 'pistol', ammo: { mag: Infinity, reserve: Infinity },
+      primaryType: null, primaryAmmo: null, // set once the bot loots a real gun; lets it swap to pistol up close/far and back without losing the primary's ammo
       lootCooldown: 0,
       tier: tierName,
       health: tier.health, maxHealth: tier.health,
@@ -3551,7 +3582,13 @@
       grounded: false,
       ragdollTimeLeft: 0,
       ragdollVel: null,
-      ragdollSpin: null
+      ragdollSpin: null,
+      // ---- squad / tactical AI state ----
+      squadId, squadRole: squadSlot === 0 ? 'suppress' : 'flank',
+      flankAngle: squadSlot === 0 ? 0 : (squadSlot % 2 === 0 ? 1 : -1) * (0.7 + 0.35*Math.floor((squadSlot-1)/2)), // radians either side of straight-on
+      spottedRef: null, reactionTimer: 0, // reactionTimer counts down after first spotting spottedRef; bot won't fire until it hits 0
+      retreating: false,
+      coverPos: null, coverTimer: 0
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
@@ -4520,7 +4557,8 @@
       // ammo crate
       item.active = false;
       item.group.visible = false;
-      bot.ammo.reserve += item.amount;
+      if (bot.primaryType) bot.primaryAmmo.reserve += item.amount; // bot.ammo === bot.primaryAmmo when the primary is equipped, so this covers both cases
+      else bot.ammo.reserve += item.amount;
       setTimeout(() => { item.active = true; item.group.visible = true; }, 20000);
     }
   }
@@ -4540,6 +4578,31 @@
       if (target.isPlayer) damagePlayer(dmg, bot.pos);
       else damageBot(target, dmg);
     }
+  }
+
+  // Samples points in a ring around the bot and keeps ones that actually
+  // block line-of-sight to the target — using the same raycast as targeting,
+  // so "cover" here means a wall/house/tree genuinely stands between the
+  // bot and whoever it's fighting, not just "some random nearby spot".
+  function findCoverSpot(bot, target, urgent) {
+    const tryDists = urgent ? [10, 16, 22] : [6, 10];
+    let best = null, bestScore = -Infinity;
+    for (let i = 0; i < 10; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const d = tryDists[Math.floor(Math.random()*tryDists.length)];
+      const px = bot.pos.x + Math.cos(ang) * d;
+      const pz = bot.pos.z + Math.sin(ang) * d;
+      const py = groundHeightAt(px, pz, bot.pos.y);
+      const point = new THREE.Vector3(px, py, pz);
+      if (hasLineOfSight(point, target.pos)) continue; // not cover — target could still see this spot
+      const distToTarget = Math.hypot(px - target.pos.x, pz - target.pos.z);
+      // Retreating: prefer whichever blocked spot puts the most distance
+      // between the bot and its target. Just repositioning mid-fight:
+      // prefer a blocked spot around mid-range instead of running far away.
+      const score = urgent ? distToTarget : -Math.abs(distToTarget - 12);
+      if (score > bestScore) { bestScore = score; best = point; }
+    }
+    return best;
   }
 
   function updateBot(bot, dt) {
@@ -4586,8 +4649,8 @@
     if (bot.lootCooldown <= 0) {
       bot.lootCooldown = 0.5 + Math.random()*0.4;
       bot.lootTarget = null;
-      const maxMag = bot.weaponType !== 'pistol' ? WEAPON_DEFS[bot.weaponType].maxMag : 0;
-      const needsAmmo = bot.weaponType !== 'pistol' && (bot.ammo.mag + bot.ammo.reserve) < maxMag * 0.5;
+      const maxMag = bot.primaryType ? WEAPON_DEFS[bot.primaryType].maxMag : 0;
+      const needsAmmo = bot.primaryType && (bot.primaryAmmo.mag + bot.primaryAmmo.reserve) < maxMag * 0.5;
       if (needsAmmo) bot.lootTarget = findNearestLoot(bot.pos, ammoCrates, LOOT_SEARCH_RADIUS);
       if (!bot.lootTarget) {
         const myTier = BOT_WEAPON_TIER[bot.weaponType] || 0;
@@ -4596,9 +4659,39 @@
     }
 
     const { target: combatTarget, dist: combatDist } = findNearestTarget(bot);
+    const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
 
-    if (combatTarget) {
-      bot.target.copy(combatTarget.pos);
+    // ---- reaction time: a target isn't fired on until this tier's random
+    // reaction delay elapses after first being spotted, so lower tiers
+    // visibly hesitate instead of instantly snapping onto a new threat ----
+    if (combatTarget !== bot.spottedRef) {
+      bot.spottedRef = combatTarget;
+      bot.reactionTimer = combatTarget ? tier.reaction[0] + Math.random()*(tier.reaction[1]-tier.reaction[0]) : 0;
+    } else if (bot.reactionTimer > 0) {
+      bot.reactionTimer -= dt;
+    }
+    const canEngage = !!combatTarget && bot.reactionTimer <= 0;
+
+    bot.retreating = !!combatTarget && bot.health < bot.maxHealth * tier.retreatFrac;
+
+    // ---- zone awareness: meaningfully outside the shrinking safe zone
+    // overrides normal movement (unless a fight is already point-blank) ----
+    const outsideZone = zone.enabled && gameMode === 'ffa' &&
+      Math.hypot(bot.pos.x - zone.centerX, bot.pos.z - zone.centerZ) > zone.radius + 2;
+
+    // ---- cover-seeking: urgent (prefers distance) while retreating,
+    // otherwise a periodic tactical reposition mid-fight ----
+    bot.coverTimer -= dt;
+    if (combatTarget && (bot.retreating || bot.coverTimer <= 0) && bot.squadRole !== 'suppress') {
+      bot.coverTimer = bot.retreating ? 0.8 : (2.5 + Math.random()*2);
+      bot.coverPos = findCoverSpot(bot, combatTarget, bot.retreating);
+    }
+    if (!combatTarget) bot.coverPos = null;
+
+    if (outsideZone && !(combatTarget && combatDist < 6)) {
+      bot.target.set(zone.centerX, 0, zone.centerZ);
+    } else if (combatTarget) {
+      bot.target.copy(bot.coverPos || combatTarget.pos);
     } else if (bot.lootTarget && bot.lootTarget.active) {
       bot.target.set(bot.lootTarget.x, 0, bot.lootTarget.z);
       if (Math.hypot(bot.pos.x - bot.lootTarget.x, bot.pos.z - bot.lootTarget.z) < 1.8) {
@@ -4616,11 +4709,16 @@
 
     bot.moving = false;
     const dir = new THREE.Vector3().subVectors(bot.target, bot.pos); dir.y = 0;
+    // Squad flanking: a non-anchor squadmate closing straight on a live
+    // combat target (no cover point chosen) approaches from its assigned
+    // offset angle instead of the same line as the rest of the squad.
+    if (combatTarget && !bot.coverPos && bot.flankAngle !== 0) {
+      dir.applyAxisAngle(new THREE.Vector3(0,1,0), bot.flankAngle * 0.5);
+    }
     const dist = dir.length();
-    // Low-health bots keep more distance and try to disengage rather than
-    // always closing in, so a hurt bot feels like it's actually retreating.
-    const desiredRange = (combatTarget && bot.health < bot.maxHealth * (BOT_TIERS[bot.tier] || BOT_TIERS.normal).retreatFrac) ? 15 : 9;
-    if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget)) {
+    // Retreating bots keep much more distance than a normal firefight does.
+    const desiredRange = combatTarget ? (bot.retreating ? 20 : 9) : 9;
+    if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget) || bot.coverPos) {
       dir.normalize();
       bot.pos.x += dir.x * bot.speed * dt;
       bot.pos.z += dir.z * bot.speed * dt;
@@ -4634,7 +4732,12 @@
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
       bot.moving = true;
     }
-    if (combatTarget) {
+    // Strafing: skipped while retreating (just get to cover/the zone) and
+    // while actively moving toward a chosen cover point (weaving off that
+    // line defeats the point of having picked it). The 'suppress' squad
+    // role also holds its ground and fires rather than circling, so the
+    // squad has an anchor while its flankers reposition.
+    if (combatTarget && !bot.retreating && !bot.coverPos && bot.squadRole !== 'suppress') {
       bot.strafeTimer = (bot.strafeTimer === undefined ? 0 : bot.strafeTimer) - dt;
       if (bot.strafeTimer <= 0) {
         bot.strafeDir = Math.random() < 0.5 ? -1 : 1;
@@ -4648,7 +4751,10 @@
         resolveCollisions(bot.pos, 0.5, bot.pos.y);
         bot.moving = true;
       }
-      bot.yaw = Math.atan2(toTarget.x, toTarget.z);
+    }
+    if (combatTarget) {
+      const toTarget = new THREE.Vector3().subVectors(combatTarget.pos, bot.pos); toTarget.y = 0;
+      if (toTarget.lengthSq() > 0.0001) bot.yaw = Math.atan2(toTarget.x, toTarget.z);
     }
     // Guaranteed once-per-frame, regardless of which movement branch (if
     // any) ran above — a bot standing still waiting/fighting used to only
@@ -4664,7 +4770,8 @@
     bot.group.rotation.y = bot.yaw;
     bot.healthSprite.quaternion.copy(camera.quaternion);
     bot.attackCooldown -= dt;
-    if (combatTarget && bot.attackCooldown <= 0) {
+    if (combatTarget) updateBotWeaponChoice(bot, combatDist);
+    if (canEngage && bot.attackCooldown <= 0) {
       if (bot.ammo.mag <= 0 && bot.weaponType !== 'pistol') {
         // Out of ammo on the current gun: reload from reserve if possible,
         // otherwise fall back to the infinite-ammo pistol.
@@ -4681,7 +4788,6 @@
       } else {
         const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
         const [cMin, cMax] = combat.cooldown;
-        const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
         bot.attackCooldown = (cMin + Math.random()*(cMax - cMin)) * tier.cooldownMult;
         botShootAtTarget(bot, combatTarget, combatDist);
         if (combatTarget.isPlayer) addShake(0.08);
@@ -7514,6 +7620,15 @@
       }
       finishRebind();
       return;
+    }
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+      // Without this, a hardware keyboard held down long enough (WASD to
+      // move, say) gets intercepted by iPadOS's native long-press
+      // accented-character popup instead of reaching the game — the OS
+      // treats the sustained keydown as text entry and swallows further
+      // input (including mouse-look) until the popup goes away.
+      e.preventDefault();
     }
     keys[e.code] = true;
     if (e.code === keyBindings.toggleView) toggleView();
