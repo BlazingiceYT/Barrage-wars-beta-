@@ -340,20 +340,6 @@
   #molotovBtn:active { background: rgba(255,140,60,0.5); }
   #molotovBtn.disabled { opacity: 0.35; pointer-events: none; }
 
-  /* Ability button (trampoline / dash / forcefield / fly) — a single slot,
-     since the player can only hold one ability at a time. Sits above the
-     throwable buttons on the right side. */
-  #abilityBtn {
-    position: absolute; right: calc(20px + var(--safe-r)); bottom: calc(500px * var(--ui-scale) + var(--safe-b)); width: calc(46px * var(--ui-scale)); height: calc(46px * var(--ui-scale));
-    border-radius: 50%; color: #fff; font-size: calc(18px * var(--ui-scale)); pointer-events: auto;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(50,50,60,0.6); border: 2px solid rgba(180,180,200,0.6);
-  }
-  #abilityBtn .count { position: absolute; bottom: -2px; right: -2px; font-size: 10px; font-weight: bold; color: #ffdd55; background: rgba(0,0,0,0.6); border-radius: 8px; padding: 0 4px; }
-  #abilityBtn.disabled { opacity: 0.35; pointer-events: none; }
-  #abilityBtn:active { background: rgba(180,180,200,0.5); }
-  #abilityBtn.flyActive { background: rgba(240,210,90,0.6); box-shadow: 0 0 10px rgba(240,210,90,0.8); }
-
   /* Equipment slots bar */
   #equipBar {
     position: absolute; bottom: calc(12px + var(--safe-b)); left: 50%; transform: translateX(-50%);
@@ -612,7 +598,7 @@
     <button id="backFromTrainingBtn" style="display:none; position:absolute; top:284px; right:16px; pointer-events:auto; background:linear-gradient(180deg,#666,#333); border:none; color:#fff; font-size:12px; font-weight:bold; letter-spacing:1px; padding:8px 14px; border-radius:20px;">EXIT TO MENU</button>
     <button id="carActionBtn" style="display:none; position:absolute; bottom:220px; left:50%; transform:translateX(-50%); pointer-events:auto; background:linear-gradient(180deg,#3d7fae,#1f4f6b); border:none; color:#fff; font-size:13px; font-weight:bold; letter-spacing:1px; padding:10px 18px; border-radius:22px; z-index:12;">ENTER CAR (E)</button>
 
-    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3/4=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave | T=Use Ability</div>
+    <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3/4=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave</div>
 
     <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
     <div id="blockText">BLOCKING</div>
@@ -622,7 +608,6 @@
     <button id="grenadeBtn" class="disabled">💣<span class="count" id="grenadeCountTag">0</span></button>
     <button id="smokeGrenadeBtn" class="disabled">💨<span class="count" id="smokeGrenadeCountTag">0</span></button>
     <button id="molotovBtn" class="disabled">🔥<span class="count" id="molotovCountTag">0</span></button>
-    <button id="abilityBtn" class="disabled" title="Use ability">❓<span class="count" id="abilityCountTag">0</span></button>
     <button id="buildModeBtn" title="Open build controls">BUILD<br>MODE<br>OFF</button>
     <button id="buildBtn">BUILD<br>WALL<br>(B)</button>
     <button id="buildPieceBtn" title="Cycle piece type (X)" style="display:none;">WALL</button>
@@ -1539,34 +1524,20 @@
 
   // ---------- Weapon pickups (declared before houses so makeHouse can spawn them) ----------
   const pickups = [];
-  const ABILITY_TYPES = ['trampoline', 'dash', 'forcefield', 'fly'];
   // Guns that live in the secondary slot alongside the pistol (as opposed
   // to the primary slot's ak47/smg/shotgun/etc.) — see pickupWeapon().
   const SECONDARY_GUN_TYPES = ['laser'];
-  const ABILITY_ICON_COLORS = { trampoline: 0x64c8e6, dash: 0xbe82f0, forcefield: 0x5adcb4, fly: 0xf0d25a };
   function spawnWeaponPickup(type, x, y, z, delayActive) {
-    let group;
-    if (ABILITY_TYPES.includes(type)) {
-      // Ability pickups aren't weapons, so they get a simple glowing
-      // icosahedron instead of a WEAPON_BUILDERS mesh.
-      const col = ABILITY_ICON_COLORS[type];
-      const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.55, roughness: 0.35 }));
-      mesh.castShadow = true;
-      group = new THREE.Object3D();
-      group.add(mesh);
-    } else {
-      const built = WEAPON_BUILDERS[type](1.3);
-      group = built.group;
-      group.rotation.z = Math.PI/2.3;
-    }
+    const built = WEAPON_BUILDERS[type](1.3);
+    let group = built.group;
+    group.rotation.z = Math.PI/2.3;
     group.position.set(x, y + 1.0, z);
     scene.add(group);
     const RING_COLOR_MAP = {
       sniper: 0xb46bff, minigun: 0xff9a3d, shotgun: 0xffcc33, flamethrower: 0xff5a1f,
       smg: 0x7affc4, laser: 0x33ffea,
       knife: 0x8fd3ff, scythe: 0x9d4edd, shield: 0xb8a05a, grenade: 0x6bff7a,
-      smokegrenade: 0xd8d8dc, molotov: 0xff6a2e, trampoline: 0x64c8e6, dash: 0xbe82f0,
-      forcefield: 0x5adcb4, fly: 0xf0d25a
+      smokegrenade: 0xd8d8dc, molotov: 0xff6a2e
     };
     const ringColor = RING_COLOR_MAP[type] !== undefined ? RING_COLOR_MAP[type] : 0xaeb4bb;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
@@ -1618,23 +1589,6 @@
       player.molotovs++;
       updateMolotovUI();
       showPickupToast('PICKED UP: MOLOTOV');
-      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
-      return;
-    }
-    if (ABILITY_TYPES.includes(p.type)) {
-      // Only one ability slot — picking up a new ability replaces whatever
-      // was held before. Same as gun-swapping: the old one gets dropped on
-      // the ground as a real pickup instead of just vanishing.
-      if (player.abilityType && player.abilityType !== p.type) {
-        const forward = getForward(player.yaw);
-        const dropX = player.pos.x + forward.x * 1.3;
-        const dropZ = player.pos.z + forward.z * 1.3;
-        spawnWeaponPickup(player.abilityType, dropX, player.pos.y, dropZ, true);
-      }
-      player.abilityType = p.type;
-      player.abilityCooldown = 0; // a freshly-picked-up ability is ready to use right away
-      updateAbilityUI();
-      showPickupToast('PICKED UP: ' + p.type.toUpperCase());
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
@@ -1801,7 +1755,6 @@
     const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
     let houseHasGun = false;
     let houseHasThrowable = false;
-    let houseHasAbility = false;
     // Tracked so the Move Houses cheat can relocate this house as a whole —
     // walls/roof/windows are children of `group` and move for free, but
     // solids/floors/ramps/loot pickups are separate absolute-position data
@@ -1976,18 +1929,6 @@
         const shz = (Math.random()-0.5) * (d - 3);
         spawnHousePickup('shield', shx, shz, baseY + 0.25);
       }
-      // Sixth, independent roll: abilities (trampoline / dash / force field /
-      // fly). This is its own separate pool from the gun/throwable/melee
-      // rolls above — same guaranteed-per-house fallback pattern as guns
-      // and throwables get, just with its own roll chance and item table.
-      if (Math.random() < 0.22) {
-        const abilityRoll = Math.random();
-        const abilityType = abilityRoll < 0.3 ? 'trampoline' : (abilityRoll < 0.55 ? 'dash' : (abilityRoll < 0.8 ? 'forcefield' : 'fly'));
-        const ax = (Math.random()-0.5) * (w - 3);
-        const az = (Math.random()-0.5) * (d - 3);
-        spawnHousePickup(abilityType, ax, az, baseY + 0.25);
-        houseHasAbility = true;
-      }
     }
     if (!houseHasGun) {
       const roll = Math.random();
@@ -1998,11 +1939,6 @@
       const throwRoll = Math.random();
       const throwType = throwRoll < 0.34 ? 'grenade' : (throwRoll < 0.67 ? 'smokegrenade' : 'molotov');
       spawnHousePickup(throwType, w * 0.22, 0, 0.25);
-    }
-    if (!houseHasAbility) {
-      const abilityRoll = Math.random();
-      const abilityType = abilityRoll < 0.3 ? 'trampoline' : (abilityRoll < 0.55 ? 'dash' : (abilityRoll < 0.8 ? 'forcefield' : 'fly'));
-      spawnHousePickup(abilityType, 0, -d * 0.22, 0.25);
     }
 
     const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.75, 2.6, 4), roofMat);
@@ -2237,7 +2173,18 @@
     // noticeably faster than the AK's 110ms. No scope; it's meant to be
     // hosed from the hip up close, not used at range.
     smg:     { name: 'SMG',     shortName: 'SMG',  dmg: 12, headMult: 1.6, fireRate: 65,  maxMag: 45,  auto: true,  scope: false, scopeFov: BASE_FOV, reloadTime: 1600, muzzleColor: 0xffe98a },
-    minigun: { name: 'Minigun', shortName: 'MINI', dmg: 10, headMult: 1.4, fireRate: 45,  maxMag: 150, auto: true,  scope: false, scopeFov: BASE_FOV, reloadTime: 2600, muzzleColor: 0xffdd88 },
+    // moveSpeedMult: the one drawback this weapon didn't have before — same
+    // accuracy as every other hitscan gun (no bloom/spread system in this
+    // game) and the best mag/reload ammo-economy of any primary, so nothing
+    // was holding its damage numbers back. Real LMGs pay for top-of-chart
+    // DPS with worse handling/mobility (that's the actual balancing lever,
+    // not lower damage) — see updateMovement's speedMult chain for where
+    // this gets applied.
+    minigun: { name: 'Minigun', shortName: 'MINI', dmg: 10, headMult: 1.4, fireRate: 45,  maxMag: 150, auto: true,  scope: false, scopeFov: BASE_FOV, reloadTime: 2600, muzzleColor: 0xffdd88, moveSpeedMult: 0.78 },
+    // headMult is never actually read for this weapon — firePelletRay checks
+    // oneShotHeadshot before it ever looks at headMult, so any headshot
+    // already zeroes health outright. Left at 4 just as an honest label for
+    // "this one-shots regardless," not because the number does anything.
     sniper:  { name: 'Sniper',  shortName: 'SNPR', dmg: 95, headMult: 4,   fireRate: 1150,maxMag: 5,   auto: false, scope: true,  scopeFov: 16,        reloadTime: 1700, muzzleColor: 0xfff6d0, oneShotHeadshot: true },
     // Fires a spread of individual pellets per trigger pull instead of one
     // bullet — `pellets` is how many rays fireBullet() casts, `spread` is the
@@ -2262,7 +2209,13 @@
     // range: Infinity means firePelletRay's raycaster.far is unbounded, so
     // the beam hits whatever it's pointed at regardless of distance instead
     // of fizzling out like every other gun's hitscan does past its range.
-    laser:   { name: 'Laser',   shortName: 'LASR', dmg: 4,  headMult: 1.3, fireRate: 90,  maxMag: Infinity, auto: true, scope: false, scopeFov: BASE_FOV, reloadTime: 0, muzzleColor: 0x33ffea, range: Infinity }
+    // dmg/headMult bumped from 4/1.3 — at the old numbers this was a flat
+    // downgrade from the starting pistol in every way (55 body DPS vs the
+    // pistol's 69, worse headshots too), so finding one in a house never
+    // felt like an upgrade. Still clearly weaker than the pistol per-hit,
+    // but now close enough that "never reload, never run dry" is a real
+    // trade instead of a strictly worse pickup.
+    laser:   { name: 'Laser',   shortName: 'LASR', dmg: 5,  headMult: 1.5, fireRate: 90,  maxMag: Infinity, auto: true, scope: false, scopeFov: BASE_FOV, reloadTime: 0, muzzleColor: 0x33ffea, range: Infinity }
   };
 
   // ---------- Weapon models (blocky, shared material palette) ----------
@@ -3132,6 +3085,31 @@
     model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
     model.updateMatrixWorld(true);
 
+    // Sanity-check against the model's own real, rendered geometry instead
+    // of trusting the toe-bone joint alone. A rig's toe joint sits inside
+    // the foot, not at the very bottom of the sole, so bone-only placement
+    // left a small but visible gap where the actual foot mesh dipped below
+    // y=0 into the terrain — confirmed via the hitbox debug view still
+    // showing the old placeholder body's box instead of this model's real
+    // shape. `model` has no parent yet at this point, so its matrixWorld
+    // is local-only — this box is already in rootGroup-local space, no
+    // extra work needed to strip out world offsets from player/bot
+    // position.
+    const realBox = new THREE.Box3().setFromObject(model);
+    if (isFinite(realBox.min.y) && Math.abs(realBox.min.y) > 0.001) {
+      model.position.y -= realBox.min.y;
+      model.updateMatrixWorld(true);
+    }
+    // Real head height (rootGroup-local, same reasoning as above) — used
+    // below to rescale the invisible hit-test proxies to this character's
+    // actual measured size instead of the placeholder's fixed guess.
+    let realHeadY = null;
+    if (headBone) {
+      const hp = new THREE.Vector3();
+      headBone.getWorldPosition(hp);
+      realHeadY = hp.y;
+    }
+
     model.traverse(o => {
       if (o.isMesh || o.isSkinnedMesh) {
         o.castShadow = true;
@@ -3141,14 +3119,15 @@
     });
     rootGroup.add(model);
 
-    // The old placeholder shapes stay exactly where they are (bots are
-    // still hit-tested against them — see hitMeshes below) but become
-    // fully invisible. Each material is cloned first: head/leg materials
-    // are shared across every bot, so mutating one directly would blank
-    // out every OTHER bot still waiting on the model to finish loading.
-    // Visibility itself stays true on purpose — three.js's Raycaster skips
-    // objects with visible=false entirely, which would silently break hit
-    // detection on that mesh.
+    // The old placeholder shapes become fully invisible (bots are still
+    // hit-tested against them — see hitMeshes below), but they're no
+    // longer left frozen at the fixed torso/head/leg numbers that were
+    // tuned for the original boxy body. Each material is cloned first:
+    // head/leg materials are shared across every bot, so mutating one
+    // directly would blank out every OTHER bot still waiting on the model
+    // to finish loading. Visibility itself stays true on purpose —
+    // three.js's Raycaster skips objects with visible=false entirely,
+    // which would silently break hit detection on that mesh.
     for (const m of oldMeshes) {
       if (!m) continue;
       m.material = m.material.clone();
@@ -3156,6 +3135,22 @@
       m.material.opacity = 0;
       m.material.depthWrite = false;
       m.castShadow = false;
+    }
+
+    // Rescale/reposition those same invisible proxies to match this
+    // character's real measured height, so the bullet raycasts and the
+    // "Show Hitboxes" debug view see the actual imported soldier's real
+    // silhouette — a taller or shorter import now gets a correspondingly
+    // taller/shorter, correctly-grounded hitbox instead of always getting
+    // the one fixed size the placeholder body happened to have.
+    const PLACEHOLDER_ASSUMED_HEIGHT = 1.75; // the boxy placeholder's own head height — what position.y = 1.65 / 1.0 / 0.45 below were originally tuned for
+    if (realHeadY != null && isFinite(realHeadY) && realHeadY > 0) {
+      const hitboxScale = realHeadY / PLACEHOLDER_ASSUMED_HEIGHT;
+      for (const m of oldMeshes) {
+        if (!m) continue;
+        m.position.y *= hitboxScale;
+        m.scale.setScalar(hitboxScale);
+      }
     }
 
     const mixer = new THREE.AnimationMixer(model);
@@ -3258,8 +3253,8 @@
     maxStamina: 100,
     sprinting: false,
     crouching: false,
-    health: 100,
-    maxHealth: 100,
+    health: 200,
+    maxHealth: 200,
     isReloading: false,
     kills: 0,
     alive: true,
@@ -3277,17 +3272,7 @@
     molotovs: 0,
     smokeGrenades: 0,
     maxThrowablesTotal: 10,
-    // Fourth pickup pool — abilities found only in houses (separate roll
-    // from guns/throwables/melee). Unlike the throwables above, the player
-    // can only hold ONE ability at a time: picking up a new one replaces
-    // whatever's currently held, same as swapping a primary weapon.
-    abilityType: null, // 'trampoline' | 'dash' | 'forcefield' | 'fly' | null
-    abilityCooldown: 0, // seconds left before the held ability can be used again
-    flying: false,
-    flyTimeLeft: 0,
-    dashTimeLeft: 0,
     inCar: null, // the car object currently being driven, or null when on foot
-    dashDir: null,
     isPlayer: true,
     falling: false,
     chuteOpen: false,
@@ -3491,9 +3476,9 @@
   // Elite: much more HP and a far gentler accuracy falloff with range, so they
   // stay dangerous at distance instead of becoming harmless once you back off.
   const BOT_TIERS = {
-    normal:     { health: 60,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null,       reaction: [0.45, 0.85] },
-    aggressive: { health: 85,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522,   reaction: [0.25, 0.5]  },
-    elite:      { health: 150, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f,   reaction: [0.08, 0.22] }
+    normal:     { health: 120,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null,       reaction: [0.45, 0.85] },
+    aggressive: { health: 170,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522,   reaction: [0.25, 0.5]  },
+    elite:      { health: 300, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f,   reaction: [0.08, 0.22] }
   };
   const SQUAD_SIZE = 4;
   function pickBotTier() {
@@ -3999,28 +3984,28 @@
   const ZOMBIE_TYPES = {
     walker: {
       label: null, bodyMat: zombieBodyMat, legsMat: zombieLegsMat, scale: 1,
-      hp: n => 28 + n*5,
+      hp: n => 56 + n*10,
       speed: n => 4.0 + Math.random()*1.3 + Math.min(2.2, n*0.08),
       radius: 0.45, attackRange: 1.3, cooldown: () => 0.7 + Math.random()*0.3,
       dmg: () => 6 + Math.random()*5,
     },
     runner: {
       label: 'RUNNER', bodyMat: runnerBodyMat, legsMat: runnerLegsMat, scale: 0.82,
-      hp: n => 14 + n*2.5,
+      hp: n => 28 + n*5,
       speed: n => 7.3 + Math.random()*1.2 + Math.min(2.5, n*0.05),
       radius: 0.36, attackRange: 1.2, cooldown: () => 0.35 + Math.random()*0.2,
       dmg: () => 3 + Math.random()*4,
     },
     tank: {
       label: 'TANK', bodyMat: tankBodyMat, legsMat: tankLegsMat, scale: 1.65,
-      hp: n => 140 + n*16,
+      hp: n => 280 + n*32,
       speed: n => 1.9 + Math.random()*0.4 + Math.min(1.0, n*0.02),
       radius: 0.72, attackRange: 1.9, cooldown: () => 1.1 + Math.random()*0.4,
       dmg: () => 14 + Math.random()*9,
     },
     boss: {
       label: 'BOSS', bodyMat: bossBodyMat, legsMat: bossLegsMat, scale: 3.1,
-      hp: n => 900 + Math.floor(n/15)*550 + n*20,
+      hp: n => 1800 + Math.floor(n/15)*1100 + n*40,
       speed: () => 2.5,
       radius: 1.3, attackRange: 2.6, cooldown: () => 1.0 + Math.random()*0.3,
       dmg: () => 18 + Math.random()*10,
@@ -4479,11 +4464,11 @@
     updateZombieHUD();
   }
 
-  // Lays out one of every weapon/melee/throwable/ability as a walk-up
+  // Lays out one of every weapon/melee/throwable as a walk-up
   // pickup so Training Ground works as a full test range, not just a
   // dummy-hitting exercise. Placed in a line behind spawn, out of the way
   // of the ring of dummies.
-  const TRAINING_RACK_TYPES = ['pistol','ak47','smg','laser','minigun','sniper','shotgun','flamethrower','knife','scythe','shield','grenade','smokegrenade','molotov','trampoline','dash','forcefield','fly'];
+  const TRAINING_RACK_TYPES = ['pistol','ak47','smg','laser','minigun','sniper','shotgun','flamethrower','knife','scythe','shield','grenade','smokegrenade','molotov'];
   function spawnTrainingWeaponRack() {
     const spacing = 2.2;
     const startX = CITY_CX - (TRAINING_RACK_TYPES.length - 1) * spacing / 2;
@@ -4893,8 +4878,11 @@
     knife:  { rate: 220, range: 2.2, wallDmg: 16, headDmg: 40, bodyDmg: 26, shake: 0.12, canChopTrees: false, swingDecay: 7,   swingAmp: 0.8, restFP: 0.15, restTP: 0.1 },
     // Slow, heavy, long-reaching — a big wide swing that hits harder than the
     // axe and reaches further, at the cost of the slowest cooldown of any
-    // melee weapon in the game.
-    scythe: { rate: 700, range: 3.9, wallDmg: 42, headDmg: 72, bodyDmg: 48, shake: 0.3,  canChopTrees: true,  swingDecay: 3.2, swingAmp: 1.4, restFP: 0.32, restTP: 0.22 },
+    // melee weapon in the game. Tuned so its DPS lands roughly level with
+    // the axe's despite the slower swing (54/0.7s ≈ 35/0.45s) — the payoff
+    // for going slower is reach and fewer, harder hits, not a straight DPS
+    // loss like the old 48/72 numbers worked out to.
+    scythe: { rate: 700, range: 3.9, wallDmg: 46, headDmg: 85, bodyDmg: 54, shake: 0.3,  canChopTrees: true,  swingDecay: 3.2, swingAmp: 1.4, restFP: 0.32, restTP: 0.22 },
     // Admin-only held weapon (toggled from the cheat menu, not found as
     // loot): by far the longest reach of any melee weapon, but headDmg/
     // bodyDmg/wallDmg are all 0 — instead `ragdoll`/`ragdollDuration` tell
@@ -5144,34 +5132,6 @@
   function updateMolotovUI() {
     document.getElementById('molotovCountTag').textContent = player.molotovs;
     document.getElementById('molotovBtn').classList.toggle('disabled', player.molotovs <= 0);
-  }
-  const ABILITY_ICONS = { trampoline: '🔵', dash: '💨', forcefield: '🛡️', fly: '🕊️' };
-  const ABILITY_LABELS = { trampoline: 'Place trampoline', dash: 'Dash', forcefield: 'Place force field', fly: 'Toggle fly' };
-  function updateAbilityUI() {
-    const btn = document.getElementById('abilityBtn');
-    const hasAbility = !!player.abilityType;
-    const onCooldown = player.abilityCooldown > 0;
-    // Rebuild the icon text node without disturbing the .count span.
-    const iconChar = hasAbility ? ABILITY_ICONS[player.abilityType] : '❓';
-    let iconNode = btn.firstChild;
-    if (!iconNode || iconNode.nodeType !== Node.TEXT_NODE) {
-      iconNode = document.createTextNode('');
-      btn.insertBefore(iconNode, btn.firstChild);
-    }
-    iconNode.textContent = iconChar;
-    const countTag = document.getElementById('abilityCountTag');
-    if (onCooldown) {
-      countTag.style.display = '';
-      countTag.textContent = Math.ceil(player.abilityCooldown);
-    } else {
-      countTag.style.display = 'none';
-    }
-    btn.title = hasAbility ? (onCooldown ? ABILITY_LABELS[player.abilityType] + ' (cooling down)' : ABILITY_LABELS[player.abilityType]) : 'No ability held';
-    // Infinite use, gated only by cooldown — stays usable as long as an
-    // ability is held and it isn't cooling down (or flight is active,
-    // since toggling flight off always has to work regardless of cooldown).
-    btn.classList.toggle('disabled', (!hasAbility && !player.flying) || (onCooldown && !player.flying));
-    btn.classList.toggle('flyActive', player.flying);
   }
   function updateWoodUI() {
     document.getElementById('woodCount').textContent = player.wood;
@@ -5669,15 +5629,6 @@
       player.primaryType = null;
       player.ammoState.primary = { mag: 0, reserve: 0 };
     }
-    if (player.abilityType) {
-      const pos = nextSpot();
-      spawnWeaponPickup(player.abilityType, pos.x, player.pos.y, pos.z, true);
-      player.abilityType = null;
-      player.abilityCooldown = 0;
-      player.flying = false;
-      player.flyTimeLeft = 0;
-      updateAbilityUI();
-    }
     for (let i = 0; i < player.grenades; i++) {
       const pos = nextSpot();
       spawnWeaponPickup('grenade', pos.x, player.pos.y, pos.z, true);
@@ -5720,11 +5671,6 @@
     updateSmokeGrenadeUI();
     player.molotovs = 0;
     updateMolotovUI();
-    player.abilityType = null;
-    player.abilityCooldown = 0;
-    player.flying = false;
-    player.flyTimeLeft = 0;
-    updateAbilityUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
     updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
@@ -6262,14 +6208,14 @@
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', toggleView: 'KeyP', reload: 'KeyR',
     axe: 'Digit1', primary: 'Digit2', pistol: 'Digit3', melee: 'Digit4',
     build: 'KeyB', buildModeToggle: 'KeyN', buildPiece: 'KeyX', buildTier: 'KeyZ', drop: 'KeyG', grenade: 'KeyF', smokeGrenade: 'KeyV', molotov: 'KeyM', inventory: 'Tab', skipWave: 'KeyK',
-    useAbility: 'KeyT', enterCar: 'KeyE'
+    enterCar: 'KeyE'
   };
   const KEY_ACTION_LABELS = {
     forward: 'Move Forward', back: 'Move Back', left: 'Move Left', right: 'Move Right',
     jump: 'Jump', crouch: 'Crouch', sprint: 'Sprint', toggleView: 'Toggle View', reload: 'Reload',
     axe: 'Equip Axe', primary: 'Equip Primary', pistol: 'Equip Secondary', melee: 'Equip Melee',
     build: 'Build Piece', buildModeToggle: 'Toggle Build Mode', buildPiece: 'Cycle Piece Type', buildTier: 'Cycle Material', drop: 'Drop Weapon', grenade: 'Throw Grenade', smokeGrenade: 'Throw Smoke Grenade', molotov: 'Throw Molotov', inventory: 'Inventory', skipWave: 'Skip Wave',
-    useAbility: 'Use Ability', enterCar: 'Enter/Exit Car'
+    enterCar: 'Enter/Exit Car'
   };
   let keyBindings = {};
   try { keyBindings = JSON.parse(localStorage.getItem('blazingice_keyBindings') || '{}'); } catch(e) { keyBindings = {}; }
@@ -6766,11 +6712,11 @@
     cheatMoveBtn.classList.toggle('off', !cheatState.moveMode);
   });
 
-  // Item spawner: every weapon/ability type the game knows how to build a
+  // Item spawner: every weapon type the game knows how to build a
   // pickup for, spawned a couple meters in front of wherever the player is
   // currently facing/standing (same spot weapons drop to when you drop them).
   const cheatItemSelect = document.getElementById('cheatItemSelect');
-  const CHEAT_SPAWNABLE_ITEMS = Object.keys(WEAPON_BUILDERS).concat(ABILITY_TYPES);
+  const CHEAT_SPAWNABLE_ITEMS = Object.keys(WEAPON_BUILDERS);
   for (const type of CHEAT_SPAWNABLE_ITEMS) {
     const opt = document.createElement('option');
     opt.value = type;
@@ -6882,7 +6828,7 @@
   // position (however it's normally anchored — left/right/bottom/transform)
   // into a plain fixed left/top, then saving that as a % of the screen so it
   // still makes sense if the page is reopened at a different window size.
-  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','abilityBtn','equipBar','topRightBtns','skipWaveBtn'];
+  const LAYOUT_IDS = ['joystickZone','jumpBtn','crouchBtn','fireBtn','scopeBtn','reloadBtn','buildModeBtn','buildBtn','buildPieceBtn','buildTierBtn','weaponSwitchBtn','dropBtn','grenadeBtn','smokeGrenadeBtn','molotovBtn','equipBar','topRightBtns','skipWaveBtn'];
   const LAYOUT_LABELS = {
     joystickZone: 'MOVE',
     jumpBtn: 'JUMP',
@@ -6899,7 +6845,6 @@
     grenadeBtn: 'THROW GRENADE',
     smokeGrenadeBtn: 'THROW SMOKE',
     molotovBtn: 'THROW MOLOTOV',
-    abilityBtn: 'USE ABILITY',
     equipBar: 'WEAPON SLOTS',
     topRightBtns: 'VIEW / SETTINGS',
     skipWaveBtn: 'SKIP WAVE'
@@ -7207,169 +7152,6 @@
     activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 4, isSmoke: false, isMolotov: true });
   }
 
-  // ---------- Ability: Trampoline ----------
-  // Placed a short distance in front of the player, on the ground. Anyone
-  // (player or bot) who lands on top of it gets launched upward and takes
-  // no fall damage from that bounce. Despawns after a while, same idea as
-  // the dropped-weapon respawn timers elsewhere in the file.
-  const activeTrampolines = [];
-  const trampolineMat = new THREE.MeshStandardMaterial({ color: 0x3fb8e0, emissive: 0x1a5670, emissiveIntensity: 0.4, roughness: 0.4 });
-  const trampolineRimMat = new THREE.MeshStandardMaterial({ color: 0x1c2b33, roughness: 0.6 });
-  function placeTrampoline() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'trampoline' || player.abilityCooldown > 0) return;
-    player.abilityCooldown = ABILITY_COOLDOWNS.trampoline;
-    updateAbilityUI();
-    const forward = getForward(player.yaw);
-    const x = player.pos.x + forward.x * 2.4;
-    const z = player.pos.z + forward.z * 2.4;
-    const y = groundHeightAt(x, z, player.pos.y + 2);
-    const group = new THREE.Object3D();
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.15, 20), trampolineMat);
-    pad.position.y = 0.08;
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.1, 8, 20), trampolineRimMat);
-    rim.rotation.x = Math.PI/2;
-    rim.position.y = 0.15;
-    group.add(pad, rim);
-    group.position.set(x, y, z);
-    scene.add(group);
-    const entry = { group, x, y, z, radius: 1.3, life: 45, cooldownMap: new Map() };
-    activeTrampolines.push(entry);
-    showPickupToast('TRAMPOLINE PLACED');
-  }
-  function bounceEntity(ent, trampoline) {
-    ent.velY = 15;
-    if (ent.grounded !== undefined) ent.grounded = false;
-    if (ent === player) fallPeakY = null; // launched, not falling — don't charge fall damage for it
-  }
-  function updateTrampolines(dt) {
-    for (let i = activeTrampolines.length - 1; i >= 0; i--) {
-      const t = activeTrampolines[i];
-      t.life -= dt;
-      if (t.life <= 0) { scene.remove(t.group); activeTrampolines.splice(i, 1); continue; }
-      t.group.rotation.y += dt * 0.3;
-      const candidates = [player, ...activeEnemies().filter(b => b.alive)];
-      for (const ent of candidates) {
-        const d = Math.hypot(ent.pos.x - t.x, ent.pos.z - t.z);
-        const onTop = d < t.radius && Math.abs((ent.pos.y) - t.y) < 1.2;
-        const lastBounce = t.cooldownMap.get(ent) || 0;
-        if (onTop && ent.velY <= 0.5 && performance.now() - lastBounce > 500) {
-          bounceEntity(ent, t);
-          t.cooldownMap.set(ent, performance.now());
-        }
-      }
-    }
-  }
-
-  // ---------- Ability: Dash ----------
-  // A short burst of speed in the direction the player is currently moving
-  // (or facing, if standing still), handled as a temporary speed multiplier
-  // applied inside updateMovement rather than an instant teleport, so the
-  // player still collides with walls/props normally mid-dash.
-  const DASH_DURATION = 0.22;
-  const DASH_SPEED_MULT = 5.5;
-  function doDash() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'dash' || player.abilityCooldown > 0) return;
-    if (player.dashTimeLeft > 0) return;
-    player.abilityCooldown = ABILITY_COOLDOWNS.dash;
-    updateAbilityUI();
-    player.dashTimeLeft = DASH_DURATION;
-    addShake(0.15);
-    showPickupToast('DASH!');
-  }
-
-  // ---------- Ability: Force Field ----------
-  // Places a translucent dome that's added to collisionMeshes, which is the
-  // same list bullets raycast against (firePelletRay) and bots use for
-  // line-of-sight checks (hasLineOfSight) — so a bot or bullet on the far
-  // side of the dome is genuinely blocked, without needing any bespoke
-  // damage-blocking logic of its own.
-  const activeForcefields = [];
-  const forcefieldMat = new THREE.MeshStandardMaterial({ color: 0x5adcb4, transparent: true, opacity: 0.28, emissive: 0x2a8f6e, emissiveIntensity: 0.5, roughness: 0.3, side: THREE.DoubleSide });
-  function placeForcefield() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.abilityType !== 'forcefield' || player.abilityCooldown > 0) return;
-    player.abilityCooldown = ABILITY_COOLDOWNS.forcefield;
-    updateAbilityUI();
-    const forward = getForward(player.yaw);
-    const x = player.pos.x + forward.x * 2.2;
-    const z = player.pos.z + forward.z * 2.2;
-    const y = groundHeightAt(x, z, player.pos.y + 2);
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.6, 20, 14), forcefieldMat);
-    mesh.position.set(x, y + 2.4, z);
-    scene.add(mesh);
-    collisionMeshes.push(mesh);
-    const entry = { mesh, life: 16 };
-    activeForcefields.push(entry);
-    showPickupToast('FORCE FIELD DEPLOYED');
-  }
-  function updateForcefields(dt) {
-    for (let i = activeForcefields.length - 1; i >= 0; i--) {
-      const f = activeForcefields[i];
-      f.life -= dt;
-      f.mesh.material.opacity = 0.28 * Math.min(1, f.life / 2); // fade out just before it expires
-      if (f.life <= 0) {
-        scene.remove(f.mesh);
-        const idx = collisionMeshes.indexOf(f.mesh);
-        if (idx !== -1) collisionMeshes.splice(idx, 1);
-        activeForcefields.splice(i, 1);
-      }
-    }
-  }
-
-  // ---------- Ability: Fly ----------
-  // Toggles free flight: gravity and ground-snapping are skipped in
-  // updateMovement while player.flying is true, and jump/crouch move the
-  // player up/down instead. One charge covers a timed window; toggling off
-  // early doesn't refund the remaining time.
-  const FLY_DURATION = 18;
-  const ABILITY_COOLDOWNS = { trampoline: 8, dash: 4, forcefield: 12, fly: 20 };
-  function toggleFly() {
-    if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon) return;
-    if (player.flying) {
-      player.flying = false;
-      player.flyTimeLeft = 0;
-      player.abilityCooldown = ABILITY_COOLDOWNS.fly;
-      updateAbilityUI();
-      showPickupToast('FLY ENDED');
-      return;
-    }
-    if (player.abilityType !== 'fly' || player.abilityCooldown > 0) return;
-    player.flying = true;
-    player.flyTimeLeft = FLY_DURATION;
-    player.velY = 0;
-    updateAbilityUI();
-    showPickupToast('FLYING');
-  }
-  function updateFlyTimer(dt) {
-    if (!player.flying) return;
-    player.flyTimeLeft -= dt;
-    if (player.flyTimeLeft <= 0) {
-      player.flying = false;
-      player.velY = 0;
-      player.abilityCooldown = ABILITY_COOLDOWNS.fly;
-      updateAbilityUI();
-      showPickupToast('FLY ENDED');
-    }
-  }
-  // Ticks the shared ability cooldown down every frame — abilities are
-  // infinite-use now (never consumed on pickup), just gated by this timer.
-  function updateAbilityCooldown(dt) {
-    if (player.abilityCooldown > 0) {
-      player.abilityCooldown = Math.max(0, player.abilityCooldown - dt);
-      updateAbilityUI();
-    }
-  }
-
-  // Single entry point the button/key calls — dispatches to whichever
-  // ability is currently held (or turns flight off, if that's active).
-  function useAbility() {
-    if (player.flying) { toggleFly(); return; }
-    if (!player.abilityType) return;
-    if (player.abilityType === 'trampoline') placeTrampoline();
-    else if (player.abilityType === 'dash') doDash();
-    else if (player.abilityType === 'forcefield') placeForcefield();
-    else if (player.abilityType === 'fly') toggleFly();
-  }
-
   function updateGrenades(dt) {
     for (let i = activeGrenades.length - 1; i >= 0; i--) {
       const g = activeGrenades[i];
@@ -7464,18 +7246,34 @@
   // aim raycasts, or grenade line-of-sight. It's not in collisionMeshes and
   // never in `solids`, so it doesn't act like a wall in any sense: you can
   // shoot through it and walk through it, same as anyone else can.
-  const SMOKE_RADIUS = 4.5, SMOKE_GROW = 1.0, SMOKE_HOLD = 6.0, SMOKE_FADE = 2.0;
+  const SMOKE_RADIUS = 4.5, SMOKE_GROW = 1.0, SMOKE_HOLD = 6.0, SMOKE_FADE = 2.0, SMOKE_MAX_OPACITY = 0.92;
+  // Several overlapping puffs at random offsets inside the radius, instead of
+  // one lone sphere, so the cloud reads as thick/solid throughout its whole
+  // volume rather than just a hazy shell with a see-through center.
+  const SMOKE_PUFF_COUNT = 6;
   function spawnSmokeCloud(pos) {
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(SMOKE_RADIUS, 14, 10),
-      new THREE.MeshBasicMaterial({ color: 0xcfd2d6, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
-    );
-    mesh.position.copy(pos);
-    mesh.scale.setScalar(0.001);
-    scene.add(mesh);
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    group.scale.setScalar(0.001);
+    const puffs = [];
+    for (let i = 0; i < SMOKE_PUFF_COUNT; i++) {
+      const r = SMOKE_RADIUS * (0.55 + Math.random() * 0.5);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 12, 9),
+        new THREE.MeshBasicMaterial({ color: 0xcfd2d6, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+      );
+      // Keep offsets well inside SMOKE_RADIUS so the puffs overlap heavily
+      // and pack the center solid, rather than spreading out to the edge.
+      const offR = SMOKE_RADIUS * 0.4 * Math.random();
+      const ang = Math.random() * Math.PI * 2, h = (Math.random() - 0.5) * SMOKE_RADIUS * 0.6;
+      mesh.position.set(Math.cos(ang) * offR, h, Math.sin(ang) * offR);
+      group.add(mesh);
+      puffs.push(mesh);
+    }
+    scene.add(group);
     const camDist = pos.distanceTo(camera.position);
     playSmokePop(camDist);
-    smokeClouds.push({ mesh, life: 0 });
+    smokeClouds.push({ mesh: group, puffs, life: 0 });
   }
   function updateSmokeClouds(dt) {
     for (let i = smokeClouds.length - 1; i >= 0; i--) {
@@ -7484,13 +7282,14 @@
       if (c.life < SMOKE_GROW) {
         const t = c.life / SMOKE_GROW;
         c.mesh.scale.setScalar(Math.max(0.001, t));
-        c.mesh.material.opacity = 0.55 * t;
+        for (const p of c.puffs) p.material.opacity = SMOKE_MAX_OPACITY * t;
       } else if (c.life < SMOKE_GROW + SMOKE_HOLD) {
         c.mesh.scale.setScalar(1);
-        c.mesh.material.opacity = 0.55;
+        for (const p of c.puffs) p.material.opacity = SMOKE_MAX_OPACITY;
       } else {
         const t = (c.life - SMOKE_GROW - SMOKE_HOLD) / SMOKE_FADE;
-        c.mesh.material.opacity = Math.max(0, 0.55 * (1 - t));
+        const op = Math.max(0, SMOKE_MAX_OPACITY * (1 - t));
+        for (const p of c.puffs) p.material.opacity = op;
         if (t >= 1) {
           scene.remove(c.mesh);
           smokeClouds.splice(i, 1);
@@ -7593,7 +7392,6 @@
   bindTap(document.getElementById('grenadeBtn'), throwGrenade);
   bindTap(document.getElementById('smokeGrenadeBtn'), throwSmokeGrenade);
   bindTap(document.getElementById('molotovBtn'), throwMolotov);
-  bindTap(document.getElementById('abilityBtn'), useAbility);
 
   // ---------- View mode ----------
   let viewMode = 'third';
@@ -7647,7 +7445,6 @@
       if (e.code === keyBindings.grenade) throwGrenade();
       if (e.code === keyBindings.smokeGrenade) throwSmokeGrenade();
       if (e.code === keyBindings.molotov) throwMolotov();
-      if (e.code === keyBindings.useAbility) useAbility();
     }
     if (e.code === keyBindings.inventory) { toggleInventory(); e.preventDefault(); }
     if (e.code === keyBindings.skipWave) skipWave();
@@ -8077,7 +7874,15 @@
       player.sprinting = false;
       player.stamina = Math.min(player.maxStamina, player.stamina + 16 * dt);
     }
-    const speedMult = player.crouching ? 0.45 : (player.sprinting ? player.sprintMult : 1);
+    // Heavy weapons can slow you down while actively wielded — currently
+    // just the minigun (see WEAPON_DEFS.minigun.moveSpeedMult), stacking
+    // multiplicatively with crouch/sprint so a minigun-sprint is still
+    // faster than minigun-walk, just proportionally scaled down like
+    // everything else. Only applies while it's the weapon actually in your
+    // hands (player.weapon === 'primary'), not just sitting in inventory.
+    const activeWeaponDef = player.weapon === 'primary' ? WEAPON_DEFS[player.primaryType] : null;
+    const weaponSpeedMult = (activeWeaponDef && activeWeaponDef.moveSpeedMult) || 1;
+    const speedMult = (player.crouching ? 0.45 : (player.sprinting ? player.sprintMult : 1)) * weaponSpeedMult;
     updateStaminaUI();
     updateSpeedEffects(dt);
 
@@ -8091,16 +7896,6 @@
       player.pos.x += move.x * player.speed * speedMult * cheatState.speedMult * dt;
       player.pos.z += move.z * player.speed * speedMult * cheatState.speedMult * dt;
       playerGroup.rotation.y = player.yaw;
-      if (player.dashTimeLeft > 0) player.dashDir = move.clone();
-    } else if (player.dashTimeLeft > 0 && !player.dashDir) {
-      player.dashDir = getForward(player.yaw);
-    }
-    if (player.dashTimeLeft > 0) {
-      const dir = player.dashDir || getForward(player.yaw);
-      player.pos.x += dir.x * player.speed * DASH_SPEED_MULT * dt;
-      player.pos.z += dir.z * player.speed * DASH_SPEED_MULT * dt;
-      player.dashTimeLeft -= dt;
-      if (player.dashTimeLeft <= 0) player.dashDir = null;
     }
 
     // Footsteps: timer-based, cadence depends on sprint/crouch/walk, only
@@ -8124,11 +7919,10 @@
 
     resolveCollisions(player.pos, player.radius, player.pos.y);
 
-    if (player.flying || cheatState.flying) {
-      // Free flight: no gravity, no floor snap, no fall damage. Jump/crouch
-      // keys move straight up/down instead of their normal ground meaning.
-      // (cheatState.flying reuses this exact branch for the cheat-menu Fly
-      // toggle — same behavior, just without an ability pickup/cooldown.)
+    if (cheatState.flying) {
+      // Free flight (dev cheat only): no gravity, no floor snap, no fall
+      // damage. Jump/crouch keys move straight up/down instead of their
+      // normal ground meaning.
       player.velY = 0;
       player.grounded = false;
       const flySpeed = 8 * cheatState.speedMult;
@@ -8425,10 +8219,6 @@
         updateAmmoCratePickups();
         updatePickups(dt);
         updateGrenades(dt);
-        updateTrampolines(dt);
-        updateForcefields(dt);
-        updateFlyTimer(dt);
-        updateAbilityCooldown(dt);
         if (gameMode === 'zombie') {
           for (const zom of zombies) updateZombie(zom, dt);
         } else {
@@ -8462,7 +8252,6 @@
     }
   }
   updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateStaminaUI(); updateGrenadeUI(); updateSmokeGrenadeUI(); updateMolotovUI();
-  updateAbilityUI();
   animate();
 
 })();
