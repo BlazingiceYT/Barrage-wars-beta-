@@ -211,6 +211,14 @@
   #scopeOverlay .reticleH { height: 2px; width: 100vw; transform: translate(-50%,-50%); }
   #scopeOverlay .reticleDot { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); }
 
+  /* Touch controls need to render above the scope's black mask (z-index 8), otherwise they get
+     visually hidden (though still clickable) whenever the player is scoped in. */
+  #moveTouchZone, #joystickZone, #jumpBtn, #crouchBtn, #fireBtn, #scopeBtn, #reloadBtn,
+  #weaponSwitchBtn, #dropBtn, #grenadeBtn, #smokeGrenadeBtn, #molotovBtn,
+  #buildModeBtn, #buildBtn, #buildPieceBtn, #buildTierBtn, #equipBar, #topRightBtns, #skipWaveBtn {
+    z-index: 9;
+  }
+
   #topRightBtns { position: absolute; top: calc(100px * var(--ui-scale) + var(--safe-t)); right: calc(16px + var(--safe-r)); display: flex; flex-direction: column; gap: calc(8px * var(--ui-scale)); align-items: flex-end; }
   #viewToggleBtn, #settingsBtn, #homeSettingsBtn, #homeCreditsBtn, #nukeHudBtn, #ownerBatHudBtn {
     pointer-events: auto;
@@ -700,6 +708,7 @@
         <button id="cheatSpawnBtn">Spawn</button>
       </span>
     </div>
+    <div class="row"><span>Wood Spawner (+100 wood)</span><button id="cheatWoodBtn">🪵 Spawn</button></div>
     <button id="cheatPanelClose">Close</button>
   </div>
 
@@ -1746,6 +1755,44 @@
     return geos;
   }
 
+  // Stairwell footprint (in the house's local x/z) that a floor's ramp cuts
+  // through the slab above it. Pulled out into its own function so the hole
+  // cut into a floor slab and the ramp mesh built one level down are always
+  // computed from the exact same numbers — no risk of them drifting apart.
+  function rampFootprint(fl, w, d, floorH) {
+    const rampLen = floorH * 1.7;
+    const rampSide = (fl % 2 === 0) ? 1 : -1;
+    const rampLocalX = rampSide * (w/2 - 1.2);
+    const rampLocalZStart = -d/2 + 0.3;
+    const halfWidth = 0.9;
+    return { rampLen, rampSide, rampLocalX, rampLocalZStart, halfWidth };
+  }
+
+  // Builds a floor slab as a picture-frame of boxes around a rectangular
+  // hole (or one solid box if there's no hole), same trick buildWallWithGap
+  // uses for windows — so stairwells are an actual gap you can see and
+  // shoot through, not just a solid slab with invisible walk-through collision.
+  function buildFloorWithHole(w, d, thickness, baseY, hole) {
+    const geos = [];
+    function mk(sizeX, sizeZ, cx, cz) {
+      if (sizeX <= 0.02 || sizeZ <= 0.02) return;
+      const geo = new THREE.BoxGeometry(sizeX, thickness, sizeZ);
+      geo.translate(cx, baseY, cz);
+      geos.push(geo);
+    }
+    if (!hole) {
+      mk(w, d, 0, 0);
+      return geos;
+    }
+    const x1 = Math.max(-w/2, hole.x1), x2 = Math.min(w/2, hole.x2);
+    const z1 = Math.max(-d/2, hole.z1), z2 = Math.min(d/2, hole.z2);
+    mk(x1 - (-w/2), d, (-w/2 + x1)/2, 0);            // left of hole
+    mk(w/2 - x2, d, (x2 + w/2)/2, 0);                 // right of hole
+    mk(x2 - x1, z1 - (-d/2), (x1 + x2)/2, (-d/2 + z1)/2); // in front of hole
+    mk(x2 - x1, d/2 - z2, (x1 + x2)/2, (z2 + d/2)/2);      // behind hole
+    return geos;
+  }
+
   function makeHouse(cx, cz, w, d, numFloors, rotY) {
     const group = new THREE.Object3D();
     group.position.set(cx, 0, cz);
@@ -1770,8 +1817,20 @@
 
     for (let fl = 0; fl < numFloors; fl++) {
       const baseY = fl * floorH;
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), floorMat);
-      slab.position.set(0, baseY, 0);
+      // If the floor below has a stairwell leading up to this one, cut a
+      // matching hole in this slab so the opening actually looks open from
+      // both sides instead of the ramp appearing to vanish into a solid ceiling.
+      let slabHole = null;
+      if (fl > 0) {
+        const rf = rampFootprint(fl - 1, w, d, floorH);
+        slabHole = {
+          x1: rf.rampLocalX - rf.halfWidth, x2: rf.rampLocalX + rf.halfWidth,
+          z1: rf.rampLocalZStart, z2: rf.rampLocalZStart + rf.rampLen
+        };
+      }
+      const slabGeos = buildFloorWithHole(w, d, 0.25, baseY, slabHole);
+      const mergedSlabGeo = slabGeos.length > 1 ? THREE.BufferGeometryUtils.mergeBufferGeometries(slabGeos) : slabGeos[0];
+      const slab = new THREE.Mesh(mergedSlabGeo, floorMat);
       slab.receiveShadow = true;
       group.add(slab);
       const cosR90 = Math.cos(rotY||0), sinR90 = Math.sin(rotY||0);
@@ -1848,25 +1907,22 @@
       // stairs (ramp) up to the next floor — also registered as a climbable ramp
       // so the player's collision actually lets them walk up it
       if (fl < numFloors - 1) {
-        const rampLen = floorH*1.7;
         // Each flight of stairs needs its own footprint. If every flight sat on
         // the same corner (just at a different height), a 3+ floor house would
         // have two flights' collision zones stacked exactly on top of each
         // other, and walking near that corner on any floor could make the
         // height calculation snap between floors. Alternating left/right per
         // flight keeps every flight's footprint fully separate.
-        const rampSide = (fl % 2 === 0) ? 1 : -1;
-        const rampLocalX = rampSide * (w/2 - 1.2);
-        const rampLocalZStart = -d/2 + 0.3;
-        const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, rampLen), floorMat);
-        ramp.position.set(rampLocalX, baseY + floorH/2, rampLocalZStart + rampLen/2);
-        ramp.rotation.x = -Math.atan2(floorH, rampLen);
+        const rf = rampFootprint(fl, w, d, floorH);
+        const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, rf.rampLen), floorMat);
+        ramp.position.set(rf.rampLocalX, baseY + floorH/2, rf.rampLocalZStart + rf.rampLen/2);
+        ramp.rotation.x = -Math.atan2(floorH, rf.rampLen);
         ramp.castShadow = true; ramp.receiveShadow = true;
         group.add(ramp);
         const rampEntry = {
           cx, cz, cosR, sinR,
-          localX: rampLocalX, zStart: rampLocalZStart, len: rampLen,
-          halfWidth: 0.9, baseY: baseY + 0.12, floorH,
+          localX: rf.rampLocalX, zStart: rf.rampLocalZStart, len: rf.rampLen,
+          halfWidth: rf.halfWidth, baseY: baseY + 0.12, floorH,
           holeFloor: fl + 1 // this stairwell punches through the slab of the floor it leads up to
         };
         ramps.push(rampEntry);
@@ -2117,10 +2173,15 @@
 
   function placeRampPiece(pos, yaw, tier) {
     const floorH = 2.2, rampLen = floorH * 1.7, rampWidth = 2.0;
-    const cosR = Math.cos(yaw), sinR = Math.sin(yaw);
+    // Rotate the pivot 180° from the player's yaw so the ramp's local +z axis
+    // (which is where the low-near/high-far geometry below extends into)
+    // points in the direction the player is actually facing, instead of
+    // behind them.
+    const pivotYaw = yaw + Math.PI;
+    const cosR = Math.cos(pivotYaw), sinR = Math.sin(pivotYaw);
     const pivot = new THREE.Object3D();
     pivot.position.set(pos.x, player.pos.y, pos.z);
-    pivot.rotation.y = yaw;
+    pivot.rotation.y = pivotYaw;
     scene.add(pivot);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(rampWidth, 0.25, rampLen), makePieceMaterial(tier));
     mesh.position.set(0, floorH/2, rampLen/2);
@@ -6154,7 +6215,7 @@
       setGhostMat(ghostFloorMesh, canAfford);
     } else if (currentBuildPiece === 'ramp') {
       ghostRampPivot.position.set(pos.x, player.pos.y, pos.z);
-      ghostRampPivot.rotation.y = player.yaw;
+      ghostRampPivot.rotation.y = player.yaw + Math.PI; // matches placeRampPiece's forward-facing pivot
       setGhostMat(ghostRampMesh, canAfford);
     }
   }
@@ -6726,6 +6787,14 @@
     const x = player.pos.x + forward.x * 2;
     const z = player.pos.z + forward.z * 2;
     spawnWeaponPickup(type, x, player.pos.y, z, false);
+  });
+
+  // Wood spawner: instantly credits the player with 100 wood, same currency
+  // used for building walls/ramps/floors. No pickup entity involved — just
+  // adds straight to the player's wood total and refreshes the HUD/inventory.
+  bindTap(document.getElementById('cheatWoodBtn'), () => {
+    player.wood += 100;
+    updateWoodUI();
   });
 
   // Nuke: strikes wherever the crosshair is aimed (raycast onto the
