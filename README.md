@@ -149,8 +149,11 @@ Used instnaced mesh more for higher fps
 **Optimization.57 - *Commited by BlazingiceYT on 18 Aug 2026*
 Fixed game thinking that ur on mac if ur on ipad, now deletes everything between games so ur phone dont go boom
 
-**Update0.55** - *Commited by BlazingiceYT on 18 Aug 2026*
+**Update0.58** - *Commited by BlazingiceYT on 18 Aug 2026*
 ai has become smarte
 
-**Update0.55** - *Commited by BlazingiceYT on 19 Aug 2026*
-Balance changes+ fixed character flipping into the ground
+**Update0.59** - *Commited by BlazingiceYT on 19 Aug 2026*
+Balance changes
+
+**Update0.59** - *Commited by BlazingiceYT on 19 Aug 2026*
+fixed character clipping into the ground
