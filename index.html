@@ -3067,7 +3067,13 @@
       headBone.getWorldPosition(headPos);
       toeBone.getWorldPosition(toePos);
       rawHeight = Math.abs(headPos.y - toePos.y) * 1.12; // the Head joint sits at the neck, not the top of the skull — pad a bit so the whole head is included
-      rawFootY = toePos.y;
+      // The toe joint is the pivot the toes bend around, not the very
+      // bottom of the boot sole — measured directly against this rig's
+      // own mesh data, the sole sits about 2.5% of total body height
+      // below the toe joint. Left unaccounted for, this alone doesn't
+      // explain a large sink, but it's a real, verified gap worth
+      // closing exactly rather than guessing at import time.
+      rawFootY = toePos.y - rawHeight * 0.025;
       usedBones = true;
     } else {
       const box = new THREE.Box3().setFromObject(model);
@@ -3085,24 +3091,15 @@
     model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
     model.updateMatrixWorld(true);
 
-    // Sanity-check against the model's own real, rendered geometry instead
-    // of trusting the toe-bone joint alone. A rig's toe joint sits inside
-    // the foot, not at the very bottom of the sole, so bone-only placement
-    // left a small but visible gap where the actual foot mesh dipped below
-    // y=0 into the terrain — confirmed via the hitbox debug view still
-    // showing the old placeholder body's box instead of this model's real
-    // shape. `model` has no parent yet at this point, so its matrixWorld
-    // is local-only — this box is already in rootGroup-local space, no
-    // extra work needed to strip out world offsets from player/bot
-    // position.
-    const realBox = new THREE.Box3().setFromObject(model);
-    if (isFinite(realBox.min.y) && Math.abs(realBox.min.y) > 0.001) {
-      model.position.y -= realBox.min.y;
-      model.updateMatrixWorld(true);
-    }
-    // Real head height (rootGroup-local, same reasoning as above) — used
-    // below to rescale the invisible hit-test proxies to this character's
-    // actual measured size instead of the placeholder's fixed guess.
+    // Real head height (rootGroup-local) — used below to rescale the
+    // invisible hit-test proxies to this character's actual measured size
+    // instead of the placeholder's fixed guess. Read via getWorldPosition
+    // on the actual bone, not a Box3 on the geometry: three.js's Box3
+    // helper reads a SkinnedMesh's raw, unskinned vertex buffer, and right
+    // after SkeletonUtils.clone() that buffer isn't reliably ready to
+    // measure from — that's what caused this same model to balloon to a
+    // huge size the first time this loader was built, and it's why this
+    // reads the live bone transform instead.
     let realHeadY = null;
     if (headBone) {
       const hp = new THREE.Vector3();
