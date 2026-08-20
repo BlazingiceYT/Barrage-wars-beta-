@@ -698,7 +698,7 @@
     <div class="row"><span>Show Hitboxes</span><button id="cheatHitboxBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Fly</span><button id="cheatFlyBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Freecam</span><button id="cheatFreecamBtn" class="miniToggleBtn off">OFF</button></div>
-    <div class="row"><span>God Mode</span><button id="cheatGodBtn" class="miniToggleBtn off">OFF</button></div>
+    <div class="row"><span>Auto Dodge</span><button id="cheatDodgeBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Move Mode (tap a bot/zombie/house to grab, tap again to drop)</span><button id="cheatMoveBtn" class="miniToggleBtn off">OFF</button></div>
     <div class="row"><span>Nuke (wherever you're looking)</span><button id="cheatNukeBtn" style="background:linear-gradient(180deg,#c23b3b,#7a1c1c); border-color:#ff8080;">☢ DROP</button></div>
     <div class="row"><span>Owner Bat (equip, 0 dmg, ragdolls hit target 10s)</span><button id="cheatBatBtn" class="miniToggleBtn off">OFF</button></div>
@@ -709,6 +709,7 @@
       </span>
     </div>
     <div class="row"><span>Wood Spawner (+100 wood)</span><button id="cheatWoodBtn">🪵 Spawn</button></div>
+    <div class="row"><span>Sky Platform (build + teleport to top)</span><button id="cheatSkyPlatformBtn">☁ Spawn</button></div>
     <button id="cheatPanelClose">Close</button>
   </div>
 
@@ -5585,6 +5586,7 @@
   function damagePlayer(amount, sourcePos) {
     if (!player.alive) return;
     if (cheatState.godMode) return;
+    if (cheatState.autoDodge) { triggerPlayerDodge(sourcePos); return; }
     if (player.blocking && sourcePos) {
       // The shield only catches hits arriving from roughly the direction
       // the player is facing — a flank or rear hit still goes through.
@@ -5604,6 +5606,60 @@
     if (player.health <= 0) playerDie();
   }
   function updateHealthUI() { document.getElementById('healthBar').style.width = (player.health/player.maxHealth*100) + '%'; }
+
+  // ---------- Auto Dodge (cheat) ----------
+  // Bots resolve their shots as an instant hit-chance roll (no actual
+  // travel-time bullet exists to react to), so this isn't reacting to a
+  // real projectile in flight — it's a stand-in "evaded that" reaction that
+  // fires whenever a hit would otherwise have landed on the player, and
+  // cancels the damage entirely. Plays as a short, collision-respecting
+  // sideways hop plus a lean/rotation of the visible third-person model.
+  const dodgeFX = { active: false, t: 0, duration: 0.32, sideSign: 1, lastEase: 0 };
+  const DODGE_DISTANCE = 1.6; // total lateral distance covered over the dodge
+  const DODGE_ROT_MAX = 0.6;  // radians the visible model leans into the dodge at its peak
+
+  function triggerPlayerDodge(sourcePos) {
+    let sideSign;
+    if (sourcePos) {
+      const toSrc = new THREE.Vector3(sourcePos.x - player.pos.x, 0, sourcePos.z - player.pos.z);
+      if (toSrc.lengthSq() > 0.0001) {
+        toSrc.normalize();
+        const right = getRight(player.yaw);
+        // hop away from whichever side the shot is coming from
+        sideSign = right.dot(toSrc) >= 0 ? -1 : 1;
+      } else {
+        sideSign = -dodgeFX.sideSign;
+      }
+    } else {
+      sideSign = -dodgeFX.sideSign;
+    }
+    dodgeFX.active = true;
+    dodgeFX.t = 0;
+    dodgeFX.lastEase = 0;
+    dodgeFX.sideSign = sideSign;
+  }
+
+  // Ticked every frame from updateMovement, before resolveCollisions runs —
+  // so the lateral hop still gets clipped by walls exactly like normal
+  // movement instead of dodging players through solid geometry.
+  function tickPlayerDodge(dt) {
+    if (!dodgeFX.active) return;
+    dodgeFX.t += dt;
+    const t = Math.min(1, dodgeFX.t / dodgeFX.duration);
+    const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const deltaFrac = ease - dodgeFX.lastEase;
+    dodgeFX.lastEase = ease;
+    const right = getRight(player.yaw);
+    const moveAmt = deltaFrac * DODGE_DISTANCE * dodgeFX.sideSign;
+    player.pos.x += right.x * moveAmt;
+    player.pos.z += right.z * moveAmt;
+    // Sine hump so the model rotates out into the dodge and eases back to
+    // facing player.yaw by the end, instead of snapping.
+    const rotOffset = Math.sin(t * Math.PI) * DODGE_ROT_MAX * dodgeFX.sideSign;
+    playerGroup.rotation.y = player.yaw + rotOffset;
+    if (t >= 1) dodgeFX.active = false;
+  }
+
 
   // ---------- Damage direction indicator ----------
   // Shows a chevron on the edge of the screen pointing toward wherever the
@@ -6475,6 +6531,7 @@
     flying: false,
     freecam: false,
     godMode: false,
+    autoDodge: false,
     moveMode: false,
     heldEntity: null,
     heldHouse: null,
@@ -6562,11 +6619,11 @@
     cheatFreecamBtn.classList.toggle('off', !cheatState.freecam);
   });
 
-  const cheatGodBtn = document.getElementById('cheatGodBtn');
-  bindTap(cheatGodBtn, () => {
-    cheatState.godMode = !cheatState.godMode;
-    cheatGodBtn.textContent = cheatState.godMode ? 'ON' : 'OFF';
-    cheatGodBtn.classList.toggle('off', !cheatState.godMode);
+  const cheatDodgeBtn = document.getElementById('cheatDodgeBtn');
+  bindTap(cheatDodgeBtn, () => {
+    cheatState.autoDodge = !cheatState.autoDodge;
+    cheatDodgeBtn.textContent = cheatState.autoDodge ? 'ON' : 'OFF';
+    cheatDodgeBtn.classList.toggle('off', !cheatState.autoDodge);
   });
 
   // Move Mode: grab a bot/zombie/house by looking at it and clicking, it
@@ -6796,6 +6853,38 @@
     player.wood += 100;
     updateWoodUI();
   });
+
+  // Sky Platform: instantly builds a large metal floor slab high above the
+  // player's current x/z position — well above the tallest hill (~11) or
+  // 3-storey house (~9.6) — and teleports the player straight onto it. Uses
+  // the same `floors`/`builtPieces` bookkeeping as a normal built floor
+  // piece, so it's walkable, destructible with the axe, and cleaned up the
+  // same way, just much bigger and free.
+  const SKY_PLATFORM_Y = 150;
+  const SKY_PLATFORM_SIZE = 16;
+  const SKY_PLATFORM_THICKNESS = 0.4;
+  function spawnSkyPlatform() {
+    const px = player.pos.x, pz = player.pos.z;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(SKY_PLATFORM_SIZE, SKY_PLATFORM_THICKNESS, SKY_PLATFORM_SIZE),
+      makePieceMaterial('metal')
+    );
+    mesh.position.set(px, SKY_PLATFORM_Y + SKY_PLATFORM_THICKNESS/2, pz);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    const standY = SKY_PLATFORM_Y + SKY_PLATFORM_THICKNESS/2 + 0.03;
+    const floorRef = { x: px, z: pz, hw: SKY_PLATFORM_SIZE/2, hd: SKY_PLATFORM_SIZE/2, y: standY, fl: 0 };
+    floors.push(floorRef);
+    const entry = { type: 'floor', mesh, tier: 'metal', health: TIERS.metal.hp * 10, floorRef };
+    builtPieces.push(entry);
+    // Teleport the player onto it directly so this works immediately without
+    // also needing the Fly cheat to climb up there manually.
+    player.pos.y = standY;
+    player.velY = 0;
+    player.grounded = true;
+    return entry;
+  }
+  bindTap(document.getElementById('cheatSkyPlatformBtn'), spawnSkyPlatform);
 
   // Nuke: strikes wherever the crosshair is aimed (raycast onto the
   // terrain; falls back to a spot ahead of the player if the crosshair
@@ -7963,6 +8052,7 @@
       player.pos.z += move.z * player.speed * speedMult * cheatState.speedMult * dt;
       playerGroup.rotation.y = player.yaw;
     }
+    tickPlayerDodge(dt);
 
     // Footsteps: timer-based, cadence depends on sprint/crouch/walk, only
     // while actually moving on the ground (not mid-air or in a menu).
