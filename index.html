@@ -596,6 +596,8 @@
       <div id="waveRow" style="display:none;">Wave: <span id="waveNum">1</span></div>
       <div id="zombiesLeftRow" style="display:none;">Zombies: <span id="zombiesLeftCount">0</span></div>
       <div id="trainingRow" style="display:none; color:#c9a15a; font-weight:bold;">TRAINING GROUND</div>
+      <div id="ctfRow" style="display:none; color:#ffd25a; font-weight:bold;">Captures: <span id="ctfCaptures">0</span>/<span id="ctfCapturesTarget">3</span> &nbsp;|&nbsp; <span id="ctfFlagStatus">Enemy flag at their base</span></div>
+      <div id="ctfDefenseRow" style="display:none; color:#ff8a8a; font-weight:bold; font-size:12px;"><span id="ctfDefenseStatus">Defense: 0/3 | Your flag is safe</span></div>
       <div id="viewModeLabel">View: Third Person</div>
     </div>
 
@@ -667,9 +669,10 @@
     <div class="row"><span>Screen Shake</span><input type="range" id="shakeSlider" min="0" max="1.5" step="0.1" value="1"><span class="val" id="shakeVal">100%</span></div>
     <div class="row"><span>Invert Look Y</span><button id="invertYToggleBtn" class="miniToggleBtn off">OFF</button></div>
     <h3 style="margin-top:14px;">GRAPHICS</h3>
-    <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="2" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
+    <div class="row"><span>Render Distance</span><input type="range" id="renderDistSlider" min="0" max="3" step="1" value="2"><span class="val" id="renderDistVal">High</span></div>
     <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row"><span>Shadows</span><button id="shadowToggleBtn" class="miniToggleBtn">ON</button></div>
+    <div class="row"><span>Weather</span><button id="weatherModeBtn" class="miniToggleBtn">AUTO</button></div>
     <h3 style="margin-top:14px;">ACCESSIBILITY</h3>
     <div class="row"><span>Colorblind-Friendly Colors</span><button id="colorblindToggleBtn" class="miniToggleBtn off">OFF</button></div>
     <h3 id="mobileAimHeader" style="margin-top:14px;">MOBILE AIM</h3>
@@ -710,6 +713,7 @@
     </div>
     <div class="row"><span>Wood Spawner (+100 wood)</span><button id="cheatWoodBtn">🪵 Spawn</button></div>
     <div class="row"><span>Sky Platform (build + teleport to top)</span><button id="cheatSkyPlatformBtn">☁ Spawn</button></div>
+    <div class="row"><span>Force Wet Ground (Extreme puddles, instant)</span><button id="cheatWetBtn" class="miniToggleBtn off">OFF</button></div>
     <button id="cheatPanelClose">Close</button>
   </div>
 
@@ -752,6 +756,7 @@
       <button class="bigBtn" id="startBtnZombie" style="background:linear-gradient(180deg,#5fae3d,#2f6b1f); margin-top:10px;">ZOMBIE MODE</button>
       <button class="bigBtn" id="startBtnPlayground" style="background:linear-gradient(180deg,#7b61ff,#4b35a8); margin-top:10px;">PLAYGROUND</button>
       <button class="bigBtn" id="startBtnTraining" style="background:linear-gradient(180deg,#c9a15a,#8a6a3b); margin-top:10px;">TRAINING GROUND</button>
+      <button class="bigBtn" id="startBtnCTF" style="background:linear-gradient(180deg,#3a7bd5,#1e4a8f); margin-top:10px;">CAPTURE THE FLAG</button>
     </div>
   </div>
 
@@ -776,6 +781,13 @@
     <button class="bigBtn" id="backToModeBtn" style="background:linear-gradient(180deg,#666,#333); margin-top:10px;">BACK</button>
   </div>
 
+  <div class="overlayScreen" id="ctfIntroScreen" style="display:none;">
+    <h1 style="color:#5aa0ff;">CAPTURE THE FLAG</h1>
+    <p>A separate walled-off map built for cover fighting &mdash; houses, crates and trees packed between two bases. Their flag sits guarded at the red base; grab it and get it back to your blue base to score. A squad of blue teammates drops in with you and will also push for their flag on their own. Watch your own flag too &mdash; red guards will try to steal it and run it back to their base, so kill the carrier to drop it. Get killed while carrying a flag and it drops on the spot &mdash; walk back over it to pick it up again, or it returns to base on its own after a while. First side to <b id="ctfIntroTarget">3</b> captures wins.</p>
+    <button class="bigBtn" id="startCTFBtn" style="background:linear-gradient(180deg,#3a7bd5,#1e4a8f);">DEPLOY</button>
+    <button class="bigBtn" id="backFromCTFBtn" style="background:linear-gradient(180deg,#666,#333); margin-top:10px;">BACK</button>
+  </div>
+
   <div id="dropOverlay" style="position:absolute; inset:0; pointer-events:none; z-index:15; display:none;">
     <div id="dropPrompt" style="position:absolute; top:40%; left:50%; transform:translate(-50%,-50%); color:#fff; text-align:center; text-shadow:0 2px 8px rgba(0,0,0,0.9);">
       <div style="font-size:15px; letter-spacing:2px; color:#ffdd55; margin-bottom:8px;">FALLING</div>
@@ -792,8 +804,8 @@
   </div>
 
   <div class="overlayScreen" id="winScreen" style="display:none;">
-    <h1>👑 VICTORY ROYALE 👑</h1>
-    <p>You're the last one standing.</p>
+    <h1 id="winTitle">👑 VICTORY ROYALE 👑</h1>
+    <p id="winSubtitle">You're the last one standing.</p>
     <p>Final Kills: <span id="winKills">0</span></p>
     <button class="bigBtn" id="winPlayAgainBtn">PLAY AGAIN</button>
   </div>
@@ -803,11 +815,28 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Reflector.js"></script>
 <script>
 (function(){
   "use strict";
 
   const canvas = document.getElementById('c');
+  // If a text input (cheat PIN, key-rebind capture, etc.) was focused and
+  // its panel got closed without explicitly blurring it, document.activeElement
+  // can stay pointed at that (now hidden) input. The keydown handler further
+  // below skips preventDefault() whenever an INPUT/TEXTAREA is focused —
+  // correctly, so people can still type into visible inputs — but a *stuck*
+  // hidden focus silently re-triggers the exact "hardware keyboard held key
+  // pops up iPadOS's accented-character picker" bug it was meant to guard
+  // against. A touch/click reaching the canvas itself only happens during
+  // gameplay (modals sit on top and catch their own taps), so it's a safe
+  // signal that any lingering input focus is stale and should be dropped.
+  function releaseStuckInputFocus() {
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) el.blur();
+  }
+  canvas.addEventListener('touchstart', releaseStuckInputFocus, {passive:true});
+  canvas.addEventListener('mousedown', releaseStuckInputFocus);
   const gameContainer = document.getElementById('game-container');
   // On mobile browsers (address bar visible, not an installed/fullscreen
   // app — e.g. loading a plain http://host:8000 URL), CSS 100vh/100dvh can
@@ -988,6 +1017,10 @@
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
   scene.add(ground);
+  // CTF/zombie ground meshes are built lazily inside their own map builders;
+  // exposed here (assigned there) so Extreme can tweak wet-look roughness on
+  // whichever ground is actually in play without caring which mode built it.
+  let ctfGroundMesh = null, cityGroundMesh = null;
 
   // static solid obstacles (AABB): {x,z,hw,hd,minY,maxY}
   const solids = [];
@@ -1309,7 +1342,7 @@
     // are skipped so one hit doesn't restack more hits into it every frame
     // while it's tumbling through the car's path.
     if (Math.abs(car.speed) > 3) {
-      for (const e of activeEnemies()) {
+      for (const e of playerHostileTargets()) {
         if (!e.alive || e.ragdollTimeLeft > 0) continue;
         if (Math.hypot(e.pos.x - car.pos.x, e.pos.z - car.pos.z) < 2.1) {
           const dmg = Math.min(90, Math.abs(car.speed) * 7);
@@ -1457,7 +1490,14 @@
   // camera, and updateGrassVisibility() below also hides chunks that are
   // simply too far from the player to matter, on top of that.
   const grassChunks = [];
-  const GRASS_VISIBLE_DIST = 240; // roughly matches the FFA map's high-setting fog distance
+  let GRASS_VISIBLE_DIST = 240; // roughly matches the FFA map's high-setting fog distance
+  // Called from applyRenderDistance() so Extreme keeps grass chunks visible
+  // out to (roughly) its longer draw distance instead of them fading at the
+  // same 240 units every other tier uses — same 160k blades, just more of
+  // them left on screen at once.
+  function updateGrassVisibleDist(level) {
+    GRASS_VISIBLE_DIST = level === 3 ? 850 : 240;
+  }
   function scatterGrass() {
     const GRASS_COUNT = 160000; // moreee — now safe to push since it's chunked+culled
     const colors = [0x4f9a4f, 0x5cae52, 0x468a42, 0x6bbf5e];
@@ -2845,6 +2885,28 @@
   let playgroundMode = false;
   let trainingMode = false;
 
+  // The CTF map is a third separate area, far from both the FFA island and
+  // the zombie city, walled off and packed with houses/crates/trees for
+  // cover between two bases.
+  const CTF_CX = 900, CTF_CZ = 0;
+  const CTF_HALF = 110; // 220x220 arena, comfortably inside the default fog draw distance
+  const CTF_HOME_BASE = { x: CTF_CX - CTF_HALF * 0.72, z: CTF_CZ };
+  const CTF_ENEMY_BASE = { x: CTF_CX + CTF_HALF * 0.72, z: CTF_CZ };
+  const CTF_CAPTURES_TO_WIN = 3;
+  const CTF_GUARD_COUNT = 15;
+  const CTF_TEAMMATE_COUNT = 6; // friendly squad that drops in with the player and pushes for the enemy flag
+  const CTF_GUARD_RESPAWN_TIME = 10; // seconds before a killed guard/teammate respawns
+  const CTF_FLAG_PICKUP_DIST = 3;
+  const CTF_FLAG_RETURN_TIME = 20; // seconds a dropped flag sits before auto-returning to base
+  let ctfBuilt = false;
+  let ctfMatchId = 0; // bumped every time a CTF match (re)starts, so stale guard-respawn timers from a previous match/mode never fire
+  const ctfState = {
+    captures: 0,      // times the player's side has brought the enemy flag home
+    enemyCaptures: 0, // times the enemy has brought the home flag to their own base
+    enemyFlag: { state: 'base', pos: new THREE.Vector3(CTF_ENEMY_BASE.x, 0, CTF_ENEMY_BASE.z), returnTimer: 0, group: null, carrier: null },
+    homeFlag: { state: 'base', pos: new THREE.Vector3(CTF_HOME_BASE.x, 0, CTF_HOME_BASE.z), returnTimer: 0, group: null, carrier: null }
+  };
+
   // killZombie schedules the next wave 1.8s after the last zombie in the
   // current wave dies. If the player dies right around that same moment,
   // a respawn reset (or a manual Skip Wave) could leave that timeout
@@ -3511,8 +3573,15 @@
     const frac = Math.max(0, ent.health / ent.maxHealth);
     ctx.clearRect(0,0,cnv.width,cnv.height);
     ctx.fillStyle = 'rgba(20,0,0,0.8)'; ctx.fillRect(0,0,cnv.width,cnv.height);
-    const palette = settings.colorblindMode ? HEALTH_COLORS_CB : HEALTH_COLORS;
-    ctx.fillStyle = frac > 0.5 ? palette[0] : (frac > 0.25 ? palette[1] : palette[2]);
+    if (ent.ctfTeam) {
+      // CTF health bars are colored by team instead of the health-level
+      // traffic-light scheme below, so allegiance reads at a glance with
+      // red guards and blue teammates mixed together on screen.
+      ctx.fillStyle = ent.ctfTeam === 'blue' ? '#3a7bd5' : '#e34b3d';
+    } else {
+      const palette = settings.colorblindMode ? HEALTH_COLORS_CB : HEALTH_COLORS;
+      ctx.fillStyle = frac > 0.5 ? palette[0] : (frac > 0.25 ? palette[1] : palette[2]);
+    }
     ctx.fillRect(2,2,(cnv.width-4)*frac,cnv.height-4);
     tex.needsUpdate = true;
     if (ent.isBoss) {
@@ -3521,6 +3590,8 @@
   }
 
   const botBodyMats = [0xc4453d,0xd68a3d,0x9a4dc4,0x4dc48a,0xc4c14d,0x4d8ac4];
+  // Friendly CTF teammates always wear blue, matching the home base/flag color.
+  const botBodyMatsBlue = [0x2a5fb0,0x3a7bd5,0x1e4a8f];
   // Head/leg color is identical on every bot and never changes, so those two
   // materials are shared across all bots. The body color DOES differ per bot,
   // so each bot still gets its own body material - colors stay distinct and
@@ -3547,11 +3618,12 @@
     return 'normal';
   }
 
-  function spawnBot(idx) {
+  function spawnBot(idx, ctfTeam) {
     const tierName = pickBotTier();
     const tier = BOT_TIERS[tierName];
     const group = new THREE.Object3D();
-    const colorHex = botBodyMats[idx % botBodyMats.length];
+    const isBlueTeammate = gameMode === 'ctf' && ctfTeam === 'blue';
+    const colorHex = isBlueTeammate ? botBodyMatsBlue[idx % botBodyMatsBlue.length] : botBodyMats[idx % botBodyMats.length];
     const bodyMat = new THREE.MeshStandardMaterial({color:colorHex, roughness:0.6});
     if (tier.glow) { bodyMat.emissive = new THREE.Color(tier.glow); bodyMat.emissiveIntensity = tierName === 'elite' ? 0.55 : 0.28; }
     const eBody = new THREE.Mesh(humanoidTorsoGeo, bodyMat);
@@ -3576,7 +3648,7 @@
     const chuteGroup = new THREE.Object3D();
     const canopy = new THREE.Mesh(
       new THREE.ConeGeometry(1.1, 0.9, 10, 1, true),
-      new THREE.MeshStandardMaterial({ color: botBodyMats[idx % botBodyMats.length], side: THREE.DoubleSide, roughness: 0.8 })
+      new THREE.MeshStandardMaterial({ color: colorHex, side: THREE.DoubleSide, roughness: 0.8 })
     );
     canopy.position.y = 3.4; canopy.rotation.x = Math.PI;
     chuteGroup.add(canopy);
@@ -3591,10 +3663,19 @@
     group.add(chuteGroup);
 
     let x, z;
-    do {
-      x = (Math.random()-0.5) * (WORLD_SIZE - 40);
-      z = (Math.random()-0.5) * (WORLD_SIZE - 40);
-    } while (Math.hypot(x,z) < 15);
+    if (gameMode === 'ctf') {
+      // Guards drop in and roam near their own (enemy-to-the-player) base;
+      // teammates drop in near the player's home base instead.
+      const dropBase = isBlueTeammate ? CTF_HOME_BASE : CTF_ENEMY_BASE;
+      const ang = Math.random()*Math.PI*2, r = Math.random()*38 + 8;
+      x = dropBase.x + Math.cos(ang)*r;
+      z = dropBase.z + Math.sin(ang)*r;
+    } else {
+      do {
+        x = (Math.random()-0.5) * (WORLD_SIZE - 40);
+        z = (Math.random()-0.5) * (WORLD_SIZE - 40);
+      } while (Math.hypot(x,z) < 15);
+    }
     const dropY = 70 + Math.random()*50;
     group.position.set(x, dropY, z);
     if (tier.scale !== 1.0) group.scale.setScalar(tier.scale);
@@ -3632,7 +3713,14 @@
       flankAngle: squadSlot === 0 ? 0 : (squadSlot % 2 === 0 ? 1 : -1) * (0.7 + 0.35*Math.floor((squadSlot-1)/2)), // radians either side of straight-on
       spottedRef: null, reactionTimer: 0, // reactionTimer counts down after first spotting spottedRef; bot won't fire until it hits 0
       retreating: false,
-      coverPos: null, coverTimer: 0
+      coverPos: null, coverTimer: 0,
+      // ---- stuck detection: straight-line-to-target movement with no
+      // real pathfinding will wedge a bot against a wall/crate corner
+      // forever without this. See updateBot for the sidestep logic. ----
+      stuckSamplePos: null, stuckSampleTimer: 0.4, sidestepTimer: 0, sidestepDir: 1,
+      // ---- CTF team/objective state (unused outside gameMode 'ctf') ----
+      ctfTeam: gameMode === 'ctf' ? (ctfTeam || 'red') : null,
+      flagRunner: gameMode === 'ctf' ? Math.random() < 0.35 : false
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
@@ -3650,6 +3738,13 @@
       const r = Math.random() * zone.radius * 0.85;
       const ang = Math.random() * Math.PI * 2;
       bot.target.set(zone.centerX + Math.cos(ang) * r, 0, zone.centerZ + Math.sin(ang) * r);
+      return;
+    }
+    if (gameMode === 'ctf') {
+      // Guards/teammates patrol/wander around their own base rather than the whole map.
+      const base = bot.ctfTeam === 'blue' ? CTF_HOME_BASE : CTF_ENEMY_BASE;
+      const ang = Math.random() * Math.PI * 2, r = Math.random() * 40;
+      bot.target.set(base.x + Math.cos(ang)*r, 0, base.z + Math.sin(ang)*r);
       return;
     }
     bot.target.set((Math.random()-0.5)*(WORLD_SIZE-40), 0, (Math.random()-0.5)*(WORLD_SIZE-40));
@@ -3714,6 +3809,12 @@
     if (bot.weaponType && bot.weaponType !== 'pistol') {
       spawnWeaponPickup(bot.weaponType, bot.pos.x, bot.pos.y, bot.pos.z, true);
     }
+    // A bot carrying a stolen flag drops it right where it died, same as
+    // the player does.
+    if (gameMode === 'ctf') {
+      if (ctfState.enemyFlag.carrier === bot) dropEnemyFlag(bot.pos);
+      if (ctfState.homeFlag.carrier === bot) dropHomeFlag(bot.pos);
+    }
     aliveBotCount--;
     document.getElementById('aliveCount').textContent = aliveBotCount + (player.alive?1:0);
     if (killedByPlayer) {
@@ -3721,10 +3822,31 @@
       document.getElementById('kills').textContent = player.kills;
     }
     if (gameMode === 'ffa' && aliveBotCount <= 0 && player.alive && !matchWon) playerWin();
+    // CTF guards respawn after a short delay instead of staying dead for
+    // good, so the base stays defended for the whole match. Captures the
+    // current ctfMatchId so a timer left over from a match that's since
+    // ended/reset won't spawn a stray guard into a later one.
+    if (gameMode === 'ctf') {
+      const gen = ctfMatchId;
+      const team = bot.ctfTeam;
+      setTimeout(() => {
+        if (gameMode === 'ctf' && ctfMatchId === gen && !matchWon) spawnBot(bots.length, team);
+      }, CTF_GUARD_RESPAWN_TIME * 1000);
+    }
   }
 
   // ---------- Zombie Mode: fiery volcanic wasteland map ----------
   function activeEnemies() { return gameMode === 'zombie' ? zombies : bots; }
+  // Same as activeEnemies() but excludes friendly CTF teammates — used
+  // anywhere the PLAYER can deal damage (bullets, melee, aim assist,
+  // grenades/fire, vehicle impacts) so a teammate standing in the
+  // crossfire never eats player damage. Bot-vs-bot targeting doesn't use
+  // this — that's handled separately by findNearestTarget's team check.
+  function playerHostileTargets() {
+    if (gameMode === 'zombie') return zombies;
+    if (gameMode === 'ctf') return bots.filter(b => b.ctfTeam !== 'blue');
+    return bots;
+  }
 
   // Charred volcanic rock ground, veined with glowing lava cracks instead of
   // plain grey asphalt cracks.
@@ -3943,6 +4065,303 @@
     pos.needsUpdate = true;
   }
 
+  // ---------- Weather ----------
+  // Cheap, camera-anchored rain/snow that works in every mode: a small
+  // patch of particles sits centered on the player each frame (only their
+  // fall/drift within that patch is simulated, never a position across the
+  // whole map), so it always reads as "falling everywhere" without
+  // simulating particles across the whole map. Also eases the sky color,
+  // fog distance, and sun/ambient light toward a stormy grey while active,
+  // and back to the mode's normal look in between — layered on top of
+  // whatever base look the current mode/render-distance setting already
+  // established, never replacing it outright.
+  const WEATHER_TYPES = ['clear', 'rain', 'snow'];
+  const WEATHER_SKY_BASE = { ffa: 0x8fc6f0, zombie: 0x1a0805 };
+  const WEATHER_FOGCOLOR_BASE = { ffa: 0x8fc6f0, zombie: 0x2a0f06 };
+  const WEATHER_LIGHT_BASE = {
+    ffa:    { hemi: 0.75, sunI: 1.15, sunColor: 0xfff2d8 },
+    zombie: { hemi: 0.55, sunI: 0.55, sunColor: 0xff6a2e }
+  };
+  const _weatherTmpColor = new THREE.Color();
+  const _weatherStormSky = new THREE.Color(0x6b7580);
+  const _weatherStormFog = new THREE.Color(0x7a8590);
+
+  let weatherType = 'clear', weatherNext = 'clear';
+  let weatherIntensity = 0; // 0 = clear look, 1 = fully into weatherType
+  let weatherTimer = 30 + Math.random()*30; // seconds until the next auto weather roll
+
+  const RAIN_COUNT = 420, RAIN_SPAN = 70, RAIN_HEIGHT = 40, RAIN_LEN = 0.6;
+  let rainLines = null, rainVelY = null;
+  function initRain() {
+    const positions = new Float32Array(RAIN_COUNT * 2 * 3);
+    rainVelY = new Float32Array(RAIN_COUNT);
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const x = (Math.random()-0.5)*RAIN_SPAN, y = Math.random()*RAIN_HEIGHT, z = (Math.random()-0.5)*RAIN_SPAN;
+      positions[i*6+0] = x; positions[i*6+1] = y;            positions[i*6+2] = z;
+      positions[i*6+3] = x; positions[i*6+4] = y - RAIN_LEN; positions[i*6+5] = z;
+      rainVelY[i] = 24 + Math.random()*12;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({ color: 0xaecbe8, transparent: true, opacity: 0, depthWrite: false });
+    rainLines = new THREE.LineSegments(geo, mat);
+    rainLines.frustumCulled = false;
+    rainLines.visible = false;
+    scene.add(rainLines);
+  }
+
+  const SNOW_COUNT = 260, SNOW_SPAN = 65, SNOW_HEIGHT = 35;
+  let snowPoints = null, snowVelY = null, snowSway = null;
+  function initSnow() {
+    const positions = new Float32Array(SNOW_COUNT * 3);
+    snowVelY = new Float32Array(SNOW_COUNT);
+    snowSway = new Float32Array(SNOW_COUNT);
+    for (let i = 0; i < SNOW_COUNT; i++) {
+      positions[i*3+0] = (Math.random()-0.5)*SNOW_SPAN;
+      positions[i*3+1] = Math.random()*SNOW_HEIGHT;
+      positions[i*3+2] = (Math.random()-0.5)*SNOW_SPAN;
+      snowVelY[i] = 1.6 + Math.random()*1.4;
+      snowSway[i] = Math.random()*Math.PI*2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.22, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true });
+    snowPoints = new THREE.Points(geo, mat);
+    snowPoints.frustumCulled = false;
+    snowPoints.visible = false;
+    scene.add(snowPoints);
+  }
+
+  // ---------- Extreme wet ground: sheen + real reflective puddles ----------
+  // groundWetness tracks how "rained-on" the current ground is (0..1),
+  // filling while it rains and slowly drying out afterward — tracked in
+  // every tier since it's just a number, but only actually shown (ground
+  // sheen + puddle overlay) when Extreme is selected, so Low/Medium/High
+  // render exactly as they did before this existed.
+  let groundWetness = 0;
+  let puddleMesh = null;
+  // Custom Reflector shader: same mirror-render Reflector.js already does,
+  // plus (a) a blob-shaped alpha mask so only puddle-shaped patches show a
+  // reflection instead of the whole ground turning into a mirror, and (b) a
+  // small sine-based UV ripple so it reads as disturbed water rather than a
+  // perfectly flat mirror.
+  const PuddleReflectorShader = {
+    uniforms: {
+      color: { value: null },
+      tDiffuse: { value: null },
+      textureMatrix: { value: null },
+      tMask: { value: null },
+      maskRepeat: { value: new THREE.Vector2(6, 6) },
+      maskOffset: { value: new THREE.Vector2(0, 0) },
+      opacity: { value: 0 },
+      rippleTime: { value: 0 }
+    },
+    vertexShader: `
+      uniform mat4 textureMatrix;
+      varying vec4 vUv;
+      varying vec2 vMaskUv;
+      void main() {
+        vUv = textureMatrix * vec4(position, 1.0);
+        vMaskUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 color;
+      uniform sampler2D tDiffuse;
+      uniform sampler2D tMask;
+      uniform vec2 maskRepeat;
+      uniform vec2 maskOffset;
+      uniform float opacity;
+      uniform float rippleTime;
+      varying vec4 vUv;
+      varying vec2 vMaskUv;
+      void main() {
+        vec2 ripple = vec2(
+          sin(vMaskUv.x * 45.0 + rippleTime * 1.6),
+          cos(vMaskUv.y * 45.0 + rippleTime * 1.3)
+        ) * 0.0035;
+        vec4 refl = texture2DProj(tDiffuse, vUv + vec4(ripple * vUv.w, 0.0, 0.0));
+        vec2 maskUv = vMaskUv * maskRepeat + maskOffset;
+        float mask = texture2D(tMask, maskUv).a;
+        gl_FragColor = vec4(refl.rgb, mask * opacity);
+      }
+    `
+  };
+  function initPuddles() {
+    // Alpha mask for the real reflection below — bigger, more opaque blobs
+    // than the old flat overlay needed, since a subtle mask here reads as
+    // "no puddles at all" rather than "faint puddles" once it's tiled
+    // across a 15-unit texture tile.
+    const cnv = document.createElement('canvas'); cnv.width = 256; cnv.height = 256;
+    const ctx = cnv.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    for (let i = 0; i < 20; i++) {
+      const x = Math.random()*256, y = Math.random()*256;
+      const r = 30 + Math.random()*60;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.75, 'rgba(255,255,255,0.7)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.random()*Math.PI);
+      ctx.scale(1, 0.55 + Math.random()*0.3);
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    const maskTex = new THREE.CanvasTexture(cnv);
+    maskTex.wrapS = maskTex.wrapT = THREE.RepeatWrapping;
+    const geo = new THREE.PlaneGeometry(90, 90);
+    // 2048 mirror-render resolution — expensive (a full extra scene render
+    // every frame it's visible) but this is Extreme: everything, no
+    // compromise for weaker hardware.
+    puddleMesh = new THREE.Reflector(geo, {
+      textureWidth: 2048, textureHeight: 2048,
+      clipBias: 0.003,
+      shader: PuddleReflectorShader
+    });
+    puddleMesh.material.uniforms.tMask.value = maskTex;
+    puddleMesh.material.transparent = true;
+    puddleMesh.material.depthWrite = false;
+    puddleMesh.rotation.x = -Math.PI/2;
+    puddleMesh.position.y = 0.03;
+    puddleMesh.renderOrder = 5;
+    puddleMesh.visible = false;
+    scene.add(puddleMesh);
+  }
+  // Nudges the currently-active ground mesh's roughness down as it gets
+  // wetter, so the sun's specular highlight actually shows up on it —
+  // MeshStandardMaterial only produces a visible highlight well below
+  // roughness 1. Reverts to the original matte look when not Extreme.
+  function updateGroundSheen(ultra) {
+    const target = ultra ? (1 - groundWetness*0.55) : 1;
+    if (ground && ground.material) ground.material.roughness = target;
+    if (ctfGroundMesh && ctfGroundMesh.material) ctfGroundMesh.material.roughness = target;
+    if (cityGroundMesh && cityGroundMesh.material) cityGroundMesh.material.roughness = target;
+  }
+
+  function updateWeather(dt) {
+    if (!rainLines) { initRain(); initSnow(); }
+
+    if (settings.weatherMode !== 'auto') {
+      weatherNext = settings.weatherMode;
+    } else if (matchStarted && !drop.active) {
+      weatherTimer -= dt;
+      if (weatherTimer <= 0) {
+        const choices = WEATHER_TYPES.filter(t => t !== weatherType);
+        weatherNext = choices[Math.floor(Math.random()*choices.length)];
+        weatherTimer = 45 + Math.random()*35;
+      }
+    }
+
+    // Fade the current type out, swap, then fade the next one in — never an
+    // instant cut between two different effects.
+    const RAMP = 1/6; // ~6s to fully fade
+    if (weatherNext !== weatherType) {
+      weatherIntensity = Math.max(0, weatherIntensity - RAMP*dt);
+      if (weatherIntensity <= 0) weatherType = weatherNext;
+    } else if (weatherIntensity < 1) {
+      weatherIntensity = Math.min(1, weatherIntensity + RAMP*dt);
+    }
+
+    // ---- sky / fog / light blend toward the stormy look ----
+    const fogBase = gameMode === 'zombie' ? FOG_BASE.zombie : FOG_BASE.ffa;
+    const skyBase = gameMode === 'zombie' ? WEATHER_SKY_BASE.zombie : WEATHER_SKY_BASE.ffa;
+    const fogColorBase = gameMode === 'zombie' ? WEATHER_FOGCOLOR_BASE.zombie : WEATHER_FOGCOLOR_BASE.ffa;
+    const lightBase = gameMode === 'zombie' ? WEATHER_LIGHT_BASE.zombie : WEATHER_LIGHT_BASE.ffa;
+    const stormAmt = weatherType === 'clear' ? 0 : weatherIntensity;
+    const distMult = RENDER_DIST_FOG_MULT[settings.renderDistLevel];
+    const fogPull = weatherType === 'snow' ? 0.55 : 0.42;
+
+    if (scene.fog) {
+      if (settings.renderDistLevel === 3) {
+        // Extreme: no distance fog, storms included — the whole map stays
+        // visible. (Rain/snow particles and the sky/light storm blend below
+        // still play out normally, just without fog hiding the far edges.)
+        scene.fog.near = 2500;
+        scene.fog.far = 3000;
+      } else {
+        scene.fog.near = fogBase.near * distMult * (1 - stormAmt*fogPull);
+        scene.fog.far = fogBase.far * distMult * (1 - stormAmt*fogPull);
+      }
+      _weatherTmpColor.setHex(fogColorBase).lerp(_weatherStormFog, stormAmt);
+      scene.fog.color.copy(_weatherTmpColor);
+    }
+    if (scene.background && scene.background.isColor) {
+      _weatherTmpColor.setHex(skyBase).lerp(_weatherStormSky, stormAmt);
+      scene.background.copy(_weatherTmpColor);
+    }
+    hemiLight.intensity = lightBase.hemi * (1 - stormAmt*0.35);
+    sun.intensity = lightBase.sunI * (1 - stormAmt*0.45);
+    sun.color.setHex(lightBase.sunColor);
+
+    // ---- particles ----
+    rainLines.visible = weatherType === 'rain' && weatherIntensity > 0.02;
+    if (rainLines.visible) {
+      rainLines.material.opacity = 0.55 * weatherIntensity;
+      rainLines.position.set(camera.position.x, 0, camera.position.z);
+      const pos = rainLines.geometry.attributes.position;
+      for (let i = 0; i < RAIN_COUNT; i++) {
+        let y0 = pos.getY(i*2) - rainVelY[i]*dt;
+        if (y0 < 0) y0 += RAIN_HEIGHT;
+        pos.setY(i*2, y0);
+        pos.setY(i*2+1, y0 - RAIN_LEN);
+      }
+      pos.needsUpdate = true;
+    }
+
+    snowPoints.visible = weatherType === 'snow' && weatherIntensity > 0.02;
+    if (snowPoints.visible) {
+      snowPoints.material.opacity = 0.9 * weatherIntensity;
+      snowPoints.position.set(camera.position.x, 0, camera.position.z);
+      const pos = snowPoints.geometry.attributes.position;
+      const t = performance.now()*0.001;
+      for (let i = 0; i < SNOW_COUNT; i++) {
+        let y = pos.getY(i) - snowVelY[i]*dt;
+        if (y < 0) y += SNOW_HEIGHT;
+        pos.setY(i, y);
+        pos.setX(i, pos.getX(i) + Math.sin(t + snowSway[i])*0.01);
+      }
+      pos.needsUpdate = true;
+    }
+
+    // ---- Extreme wet ground: sheen + puddle overlay ----
+    if (cheatState.forceWet) {
+      groundWetness = 1;
+    } else if (weatherType === 'rain' && weatherIntensity > 0.1) {
+      groundWetness = Math.min(1, groundWetness + dt*0.05); // fills over ~20s of rain
+    } else {
+      groundWetness = Math.max(0, groundWetness - dt*0.015); // dries out over ~65s
+    }
+    const ultra = settings.renderDistLevel === 3;
+    updateGroundSheen(ultra);
+    if (!puddleMesh) initPuddles();
+    puddleMesh.visible = ultra && groundWetness > 0.03;
+    if (puddleMesh.visible) {
+      puddleMesh.position.set(camera.position.x, 0.03, camera.position.z);
+      const u = puddleMesh.material.uniforms;
+      u.opacity.value = groundWetness * 0.85;
+      // The plane itself re-centers on the player every frame (so a fixed
+      // 90x90 patch always covers the ground under them), but that alone
+      // makes the puddle blobs baked into the mask texture appear to slide
+      // along with the player, since the mask's UVs are fixed to the mesh,
+      // not the world. Cancel that out with an equal-and-opposite offset —
+      // tileSize is the plane's 90-unit width divided by the 6x repeat — so
+      // the blobs stay put in world space as you walk over them. The real
+      // mirror reflection itself has no such issue: it's recomputed fresh
+      // from the mesh's current world position every single frame.
+      const pt = performance.now();
+      const tileSize = 90 / 6;
+      u.maskOffset.value.set(
+        camera.position.x / tileSize,
+        -camera.position.z / tileSize
+      );
+      u.rippleTime.value = pt * 0.001;
+    }
+  }
+
   function buildZombieCity() {
     if (cityBuilt) return;
     cityBuilt = true;
@@ -3956,6 +4375,7 @@
     cityGround.position.set(CITY_CX, 0, CITY_CZ);
     cityGround.receiveShadow = true;
     scene.add(cityGround);
+    cityGroundMesh = cityGround;
 
     // grid of scorched tower ruins with streets between them; the center
     // cell is left open as a spawn plaza, and a few random cells are skipped
@@ -4014,6 +4434,149 @@
     }
 
     spawnEmbers();
+  }
+
+  // ---------- Capture The Flag map ----------
+  const ctfCrateMat = new THREE.MeshStandardMaterial({ color: 0x8a6a3f, roughness: 0.9 });
+  const ctfTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 1 });
+  const ctfLeafMat = new THREE.MeshStandardMaterial({ color: 0x3a6b2a, roughness: 0.9 });
+  // Plain (non-instanced) decorative tree, purely for visual cover/atmosphere
+  // — matches how FFA's own trees work, which are choppable but never solid
+  // obstacles, so no collision is registered here either.
+  function makeCTFTree(x, z) {
+    const h = 3 + Math.random()*2.2;
+    const group = new THREE.Object3D();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, h, 6), ctfTrunkMat);
+    trunk.position.y = h/2; trunk.castShadow = true;
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.3 + Math.random()*0.5, 2.4, 7), ctfLeafMat);
+    leaves.position.y = h + 0.9; leaves.castShadow = true;
+    group.add(trunk, leaves);
+    group.position.set(x, 0, z);
+    scene.add(group);
+  }
+  function makeCTFCoverCrate(x, z, rotY) {    const w = 1.6 + Math.random()*0.7, d = 1.6 + Math.random()*0.7, h = 1.1 + Math.random()*0.7;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ctfCrateMat);
+    mesh.position.set(x, h/2, z);
+    mesh.rotation.y = rotY || 0;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    collisionMeshes.push(mesh);
+    const cosR = Math.cos(rotY||0), sinR = Math.sin(rotY||0);
+    const hw = Math.abs(w/2*cosR) + Math.abs(d/2*sinR);
+    const hd = Math.abs(w/2*sinR) + Math.abs(d/2*cosR);
+    addSolid(x, z, hw, hd, 0, h);
+  }
+
+  // A simple pole + cloth flag + base disc. Reused for both bases; also
+  // doubles as the "carried"/"dropped" visual for the enemy flag by moving
+  // the whole group around, rather than swapping between separate meshes.
+  function makeFlagStand(x, z, colorHex) {
+    const group = new THREE.Object3D();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.4, metalness: 0.5 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.0, 8), poleMat);
+    pole.position.y = 1.5; pole.castShadow = true;
+    const flagMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.7, side: THREE.DoubleSide });
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.55), flagMat);
+    flag.position.set(0.45, 2.55, 0);
+    flag.castShadow = true;
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.25, 12), baseMat);
+    base.position.y = 0.12;
+    group.add(pole, flag, base);
+    group.position.set(x, 0, z);
+    scene.add(group);
+    return group;
+  }
+
+  function buildCTFMap() {
+    if (ctfBuilt) return;
+    ctfBuilt = true;
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(CTF_HALF*2, CTF_HALF*2),
+      new THREE.MeshStandardMaterial({ color: 0x4a6b3a, roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI/2;
+    ground.position.set(CTF_CX, 0, CTF_CZ);
+    ground.receiveShadow = true;
+    scene.add(ground);
+    ctfGroundMesh = ground;
+
+    // base platforms, color-coded blue (player/home) vs red (enemy)
+    const homePlat = new THREE.Mesh(
+      new THREE.CylinderGeometry(8, 8, 0.3, 24),
+      new THREE.MeshStandardMaterial({ color: 0x2a5fb0, roughness: 0.8, emissive: 0x0a1e40, emissiveIntensity: 0.3 })
+    );
+    homePlat.position.set(CTF_HOME_BASE.x, 0.15, CTF_HOME_BASE.z);
+    homePlat.receiveShadow = true;
+    scene.add(homePlat);
+    const enemyPlat = new THREE.Mesh(
+      new THREE.CylinderGeometry(8, 8, 0.3, 24),
+      new THREE.MeshStandardMaterial({ color: 0xb02a2a, roughness: 0.8, emissive: 0x400a0a, emissiveIntensity: 0.3 })
+    );
+    enemyPlat.position.set(CTF_ENEMY_BASE.x, 0.15, CTF_ENEMY_BASE.z);
+    enemyPlat.receiveShadow = true;
+    scene.add(enemyPlat);
+
+    ctfState.homeFlag.group = makeFlagStand(CTF_HOME_BASE.x, CTF_HOME_BASE.z, 0x3a7bd5);
+    ctfState.enemyFlag.group = makeFlagStand(CTF_ENEMY_BASE.x, CTF_ENEMY_BASE.z, 0xd53a3a);
+
+    // Houses and scattered crates/trees for cover across the middle of the
+    // map, kept clear of both base platforms.
+    const coverSpots = [];
+    let placed = 0, attempts = 0;
+    while (placed < 20 && attempts < 700) {
+      attempts++;
+      const x = CTF_CX + (Math.random()-0.5) * (CTF_HALF*2 - 30);
+      const z = CTF_CZ + (Math.random()-0.5) * (CTF_HALF*2 - 30);
+      if (Math.hypot(x - CTF_HOME_BASE.x, z - CTF_HOME_BASE.z) < 16) continue;
+      if (Math.hypot(x - CTF_ENEMY_BASE.x, z - CTF_ENEMY_BASE.z) < 16) continue;
+      let tooClose = false;
+      for (const p of coverSpots) if (Math.hypot(p.x-x, p.z-z) < 15) { tooClose = true; break; }
+      if (tooClose) continue;
+      const w = 8 + Math.random()*4, d = 8 + Math.random()*4;
+      const floorsN = 1 + Math.floor(Math.random()*2);
+      const rotY = Math.floor(Math.random()*4) * (Math.PI/2);
+      makeHouse(x, z, w, d, floorsN, rotY);
+      coverSpots.push({x, z});
+      placed++;
+    }
+    placed = 0; attempts = 0;
+    while (placed < 44 && attempts < 800) {
+      attempts++;
+      const x = CTF_CX + (Math.random()-0.5) * (CTF_HALF*2 - 16);
+      const z = CTF_CZ + (Math.random()-0.5) * (CTF_HALF*2 - 16);
+      if (Math.hypot(x - CTF_HOME_BASE.x, z - CTF_HOME_BASE.z) < 11) continue;
+      if (Math.hypot(x - CTF_ENEMY_BASE.x, z - CTF_ENEMY_BASE.z) < 11) continue;
+      let tooClose = false;
+      for (const p of coverSpots) if (Math.hypot(p.x-x, p.z-z) < 5) { tooClose = true; break; }
+      if (tooClose) continue;
+      makeCTFCoverCrate(x, z, Math.random()*Math.PI*2);
+      coverSpots.push({x, z});
+      placed++;
+    }
+    for (let k = 0; k < 60; k++) {
+      const x = CTF_CX + (Math.random()-0.5) * (CTF_HALF*2 - 10);
+      const z = CTF_CZ + (Math.random()-0.5) * (CTF_HALF*2 - 10);
+      if (Math.hypot(x - CTF_HOME_BASE.x, z - CTF_HOME_BASE.z) < 10) continue;
+      if (Math.hypot(x - CTF_ENEMY_BASE.x, z - CTF_ENEMY_BASE.z) < 10) continue;
+      makeCTFTree(x, z);
+    }
+
+    // boundary wall around the whole arena
+    const h = 4;
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x556b4a, roughness: 1 });
+    for (const sign of [-1, 1]) {
+      const g1 = new THREE.Mesh(new THREE.BoxGeometry(CTF_HALF*2, h, 1), wallMat);
+      g1.position.set(CTF_CX, h/2, CTF_CZ + sign*CTF_HALF); g1.castShadow = true; scene.add(g1);
+      addSolid(CTF_CX, CTF_CZ + sign*CTF_HALF, CTF_HALF, 0.5, 0, h);
+      collisionMeshes.push(g1);
+
+      const g2 = new THREE.Mesh(new THREE.BoxGeometry(1, h, CTF_HALF*2), wallMat);
+      g2.position.set(CTF_CX + sign*CTF_HALF, h/2, CTF_CZ); g2.castShadow = true; scene.add(g2);
+      addSolid(CTF_CX + sign*CTF_HALF, CTF_CZ, 0.5, CTF_HALF, 0, h);
+      collisionMeshes.push(g2);
+    }
   }
 
   let zombieIdCounter = 0;
@@ -4565,6 +5128,21 @@
 
   function findNearestTarget(bot) {
     let best = null, bestDist = ENGAGE_RANGE;
+    // CTF is team-based: red guards fight the player and the blue squad,
+    // blue teammates fight red guards, and same-team bots never target
+    // each other. Every other mode is a plain free-for-all against the player.
+    if (gameMode === 'ctf' && bot.ctfTeam) {
+      if (bot.ctfTeam === 'red' && player.alive) {
+        const d = bot.pos.distanceTo(player.pos);
+        if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
+      }
+      for (const other of bots) {
+        if (other === bot || !other.alive || other.falling || other.ctfTeam === bot.ctfTeam) continue;
+        const d = bot.pos.distanceTo(other.pos);
+        if (d < bestDist && hasLineOfSight(bot.pos, other.pos)) { bestDist = d; best = other; }
+      }
+      return { target: best, dist: bestDist };
+    }
     if (player.alive) {
       const d = bot.pos.distanceTo(player.pos);
       if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
@@ -4616,7 +5194,35 @@
     const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
     const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
     const hitChance = Math.max(tier.hitFloor, tier.hitBase - dist/tier.hitFalloff);
-    if (Math.random() < hitChance) {
+    const isHit = Math.random() < hitChance;
+
+    // Bots resolve damage as an instant hit-chance roll rather than a real
+    // travelling projectile, so there's nothing to fire visually by default
+    // — but that meant every shot except the local player's own was
+    // completely invisible. Draw a tracer (and muzzle flash) from the
+    // shooter to its target here so everyone's shots are visible, the same
+    // way the player's own shots already are. On a miss the tracer lands on
+    // a nearby offset point instead of dead-on so it still reads as a miss.
+    const muzzlePos = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
+    let endPoint;
+    if (isHit) {
+      const targetY = target.isPlayer ? target.pos.y + player.eyeHeight * 0.75 : target.pos.y + 1.2;
+      endPoint = new THREE.Vector3(target.pos.x, targetY, target.pos.z);
+    } else {
+      const missAngle = Math.random() * Math.PI * 2;
+      const missDist = 0.6 + Math.random() * 1.8;
+      endPoint = new THREE.Vector3(
+        target.pos.x + Math.cos(missAngle) * missDist,
+        target.pos.y + 1.0 + Math.random() * 0.8,
+        target.pos.z + Math.sin(missAngle) * missDist
+      );
+    }
+    const weaponDef = WEAPON_DEFS[bot.weaponType];
+    const tracerColor = (weaponDef && weaponDef.muzzleColor) || 0xffe37a;
+    spawnTracer(muzzlePos, endPoint, tracerColor);
+    spawnMuzzleFlash(muzzlePos, tracerColor);
+
+    if (isHit) {
       const [dmgMin, dmgMax] = combat.dmg;
       const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
       if (target.isPlayer) damagePlayer(dmg, bot.pos);
@@ -4732,10 +5338,26 @@
     }
     if (!combatTarget) bot.coverPos = null;
 
-    if (outsideZone && !(combatTarget && combatDist < 6)) {
+    // ---- CTF objective state: is this bot currently carrying the flag it
+    // stole, or should it be hunting for one to steal? ----
+    let carryFlag = null, huntFlag = null;
+    if (gameMode === 'ctf' && bot.ctfTeam) {
+      const theirFlag = bot.ctfTeam === 'red' ? ctfState.homeFlag : ctfState.enemyFlag;
+      if (theirFlag.carrier === bot) carryFlag = theirFlag;
+      else if (bot.flagRunner && theirFlag.state !== 'carried') huntFlag = theirFlag;
+    }
+
+    if (carryFlag) {
+      // Beeline for the scoring base with the flag, ignoring cover/loot —
+      // getting it home matters more than a clean fight.
+      const scoreBase = bot.ctfTeam === 'red' ? CTF_ENEMY_BASE : CTF_HOME_BASE;
+      bot.target.set(scoreBase.x, 0, scoreBase.z);
+    } else if (outsideZone && !(combatTarget && combatDist < 6)) {
       bot.target.set(zone.centerX, 0, zone.centerZ);
     } else if (combatTarget) {
       bot.target.copy(bot.coverPos || combatTarget.pos);
+    } else if (huntFlag) {
+      bot.target.set(huntFlag.pos.x, 0, huntFlag.pos.z);
     } else if (bot.lootTarget && bot.lootTarget.active) {
       bot.target.set(bot.lootTarget.x, 0, bot.lootTarget.z);
       if (Math.hypot(bot.pos.x - bot.lootTarget.x, bot.pos.z - bot.lootTarget.z) < 1.8) {
@@ -4760,6 +5382,31 @@
       dir.applyAxisAngle(new THREE.Vector3(0,1,0), bot.flankAngle * 0.5);
     }
     const dist = dir.length();
+
+    // ---- stuck detection / sidestep: movement here is a straight line to
+    // bot.target with resolveCollisions just shoving the bot back out of
+    // whatever it walked into, so a target on the far side of a wall used
+    // to wedge the bot against that wall forever. Sample real displacement
+    // every ~0.4s; if the bot wanted to travel but barely moved, steer
+    // mostly sideways (with a bit of forward bias) for a beat to slide
+    // around the corner, then resume heading straight for the target.
+    bot.stuckSampleTimer -= dt;
+    if (bot.stuckSampleTimer <= 0) {
+      const moved = bot.stuckSamplePos ? bot.pos.distanceTo(bot.stuckSamplePos) : 999;
+      if (dist > 2.5 && moved < 0.5 && bot.sidestepTimer <= 0) {
+        bot.sidestepDir = Math.random() < 0.5 ? -1 : 1;
+        bot.sidestepTimer = 0.6 + Math.random() * 0.5;
+      }
+      (bot.stuckSamplePos || (bot.stuckSamplePos = new THREE.Vector3())).copy(bot.pos);
+      bot.stuckSampleTimer = 0.4;
+    }
+    if (bot.sidestepTimer > 0 && dist > 0.6) {
+      bot.sidestepTimer -= dt;
+      const fwd = dir.clone().normalize();
+      const perp = new THREE.Vector3(-fwd.z, 0, fwd.x).multiplyScalar(bot.sidestepDir * 1.4).add(fwd);
+      dir.copy(perp);
+    }
+
     // Retreating bots keep much more distance than a normal firefight does.
     const desiredRange = combatTarget ? (bot.retreating ? 20 : 9) : 9;
     if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget) || bot.coverPos) {
@@ -4813,6 +5460,7 @@
     bot.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
     bot.group.rotation.y = bot.yaw;
     bot.healthSprite.quaternion.copy(camera.quaternion);
+    if (gameMode === 'ctf' && bot.ctfTeam) updateBotFlagInteraction(bot);
     bot.attackCooldown -= dt;
     if (combatTarget) updateBotWeaponChoice(bot, combatDist);
     if (canEngage && bot.attackCooldown <= 0) {
@@ -4958,7 +5606,7 @@
   function firePelletRay(dir, def) {
     const range = def.range || 300;
     raycaster.set(aimOrigin, dir); raycaster.far = range;
-    const targets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(windowMeshes).concat(collisionMeshes);
+    const targets = playerHostileTargets().filter(b=>b.alive).flatMap(b=>b.hitMeshes).concat(windowMeshes).concat(collisionMeshes);
     const hits = raycaster.intersectObjects(targets, false);
     let endPoint;
     let hitBotRef = null, hitIsHead = false;
@@ -5075,7 +5723,7 @@
         }
       }
       if (!handled) {
-        const botTargets = activeEnemies().filter(b=>b.alive).flatMap(b=>b.hitMeshes);
+        const botTargets = playerHostileTargets().filter(b=>b.alive).flatMap(b=>b.hitMeshes);
         const bh = raycaster.intersectObjects(botTargets, false);
         if (bh.length > 0) {
           const isHead = bh[0].object.userData.isHead === true;
@@ -5612,11 +6260,11 @@
   // travel-time bullet exists to react to), so this isn't reacting to a
   // real projectile in flight — it's a stand-in "evaded that" reaction that
   // fires whenever a hit would otherwise have landed on the player, and
-  // cancels the damage entirely. Plays as a short, collision-respecting
-  // sideways hop plus a lean/rotation of the visible third-person model.
-  const dodgeFX = { active: false, t: 0, duration: 0.32, sideSign: 1, lastEase: 0 };
-  const DODGE_DISTANCE = 1.6; // total lateral distance covered over the dodge
-  const DODGE_ROT_MAX = 0.6;  // radians the visible model leans into the dodge at its peak
+  // cancels the damage entirely. Plays as a pure in-place spin of the
+  // visible third-person model (the player never actually moves), peaking
+  // at a full upside-down flip.
+  const dodgeFX = { active: false, t: 0, duration: 0.32, sideSign: 1 };
+  const DODGE_ROT_MAX = Math.PI / 2; // radians the visible model rotates at its peak — 90°, since playerGroup pivots at the feet and going further swings the head into the ground
 
   function triggerPlayerDodge(sourcePos) {
     let sideSign;
@@ -5625,7 +6273,7 @@
       if (toSrc.lengthSq() > 0.0001) {
         toSrc.normalize();
         const right = getRight(player.yaw);
-        // hop away from whichever side the shot is coming from
+        // flip toward whichever side is away from the shot
         sideSign = right.dot(toSrc) >= 0 ? -1 : 1;
       } else {
         sideSign = -dodgeFX.sideSign;
@@ -5635,29 +6283,25 @@
     }
     dodgeFX.active = true;
     dodgeFX.t = 0;
-    dodgeFX.lastEase = 0;
     dodgeFX.sideSign = sideSign;
   }
 
-  // Ticked every frame from updateMovement, before resolveCollisions runs —
-  // so the lateral hop still gets clipped by walls exactly like normal
-  // movement instead of dodging players through solid geometry.
+  // Ticked every frame from updateMovement. Purely cosmetic — it never
+  // touches player.pos, so the player stays exactly where they were; only
+  // the visible model spins.
   function tickPlayerDodge(dt) {
     if (!dodgeFX.active) return;
     dodgeFX.t += dt;
     const t = Math.min(1, dodgeFX.t / dodgeFX.duration);
-    const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
-    const deltaFrac = ease - dodgeFX.lastEase;
-    dodgeFX.lastEase = ease;
-    const right = getRight(player.yaw);
-    const moveAmt = deltaFrac * DODGE_DISTANCE * dodgeFX.sideSign;
-    player.pos.x += right.x * moveAmt;
-    player.pos.z += right.z * moveAmt;
     // Sine hump so the model rotates out into the dodge and eases back to
-    // facing player.yaw by the end, instead of snapping.
+    // facing player.yaw by the end, instead of snapping. Rolled around the
+    // forward axis (rather than yawed) so the peak of the hump reads as the
+    // player briefly flipping upside down rather than just spinning to face
+    // a different direction.
     const rotOffset = Math.sin(t * Math.PI) * DODGE_ROT_MAX * dodgeFX.sideSign;
-    playerGroup.rotation.y = player.yaw + rotOffset;
-    if (t >= 1) dodgeFX.active = false;
+    playerGroup.rotation.y = player.yaw;
+    playerGroup.rotation.z = rotOffset;
+    if (t >= 1) { dodgeFX.active = false; playerGroup.rotation.z = 0; }
   }
 
 
@@ -5766,6 +6410,7 @@
     document.getElementById('fireBtn').classList.remove('engaged');
     endScope();
     dropAllPlayerItems();
+    if (gameMode === 'ctf' && ctfState.enemyFlag.state === 'carried' && ctfState.enemyFlag.carrier === 'player') dropEnemyFlag(player.pos);
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('finalKills').textContent = player.kills;
     document.getElementById('deathScreen').style.display = 'flex';
@@ -5815,10 +6460,35 @@
     endScope();
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('winKills').textContent = player.kills;
+    if (gameMode === 'ctf') {
+      document.getElementById('winTitle').textContent = '🚩 FLAG SECURED 🚩';
+      document.getElementById('winSubtitle').textContent = 'You captured the flag ' + ctfState.captures + ' times.';
+    } else {
+      document.getElementById('winTitle').textContent = '👑 VICTORY ROYALE 👑';
+      document.getElementById('winSubtitle').textContent = "You're the last one standing.";
+    }
     const winEl = document.getElementById('winScreen');
     winEl.style.display = 'flex';
     winEl.classList.remove('show'); void winEl.offsetWidth; winEl.classList.add('show');
     spawnConfetti();
+  }
+  // Mirrors playerWin() for the case where the enemy squad brings YOUR
+  // flag home enough times first — same frozen-match flow (matchWon gates
+  // firing/scoping/throwables everywhere else in the file), just a losing
+  // title and no confetti.
+  function ctfDefeat() {
+    if (matchWon) return;
+    matchWon = true;
+    firing = false;
+    document.getElementById('fireBtn').classList.remove('engaged');
+    endScope();
+    document.exitPointerLock && document.exitPointerLock();
+    document.getElementById('winKills').textContent = player.kills;
+    document.getElementById('winTitle').textContent = '🏳️ FLAG LOST 🏳️';
+    document.getElementById('winSubtitle').textContent = 'The enemy captured your flag ' + ctfState.enemyCaptures + ' times.';
+    const winEl = document.getElementById('winScreen');
+    winEl.style.display = 'flex';
+    winEl.classList.remove('show'); void winEl.offsetWidth; winEl.classList.add('show');
   }
   // Full match reset for FFA: the old restart flow only respawned the
   // player and left every previous bot dead, so playing again (or hitting
@@ -5867,6 +6537,275 @@
     stopZone();
     respawnPlayer();
     beginPlaneIntro();
+  }
+
+  // ---------- Capture The Flag ----------
+  function updateCTFHud() {
+    document.getElementById('ctfCaptures').textContent = ctfState.captures;
+    document.getElementById('ctfCapturesTarget').textContent = CTF_CAPTURES_TO_WIN;
+    const statusEl = document.getElementById('ctfFlagStatus');
+    if (ctfState.enemyFlag.state === 'base') statusEl.textContent = 'Enemy flag at their base';
+    else if (ctfState.enemyFlag.state === 'carried') statusEl.textContent = (ctfState.enemyFlag.carrier === 'player') ? 'YOU HAVE THE FLAG — get back to base!' : 'Your squad has the enemy flag!';
+    else statusEl.textContent = 'Enemy flag dropped in the field';
+    const defEl = document.getElementById('ctfDefenseStatus');
+    if (defEl) {
+      const hf = ctfState.homeFlag;
+      let txt;
+      if (hf.state === 'base') txt = 'Your flag is safe';
+      else if (hf.state === 'carried') txt = '⚠ THE ENEMY HAS YOUR FLAG!';
+      else txt = 'Your flag is down in the field — recover it!';
+      defEl.textContent = 'Defense: ' + ctfState.enemyCaptures + '/' + CTF_CAPTURES_TO_WIN + ' | ' + txt;
+    }
+  }
+
+  function dropEnemyFlag(pos) {
+    const ef = ctfState.enemyFlag;
+    ef.state = 'dropped';
+    ef.carrier = null;
+    ef.pos.set(pos.x, 0, pos.z);
+    ef.returnTimer = CTF_FLAG_RETURN_TIME;
+    if (ef.group) ef.group.position.set(pos.x, 0, pos.z);
+    showPickupToast('FLAG DROPPED');
+    updateCTFHud();
+  }
+
+  function returnEnemyFlagToBase() {
+    const ef = ctfState.enemyFlag;
+    ef.state = 'base';
+    ef.carrier = null;
+    ef.pos.set(CTF_ENEMY_BASE.x, 0, CTF_ENEMY_BASE.z);
+    if (ef.group) ef.group.position.set(CTF_ENEMY_BASE.x, 0, CTF_ENEMY_BASE.z);
+    updateCTFHud();
+  }
+
+  function dropHomeFlag(pos) {
+    const hf = ctfState.homeFlag;
+    hf.state = 'dropped';
+    hf.carrier = null;
+    hf.pos.set(pos.x, 0, pos.z);
+    hf.returnTimer = CTF_FLAG_RETURN_TIME;
+    if (hf.group) hf.group.position.set(pos.x, 0, pos.z);
+    showPickupToast('YOUR FLAG WAS DROPPED');
+    updateCTFHud();
+  }
+
+  function returnHomeFlagToBase() {
+    const hf = ctfState.homeFlag;
+    hf.state = 'base';
+    hf.carrier = null;
+    hf.pos.set(CTF_HOME_BASE.x, 0, CTF_HOME_BASE.z);
+    if (hf.group) hf.group.position.set(CTF_HOME_BASE.x, 0, CTF_HOME_BASE.z);
+    updateCTFHud();
+  }
+
+  // Shared scoring path for both the player's own flag grab (driven from
+  // updateCTF below) and any bot's (driven from updateBotFlagInteraction).
+  function captureFlagBy(team, flag) {
+    if (team === 'blue') {
+      ctfState.captures++;
+      showPickupToast('FLAG CAPTURED! ' + ctfState.captures + '/' + CTF_CAPTURES_TO_WIN);
+      returnEnemyFlagToBase();
+      if (ctfState.captures >= CTF_CAPTURES_TO_WIN) playerWin();
+    } else {
+      ctfState.enemyCaptures++;
+      showPickupToast('THE ENEMY SCORED! ' + ctfState.enemyCaptures + '/' + CTF_CAPTURES_TO_WIN);
+      returnHomeFlagToBase();
+      if (ctfState.enemyCaptures >= CTF_CAPTURES_TO_WIN) ctfDefeat();
+    }
+    updateCTFHud();
+  }
+
+  // Called once per frame per CTF bot. Red guards hunt the player's home
+  // flag and run it to their own base; blue teammates hunt the enemy flag
+  // and run it home — the same objective the player has, just automated.
+  function updateBotFlagInteraction(bot) {
+    const stealFlag = bot.ctfTeam === 'red' ? ctfState.homeFlag : ctfState.enemyFlag;
+    const scoreBase = bot.ctfTeam === 'red' ? CTF_ENEMY_BASE : CTF_HOME_BASE;
+    if (stealFlag.carrier === bot) {
+      stealFlag.pos.set(bot.pos.x, 0, bot.pos.z);
+      if (stealFlag.group) stealFlag.group.position.set(bot.pos.x, bot.pos.y, bot.pos.z);
+      if (Math.hypot(bot.pos.x - scoreBase.x, bot.pos.z - scoreBase.z) < CTF_FLAG_PICKUP_DIST + 1) {
+        captureFlagBy(bot.ctfTeam, stealFlag);
+      }
+      return;
+    }
+    if (!bot.flagRunner || stealFlag.state === 'carried') return;
+    if (Math.hypot(bot.pos.x - stealFlag.pos.x, bot.pos.z - stealFlag.pos.z) < CTF_FLAG_PICKUP_DIST) {
+      stealFlag.state = 'carried';
+      stealFlag.carrier = bot;
+      if (bot.ctfTeam === 'red') showPickupToast('THE ENEMY STOLE YOUR FLAG!');
+      else showPickupToast('YOUR SQUADMATE GRABBED THE FLAG!');
+      updateCTFHud();
+    }
+  }
+
+  // Ticked every frame while a CTF match is live. Handles the enemy flag's
+  // base/carried/dropped state machine and the home-base capture check for
+  // the PLAYER's own pickup (bot pickups of either flag are handled inside
+  // updateBotFlagInteraction), plus the player recovering a dropped home flag.
+  function updateCTF(dt) {
+    const ef = ctfState.enemyFlag;
+    if (ef.state === 'base') {
+      if (Math.hypot(player.pos.x - ef.pos.x, player.pos.z - ef.pos.z) < CTF_FLAG_PICKUP_DIST) {
+        ef.state = 'carried';
+        ef.carrier = 'player';
+        showPickupToast('ENEMY FLAG CAPTURED — RETURN TO BASE!');
+        updateCTFHud();
+      }
+    } else if (ef.state === 'dropped') {
+      ef.returnTimer -= dt;
+      if (ef.returnTimer <= 0) {
+        returnEnemyFlagToBase();
+        showPickupToast('FLAG RETURNED TO BASE');
+      } else if (Math.hypot(player.pos.x - ef.pos.x, player.pos.z - ef.pos.z) < CTF_FLAG_PICKUP_DIST) {
+        ef.state = 'carried';
+        ef.carrier = 'player';
+        showPickupToast('FLAG RECOVERED — RETURN TO BASE!');
+        updateCTFHud();
+      }
+    } else if (ef.state === 'carried' && ef.carrier === 'player') {
+      ef.pos.set(player.pos.x, 0, player.pos.z);
+      if (ef.group) ef.group.position.set(player.pos.x, player.pos.y, player.pos.z);
+      if (Math.hypot(player.pos.x - CTF_HOME_BASE.x, player.pos.z - CTF_HOME_BASE.z) < CTF_FLAG_PICKUP_DIST + 1) {
+        captureFlagBy('blue', ef);
+      }
+    }
+
+    // The player's own flag: if it's down in the field, walking into it
+    // sends it straight home (no carrying needed for your own flag).
+    const hf = ctfState.homeFlag;
+    if (hf.state === 'dropped') {
+      hf.returnTimer -= dt;
+      if (hf.returnTimer <= 0) {
+        returnHomeFlagToBase();
+        showPickupToast('YOUR FLAG RETURNED');
+      } else if (Math.hypot(player.pos.x - hf.pos.x, player.pos.z - hf.pos.z) < CTF_FLAG_PICKUP_DIST) {
+        returnHomeFlagToBase();
+        showPickupToast('YOU RECOVERED YOUR FLAG');
+      }
+    }
+  }
+
+  function spawnCTFGuards() {
+    aliveBotCount = CTF_GUARD_COUNT;
+    for (let i = 0; i < CTF_GUARD_COUNT; i++) spawnBot(i, 'red');
+  }
+
+  // Friendly squad that fights alongside the player and pushes for the
+  // enemy flag on its own. Spawned right after the guards, offset into the
+  // idx range past them so bot ids never collide.
+  function spawnCTFTeammates() {
+    aliveBotCount += CTF_TEAMMATE_COUNT;
+    for (let i = 0; i < CTF_TEAMMATE_COUNT; i++) spawnBot(CTF_GUARD_COUNT + i, 'blue');
+  }
+
+  // Brings the player back to their own base with full health/ammo after a
+  // CTF death, without touching captures, guards, or the flag's own state
+  // (already handled separately by dropEnemyFlag when they died carrying it).
+  function respawnPlayerCTF() {
+    player.alive = true; player.health = player.maxHealth;
+    if (player.charAnim) { player.charAnim.mode = 'loop'; player.charAnim.loopState = null; player.charAnim.activeLoopAction = null; }
+    player.secondaryType = 'pistol';
+    player.ammoState.secondary = { mag: 12, reserve: 36 };
+    player.primaryType = null;
+    player.ammoState.primary = { mag: 0, reserve: 0 };
+    player.weapon = 'secondary';
+    player.meleeType = null;
+    player.grenades = 0; updateGrenadeUI();
+    player.smokeGrenades = 0; updateSmokeGrenadeUI();
+    player.molotovs = 0; updateMolotovUI();
+    player.wood = 50;
+    player.pos.set(CTF_HOME_BASE.x + 6, 0, CTF_HOME_BASE.z);
+    player.velY = 0;
+    updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
+    document.getElementById('deathScreen').style.display = 'none';
+  }
+
+  function beginCTFMode() {
+    gameMode = 'ctf';
+    matchStarted = true;
+    ctfMatchId++;
+    stopZone();
+    document.getElementById('ctfIntroScreen').style.display = 'none';
+    document.getElementById('startScreen').style.display = 'none';
+
+    for (const b of bots) { b.alive = false; b.falling = false; if (b.chuteGroup) b.chuteGroup.visible = false; b.group.visible = false; }
+    aliveBotCount = 0;
+
+    boundCenterX = CTF_CX; boundCenterZ = CTF_CZ; boundHalf = CTF_HALF - 2;
+    buildCTFMap();
+
+    ctfState.captures = 0;
+    ctfState.enemyCaptures = 0;
+    returnEnemyFlagToBase();
+    returnHomeFlagToBase();
+    updateCTFHud();
+
+    document.getElementById('aliveRow').style.display = 'none';
+    document.getElementById('waveRow').style.display = 'none';
+    document.getElementById('zombiesLeftRow').style.display = 'none';
+    document.getElementById('trainingRow').style.display = 'none';
+    document.getElementById('skipWaveBtn').style.display = 'none';
+    document.getElementById('playgroundBossBtn').style.display = 'none';
+    document.getElementById('trainingGodBtn').style.display = 'none';
+    document.getElementById('trainingResetBtn').style.display = 'none';
+    document.getElementById('backFromTrainingBtn').style.display = 'none';
+    document.getElementById('ctfRow').style.display = 'block';
+    document.getElementById('ctfDefenseRow').style.display = 'block';
+
+    viewMode = 'third';
+    document.getElementById('viewModeLabel').textContent = 'View: Third Person';
+    respawnPlayerCTF();
+    spawnCTFGuards();
+    spawnCTFTeammates();
+    if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
+  }
+
+  // Same idea as resetFFAMatch: tears down the old guard squad and starts a
+  // fresh match after a win, without needing a full page reload.
+  function resetCTFMatch() {
+    ctfMatchId++;
+    for (const bot of bots) {
+      scene.remove(bot.group);
+      disposeSprite(bot.healthSprite);
+      if (bot.chuteGroup) {
+        bot.chuteGroup.traverse(o => {
+          if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+        });
+      }
+      const [eBody, eHead] = bot.hitMeshes;
+      if (eBody && eBody.material) eBody.material.dispose();
+      if (eHead && eHead.material && BOT_TIERS[bot.tier] && BOT_TIERS[bot.tier].glow) eHead.material.dispose();
+      if (bot.gunMesh) disposeMeshGeometriesOnly(bot.gunMesh);
+      if (bot.charAnim && bot.charAnim.mixer) {
+        bot.charAnim.mixer.stopAllAction();
+        bot.charAnim.mixer.uncacheRoot(bot.charAnim.model);
+      }
+    }
+    bots.length = 0;
+    corpseList.length = 0;
+    for (const g of activeGrenades) scene.remove(g.mesh);
+    activeGrenades.length = 0;
+    for (const fx of explosionFX) scene.remove(fx.mesh);
+    explosionFX.length = 0;
+    for (const c of smokeClouds) scene.remove(c.mesh);
+    smokeClouds.length = 0;
+    for (const fz of fireZones) scene.remove(fz.group);
+    fireZones.length = 0;
+    ctfState.captures = 0;
+    ctfState.enemyCaptures = 0;
+    returnEnemyFlagToBase();
+    returnHomeFlagToBase();
+    updateCTFHud();
+    matchWon = false;
+    const winEl = document.getElementById('winScreen');
+    winEl.style.display = 'none';
+    winEl.classList.remove('show');
+    winEl.querySelectorAll('.confettiPiece').forEach(el => el.remove());
+    respawnPlayerCTF();
+    spawnCTFGuards();
+    spawnCTFTeammates();
+    if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
   }
 
   // ---------- Closing zone (FFA only) ----------
@@ -6304,7 +7243,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true, fov: BASE_FOV, invertY: false, colorblindMode: false, shakeAmount: 1.0 };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true, fov: BASE_FOV, invertY: false, colorblindMode: false, shakeAmount: 1.0, weatherMode: 'auto' };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -6455,20 +7394,61 @@
   });
 
   // ---------- Graphics settings ----------
-  const RENDER_DIST_LABELS = ['Low', 'Medium', 'High'];
-  const RENDER_DIST_FOG_MULT = [0.55, 0.78, 1.0];
-  const RENDER_DIST_CAM_FAR = [380, 480, 600];
+  const RENDER_DIST_LABELS = ['Low', 'Medium', 'High', 'Extreme'];
+  const RENDER_DIST_FOG_MULT = [0.55, 0.78, 1.0, 1.6];
+  const RENDER_DIST_CAM_FAR = [380, 480, 600, 900];
   const FOG_BASE = { ffa: { near: 60, far: 280 }, zombie: { near: 16, far: 100 } };
+  // Extreme is the single top-end, explicit opt-in tier, and it does not
+  // hold back for touch devices the way Low/Medium/High/the old Ultra+ did —
+  // picking it means "give me everything, I know my device might not keep
+  // 30fps." Full-res shadows, uncapped supersampling, real mirror-reflection
+  // puddles (see initPuddles below), and the longest grass/fog draw distance
+  // in the game, all stacked on top of Low/Medium/High.
   function applyRenderDistance(level) {
     settings.renderDistLevel = level;
+    const extreme = level === 3;
     const base = gameMode === 'zombie' ? FOG_BASE.zombie : FOG_BASE.ffa;
-    const mult = RENDER_DIST_FOG_MULT[level];
     if (scene.fog) {
-      scene.fog.near = base.near * mult;
-      scene.fog.far = base.far * mult;
+      // Just an immediate initial value — updateWeather() recalculates this
+      // every frame anyway (including Extreme's "no fog at all" case), but
+      // setting it here too avoids a one-frame flash of the old fog values
+      // right when the slider changes, before the next frame runs.
+      if (extreme) {
+        scene.fog.near = 2500;
+        scene.fog.far = 3000;
+      } else {
+        const mult = RENDER_DIST_FOG_MULT[level];
+        scene.fog.near = base.near * mult;
+        scene.fog.far = base.far * mult;
+      }
     }
-    camera.far = RENDER_DIST_CAM_FAR[level];
+    camera.far = extreme ? 3000 : RENDER_DIST_CAM_FAR[level];
     camera.updateProjectionMatrix();
+
+    const shadowRes = extreme ? 8192 : (isMobileOrTablet ? 1024 : 2048);
+    if (sun.shadow.mapSize.width !== shadowRes) {
+      sun.shadow.mapSize.set(shadowRes, shadowRes);
+      // mapSize only takes effect on a freshly (re)created shadow map.
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    }
+    // Extreme also tightens the shadow camera's near/far and drops the bias
+    // a touch — a smaller effective depth range plus a bigger map means less
+    // shadow-acne bias is needed, which is most of what "extreme shadows"
+    // buys you over the base soft-PCF shadows every other tier gets.
+    sun.shadow.camera.far = extreme ? 220 : 300;
+    sun.shadow.bias = extreme ? -0.0006 : -0.0009;
+    sun.shadow.camera.updateProjectionMatrix();
+    renderer.shadowMap.type = (extreme || !isMobileOrTablet) ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // No cap at all on Extreme — full native device pixel ratio, whatever
+    // that costs. Every other tier keeps its existing, tablet-friendly cap.
+    if (extreme) {
+      renderer.setPixelRatio(window.devicePixelRatio);
+    } else {
+      const pixelCap = isMobileOrTablet ? 1.5 : 2;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelCap));
+    }
+
+    updateGrassVisibleDist(level);
   }
   const renderDistSlider = document.getElementById('renderDistSlider');
   renderDistSlider.addEventListener('input', () => {
@@ -6505,6 +7485,14 @@
     for (const bot of bots) { if (bot.alive && bot.healthSprite) updateHealthSprite(bot); }
     for (const zom of zombies) { if (zom.alive && zom.healthSprite) updateHealthSprite(zom); }
   });
+  const WEATHER_MODES = ['auto', 'clear', 'rain', 'snow'];
+  const weatherModeBtn = document.getElementById('weatherModeBtn');
+  bindTap(weatherModeBtn, () => {
+    const idx = WEATHER_MODES.indexOf(settings.weatherMode);
+    settings.weatherMode = WEATHER_MODES[(idx + 1) % WEATHER_MODES.length];
+    weatherModeBtn.textContent = settings.weatherMode.toUpperCase();
+    if (settings.weatherMode === 'auto') weatherTimer = 30 + Math.random() * 30; // fresh delay so it doesn't instantly re-roll
+  });
   const aimAssistToggleBtn = document.getElementById('aimAssistToggleBtn');
   bindTap(aimAssistToggleBtn, () => {
     settings.aimAssist = !settings.aimAssist;
@@ -6532,6 +7520,7 @@
     freecam: false,
     godMode: false,
     autoDodge: false,
+    forceWet: false,
     moveMode: false,
     heldEntity: null,
     heldHouse: null,
@@ -6562,6 +7551,7 @@
       cheatState.unlocked = true;
       localStorage.setItem('blazingice_cheatsUnlocked', '1');
       cheatPinModal.style.display = 'none';
+      cheatPinInput.blur();
       document.getElementById('nukeHudBtn').style.display = 'flex';
       document.getElementById('ownerBatHudBtn').style.display = 'flex';
       openCheatPanel();
@@ -6572,7 +7562,7 @@
   }
   bindTap(document.getElementById('cheatPinSubmitBtn'), submitCheatPin);
   cheatPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitCheatPin(); });
-  bindTap(document.getElementById('cheatPinCancelBtn'), () => { cheatPinModal.style.display = 'none'; });
+  bindTap(document.getElementById('cheatPinCancelBtn'), () => { cheatPinModal.style.display = 'none'; cheatPinInput.blur(); });
   bindTap(document.getElementById('cheatPanelClose'), () => { cheatPanel.style.display = 'none'; });
 
   const cheatSpeedSlider = document.getElementById('cheatSpeedSlider');
@@ -6624,6 +7614,16 @@
     cheatState.autoDodge = !cheatState.autoDodge;
     cheatDodgeBtn.textContent = cheatState.autoDodge ? 'ON' : 'OFF';
     cheatDodgeBtn.classList.toggle('off', !cheatState.autoDodge);
+  });
+
+  // Debug aid for verifying the Extreme-tier reflective puddle system
+  // without waiting on rain to start and the ground to gradually wet up —
+  // jumps groundWetness straight to 1 and holds it there while ON.
+  const cheatWetBtn = document.getElementById('cheatWetBtn');
+  bindTap(cheatWetBtn, () => {
+    cheatState.forceWet = !cheatState.forceWet;
+    cheatWetBtn.textContent = cheatState.forceWet ? 'ON' : 'OFF';
+    cheatWetBtn.classList.toggle('off', !cheatState.forceWet);
   });
 
   // Move Mode: grab a bot/zombie/house by looking at it and clicking, it
@@ -7376,6 +8376,7 @@
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
+      if (gameMode === 'ctf' && bot.ctfTeam === 'blue') continue; // never hurt your own CTF teammates
       const d = pos.distanceTo(bot.pos);
       if (d < RADIUS && hasLineOfSight(pos, bot.pos)) {
         const dmg = MAXDMG * (1 - d / RADIUS);
@@ -7506,6 +8507,7 @@
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
+      if (gameMode === 'ctf' && bot.ctfTeam === 'blue') continue; // never hurt your own CTF teammates
       const d = Math.hypot(p.x - bot.pos.x, p.z - bot.pos.z);
       if (d < FIRE_RADIUS) {
         bot.health -= FIRE_TICK_DMG;
@@ -7875,6 +8877,20 @@
     trainingMode = true;
     beginZombieMode();
   });
+  bindTap(document.getElementById('startBtnCTF'), () => {
+    if (creditsOpen) toggleCredits();
+    if (settingsOpen) toggleSettings();
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('ctfIntroScreen').style.display = 'flex';
+  });
+  bindTap(document.getElementById('backFromCTFBtn'), () => {
+    document.getElementById('ctfIntroScreen').style.display = 'none';
+    document.getElementById('startScreen').style.display = 'flex';
+  });
+  bindTap(document.getElementById('startCTFBtn'), () => {
+    ensureAudio();
+    beginCTFMode();
+  });
   bindTap(document.getElementById('trainingGodBtn'), () => {
     cheatState.godMode = !cheatState.godMode;
     document.getElementById('trainingGodBtn').textContent = 'GOD MODE: ' + (cheatState.godMode ? 'ON' : 'OFF');
@@ -7909,13 +8925,16 @@
       spawnZombiePlayer();
       if (trainingMode) spawnTrainingDummies();
       else if (!playgroundMode) startNextWave();
+    } else if (gameMode === 'ctf') {
+      respawnPlayerCTF();
     } else {
       resetFFAMatch();
     }
   });
   bindTap(document.getElementById('winPlayAgainBtn'), () => {
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
-    resetFFAMatch();
+    if (gameMode === 'ctf') resetCTFMatch();
+    else resetFFAMatch();
   });
 
   // ---------- World generation (order matters: houses before trees/crates) ----------
@@ -8211,7 +9230,7 @@
 
   function findAimAssistTarget() {
     let best = null, bestAngle = AIM_ASSIST_MAX_ANGLE;
-    for (const e of activeEnemies()) {
+    for (const e of playerHostileTargets()) {
       if (!e.alive) continue;
       const aimPoint = new THREE.Vector3(e.pos.x, e.pos.y + (e.aimHeight || 1.05), e.pos.z);
       const toTarget = aimPoint.clone().sub(aimOrigin);
@@ -8339,6 +9358,30 @@
   // distances don't need to be perfectly up to the millisecond.
   const CHAR_SHADOW_RANGE_SQ = 90 * 90;
   let shadowLodTick = 0;
+  // ---------- Sun follow ----------
+  // sun.shadow.camera is a fixed +-80 unit box (see Lighting setup above),
+  // which only covers world-space (-80..80, -80..80). The sun itself never
+  // moved from its initial position, so anything outside that box — which
+  // is most of a 560-unit FFA map, and *all* of the CTF arena at x=900 —
+  // got no shadows at all: not "far away" trees, ANY object out there,
+  // including ones right next to the player. Re-centering the sun (and its
+  // target) on the player every frame keeps that box around wherever the
+  // player actually is, so nearby trees/buildings/etc. always fall inside
+  // it. Position is snapped to an 8-unit grid so the shadow map, which is a
+  // fixed resolution over that box, doesn't visibly "swim" as the player
+  // moves — it only needs to be refreshed when the player crosses a cell,
+  // not every single frame.
+  const SUN_OFFSET_X = 80, SUN_OFFSET_Y = 120, SUN_OFFSET_Z = 40;
+  const SUN_SNAP = 8;
+  let sunFollowX = null, sunFollowZ = null;
+  function updateSunFollow() {
+    const px = Math.round(camera.position.x / SUN_SNAP) * SUN_SNAP;
+    const pz = Math.round(camera.position.z / SUN_SNAP) * SUN_SNAP;
+    if (px === sunFollowX && pz === sunFollowZ) return;
+    sunFollowX = px; sunFollowZ = pz;
+    sun.target.position.set(px, 0, pz);
+    sun.position.set(px + SUN_OFFSET_X, SUN_OFFSET_Y, pz + SUN_OFFSET_Z);
+  }
   function updateShadowLOD() {
     shadowLodTick++;
     if (shadowLodTick % 6 !== 0) return;
@@ -8380,6 +9423,7 @@
         } else {
           for (const bot of bots) updateBot(bot, dt);
           updateZone(dt);
+          if (gameMode === 'ctf' && player.alive && !matchWon) updateCTF(dt);
         }
       }
       updateExplosionFX(dt);
@@ -8396,6 +9440,8 @@
       updateFX(dt);
       updateStreetlamps(dt);
       updateEmbers(dt);
+      updateWeather(dt);
+      updateSunFollow();
       updateShadowLOD();
       updateGrassVisibility();
       updateCharacterAnimations(dt);
