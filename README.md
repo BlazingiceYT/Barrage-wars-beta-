@@ -158,5 +158,7 @@ Balance changes
 **Update0.60** - *Commited by BlazingiceYT on 19 Aug 2026*
 fixed character clipping into the ground
 
-**Update0.61** - *Commited by BlazingiceYT on 22 Aug 2026*
+**Update0.61** - *Commited by BlazingiceYT on 24 Aug 2026*
 Added flag race mode and addded extreme graphics
+
+
