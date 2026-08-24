@@ -185,6 +185,20 @@
     75% { opacity: 0.55; }
     100% { opacity: 0; }
   }
+  #ctfBeaconWrap {
+    position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; display: none;
+  }
+  #ctfBeacon {
+    position: absolute; top: 0; left: 0; width: 40px; height: 40px;
+    margin: -20px 0 0 -20px; text-align: center;
+  }
+  #ctfBeaconArrow { width: 100%; height: 100%; }
+  #ctfBeaconArrow svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0 3px rgba(0,0,0,0.7)); }
+  #ctfBeacon .ctfBeaconLabel {
+    position: absolute; left: 50%; top: 42px; transform: translateX(-50%);
+    font-size: 10px; font-weight: bold; white-space: nowrap; letter-spacing: 0.5px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+  }
   #damageVignette {
     position: absolute; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(ellipse at center, rgba(180,0,0,0) 55%, rgba(180,0,0,0.55) 100%);
@@ -553,6 +567,12 @@
     <div id="nukeFlash"></div>
     <div id="damageVignette"></div>
     <div id="damageDirWrap"></div>
+    <div id="ctfBeaconWrap">
+      <div id="ctfBeacon">
+        <div id="ctfBeaconArrow"><svg viewBox="0 0 46 46"><polygon points="23,6 34,30 23,24 12,30" fill="#ffd25a" stroke="rgba(0,0,0,0.6)" stroke-width="1.5"/></svg></div>
+        <div class="ctfBeaconLabel" style="color:#ffd25a;">GET FLAG</div>
+      </div>
+    </div>
     <div id="pickupToast"></div>
 
     <div id="scopeOverlay">
@@ -5055,6 +5075,9 @@
     document.getElementById('trainingGodBtn').style.display = trainingMode ? 'inline-block' : 'none';
     document.getElementById('trainingResetBtn').style.display = trainingMode ? 'inline-block' : 'none';
     document.getElementById('backFromTrainingBtn').style.display = trainingMode ? 'inline-block' : 'none';
+    document.getElementById('ctfRow').style.display = 'none';
+    document.getElementById('ctfDefenseRow').style.display = 'none';
+    ctfBeaconWrap.style.display = 'none';
 
     spawnZombiePlayer();
     waveNumber = 0;
@@ -5409,17 +5432,23 @@
 
     // Retreating bots keep much more distance than a normal firefight does.
     const desiredRange = combatTarget ? (bot.retreating ? 20 : 9) : 9;
+    // Same flag-carrier speed penalty the player gets (see the player
+    // movement code) — without this, a bot carrying the flag would
+    // outrun a player chasing it down while the reverse isn't true.
+    const botIsFlagCarrier = gameMode === 'ctf' && bot.ctfTeam &&
+      (bot.ctfTeam === 'red' ? ctfState.homeFlag : ctfState.enemyFlag).carrier === bot;
+    const botSpeed = botIsFlagCarrier ? bot.speed * 0.85 : bot.speed;
     if (dist > desiredRange + 1 || (dist > 0.6 && !combatTarget) || bot.coverPos) {
       dir.normalize();
-      bot.pos.x += dir.x * bot.speed * dt;
-      bot.pos.z += dir.z * bot.speed * dt;
+      bot.pos.x += dir.x * botSpeed * dt;
+      bot.pos.z += dir.z * botSpeed * dt;
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
       bot.yaw = Math.atan2(dir.x, dir.z);
       bot.moving = true;
     } else if (combatTarget && combatDist < desiredRange - 2) {
       dir.normalize();
-      bot.pos.x -= dir.x * bot.speed * 0.6 * dt;
-      bot.pos.z -= dir.z * bot.speed * 0.6 * dt;
+      bot.pos.x -= dir.x * botSpeed * 0.6 * dt;
+      bot.pos.z -= dir.z * botSpeed * 0.6 * dt;
       resolveCollisions(bot.pos, 0.5, bot.pos.y);
       bot.moving = true;
     }
@@ -5437,8 +5466,8 @@
       const toTarget = new THREE.Vector3().subVectors(combatTarget.pos, bot.pos); toTarget.y = 0;
       if (toTarget.lengthSq() > 0.0001) {
         const perp = new THREE.Vector3(-toTarget.z, 0, toTarget.x).normalize();
-        bot.pos.x += perp.x * bot.strafeDir * bot.speed * 0.55 * dt;
-        bot.pos.z += perp.z * bot.strafeDir * bot.speed * 0.55 * dt;
+        bot.pos.x += perp.x * bot.strafeDir * botSpeed * 0.55 * dt;
+        bot.pos.z += perp.z * bot.strafeDir * botSpeed * 0.55 * dt;
         resolveCollisions(bot.pos, 0.5, bot.pos.y);
         bot.moving = true;
       }
@@ -6684,7 +6713,58 @@
         showPickupToast('YOU RECOVERED YOUR FLAG');
       }
     }
+
+    updateCTFBeacon();
   }
+
+  // ---------- CTF objective beacon ----------
+  // A persistent on-screen arrow (unlike the fire-and-forget damage
+  // indicator above) that always points at whatever the player should be
+  // doing right now: go grab the enemy flag, or get a held flag back to
+  // base to actually score. Without this, both bases sit far enough apart
+  // (across 220 units of walls, houses and trees) that finding your way
+  // back with the flag — or finding the flag at all — was mostly guesswork.
+  const ctfBeaconWrap = document.getElementById('ctfBeaconWrap');
+  const ctfBeaconEl = document.getElementById('ctfBeacon');
+  const ctfBeaconArrow = document.getElementById('ctfBeaconArrow');
+  const ctfBeaconPoly = ctfBeaconEl.querySelector('polygon');
+  const ctfBeaconLabel = ctfBeaconEl.querySelector('.ctfBeaconLabel');
+  function updateCTFBeacon() {
+    const ef = ctfState.enemyFlag;
+    let targetX, targetZ, color, label;
+    if (ef.state === 'carried' && ef.carrier === 'player') {
+      // Got it — get it home.
+      targetX = CTF_HOME_BASE.x; targetZ = CTF_HOME_BASE.z;
+      color = '#3fd0ff'; label = 'RETURN FLAG';
+    } else {
+      // Either sitting at their base or dropped somewhere in the field —
+      // either way, the flag's own current position is the objective.
+      targetX = ef.pos.x; targetZ = ef.pos.z;
+      color = '#ffd25a'; label = 'GET FLAG';
+    }
+    const dx = targetX - player.pos.x, dz = targetZ - player.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < CTF_FLAG_PICKUP_DIST + 1.5) {
+      // Right on top of the objective — hide the arrow so it's not
+      // pointing at nothing useful while you're standing on the spot.
+      ctfBeaconWrap.style.display = 'none';
+      return;
+    }
+    ctfBeaconWrap.style.display = 'block';
+    const toTarget = new THREE.Vector3(dx, 0, dz).normalize();
+    const forward = getForward(player.yaw);
+    const right = getRight(player.yaw);
+    const angle = Math.atan2(toTarget.dot(right), toTarget.dot(forward));
+    const pushDist = 150;
+    const px = Math.sin(angle) * pushDist;
+    const py = -Math.cos(angle) * pushDist;
+    ctfBeaconEl.style.transform = `translate(${px}px, ${py}px)`;
+    ctfBeaconArrow.style.transform = `rotate(${angle}rad)`;
+    ctfBeaconPoly.setAttribute('fill', color);
+    ctfBeaconLabel.style.color = color;
+    ctfBeaconLabel.textContent = label + ' (' + Math.round(dist) + 'm)';
+  }
+
 
   function spawnCTFGuards() {
     aliveBotCount = CTF_GUARD_COUNT;
@@ -6992,14 +7072,15 @@
     mctx.clip();
 
     const inZombie = gameMode === 'zombie';
-    const viewRadius = inZombie ? 78 : 145;
+    const inCTF = gameMode === 'ctf';
+    const viewRadius = inZombie ? 78 : (inCTF ? 95 : 145);
     const px = player.pos.x, pz = player.pos.z;
 
     mctx.fillStyle = inZombie ? '#1c2418' : '#254a1e';
     mctx.fillRect(0, 0, MM_SIZE, MM_SIZE);
 
     // Hills (FFA only)
-    if (!inZombie) {
+    if (!inZombie && !inCTF) {
       mctx.fillStyle = 'rgba(150,120,60,0.35)';
       for (const h of hills) {
         const rel = mmProject(h.x - px, h.z - pz, viewRadius);
@@ -7044,9 +7125,9 @@
       }
     }
 
-    // Ammo crates
+    // Ammo crates (FFA only — CTF has its own loot-free objective loop)
     mctx.fillStyle = '#ffd23f';
-    const crateList = inZombie ? [] : ammoCrates;
+    const crateList = (inZombie || inCTF) ? [] : ammoCrates;
     for (const c of crateList) {
       if (!c.active) continue;
       const rel = mmProject(c.x - px, c.z - pz, viewRadius);
@@ -7055,8 +7136,8 @@
       mctx.arc(rel.x, rel.y, 2.4, 0, Math.PI*2);
       mctx.fill();
     }
-    // Weapon pickups
-    for (const p of (inZombie ? [] : pickups)) {
+    // Weapon pickups (FFA only)
+    for (const p of ((inZombie || inCTF) ? [] : pickups)) {
       if (!p.active) continue;
       const rel = mmProject(p.x - px, p.z - pz, viewRadius);
       if (rel.x < -3 || rel.x > MM_SIZE+3 || rel.y < -3 || rel.y > MM_SIZE+3) continue;
@@ -7064,6 +7145,55 @@
       mctx.beginPath();
       mctx.arc(rel.x, rel.y, 2.6, 0, Math.PI*2);
       mctx.fill();
+    }
+
+    // CTF: base capture rings + flag icons. Previously the minimap had zero
+    // CTF-specific rendering at all — no bases, no flags, and every bot
+    // (including your own blue teammates) drew as the same solid red
+    // triangle, making ally/enemy impossible to tell apart at a glance.
+    if (inCTF) {
+      const drawBaseRing = (bx, bz, color) => {
+        const rel = mmProject(bx - px, bz - pz, viewRadius);
+        const r = (CTF_FLAG_PICKUP_DIST + 1) * rel.scale;
+        mctx.strokeStyle = color;
+        mctx.lineWidth = 1.5;
+        mctx.globalAlpha = 0.6;
+        mctx.beginPath();
+        mctx.arc(rel.x, rel.y, Math.max(2, r), 0, Math.PI*2);
+        mctx.stroke();
+        mctx.globalAlpha = 1;
+      };
+      drawBaseRing(CTF_HOME_BASE.x, CTF_HOME_BASE.z, '#3a7bd5');
+      drawBaseRing(CTF_ENEMY_BASE.x, CTF_ENEMY_BASE.z, '#e34b3d');
+
+      // A dropped flag pulses so a stolen/dropped flag reads as urgent at a
+      // glance, distinct from one calmly sitting at its home base.
+      const drawFlagIcon = (worldX, worldZ, color, pulse) => {
+        const rel = mmProject(worldX - px, worldZ - pz, viewRadius);
+        if (rel.x < -6 || rel.x > MM_SIZE+6 || rel.y < -6 || rel.y > MM_SIZE+6) return;
+        if (pulse) {
+          const pr = 6 + Math.sin(performance.now()*0.008)*2;
+          mctx.fillStyle = color; mctx.globalAlpha = 0.35;
+          mctx.beginPath(); mctx.arc(rel.x, rel.y, pr, 0, Math.PI*2); mctx.fill();
+          mctx.globalAlpha = 1;
+        }
+        mctx.strokeStyle = '#fff'; mctx.lineWidth = 1;
+        mctx.beginPath(); mctx.moveTo(rel.x, rel.y-5); mctx.lineTo(rel.x, rel.y+5); mctx.stroke();
+        mctx.fillStyle = color;
+        mctx.beginPath();
+        mctx.moveTo(rel.x, rel.y-5);
+        mctx.lineTo(rel.x+6, rel.y-3);
+        mctx.lineTo(rel.x, rel.y-1);
+        mctx.closePath();
+        mctx.fill();
+      };
+      const hf = ctfState.homeFlag, ef = ctfState.enemyFlag;
+      drawFlagIcon(hf.pos.x, hf.pos.z, '#3a7bd5', hf.state === 'dropped');
+      // Skip drawing the enemy flag icon while the player personally
+      // carries it — it'd just sit exactly on top of the player marker.
+      if (!(ef.state === 'carried' && ef.carrier === 'player')) {
+        drawFlagIcon(ef.pos.x, ef.pos.z, '#ffd25a', ef.state === 'dropped');
+      }
     }
 
     // Enemies (bots or zombies)
@@ -7075,7 +7205,7 @@
       if (rel.x < -4 || rel.x > MM_SIZE+4 || rel.y < -4 || rel.y > MM_SIZE+4) continue;
       const yaw = e.yaw || 0;
       const mSize = e.isBoss ? 1.8 : 1; // boss gets a bigger, distinctly colored triangle
-      mctx.fillStyle = e.isBoss ? '#ff5fe0' : '#ff4444';
+      mctx.fillStyle = e.isBoss ? '#ff5fe0' : (e.ctfTeam === 'blue' ? '#3a9bd5' : '#ff4444');
       mctx.save();
       mctx.translate(rel.x, rel.y);
       mctx.rotate(-yaw);
@@ -9056,7 +9186,11 @@
     // hands (player.weapon === 'primary'), not just sitting in inventory.
     const activeWeaponDef = player.weapon === 'primary' ? WEAPON_DEFS[player.primaryType] : null;
     const weaponSpeedMult = (activeWeaponDef && activeWeaponDef.moveSpeedMult) || 1;
-    const speedMult = (player.crouching ? 0.45 : (player.sprinting ? player.sprintMult : 1)) * weaponSpeedMult;
+    // Carrying the enemy flag costs a bit of speed — otherwise there's no
+    // real risk in grabbing it and sprinting straight home, and defenders
+    // have basically no way to catch a carrier who's already past them.
+    const flagSpeedMult = (gameMode === 'ctf' && ctfState.enemyFlag.carrier === 'player') ? 0.85 : 1;
+    const speedMult = (player.crouching ? 0.45 : (player.sprinting ? player.sprintMult : 1)) * weaponSpeedMult * flagSpeedMult;
     updateStaminaUI();
     updateSpeedEffects(dt);
 
