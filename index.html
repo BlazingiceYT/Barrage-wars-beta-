@@ -799,6 +799,7 @@
         <option value="cross-dot">Cross + Dot</option>
         <option value="dot">Dot</option>
         <option value="circle">Circle</option>
+        <option value="dot-circle">Dot + Circle</option>
       </select>
     </div>
     <div class="row"><span>Size</span><input type="range" id="crosshairSizeSlider" min="8" max="48" step="1" value="22"><span class="val" id="crosshairSizeVal">22</span></div>
@@ -8356,11 +8357,11 @@
       html += `<div style="${lineStyle} top:50%; left:0; height:${thickness}px; width:${armLen}px; transform:translateY(-50%);"></div>`;
       html += `<div style="${lineStyle} top:50%; right:0; height:${thickness}px; width:${armLen}px; transform:translateY(-50%);"></div>`;
     }
-    if (shape === 'dot' || shape === 'cross-dot') {
+    if (shape === 'dot' || shape === 'cross-dot' || shape === 'dot-circle') {
       const dotSize = Math.max(2, Math.round(thickness * 1.8));
       html += `<div style="${lineStyle} left:50%; top:50%; width:${dotSize}px; height:${dotSize}px; border-radius:50%; transform:translate(-50%,-50%);"></div>`;
     }
-    if (shape === 'circle') {
+    if (shape === 'circle' || shape === 'dot-circle') {
       html += `<div style="position:absolute; left:50%; top:50%; width:${size}px; height:${size}px; border-radius:50%; border:${thickness}px solid ${color}; box-shadow:0 0 2px rgba(0,0,0,0.85); transform:translate(-50%,-50%); background:transparent;"></div>`;
     }
     crosshairEl.innerHTML = html;
