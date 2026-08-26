@@ -30,12 +30,6 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
     width: 22px; height: 22px; pointer-events: none;
   }
-  #crosshair::before, #crosshair::after {
-    content: ''; position: absolute; background: rgba(255,255,255,0.85);
-    box-shadow: 0 0 2px rgba(0,0,0,0.8);
-  }
-  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-1px); }
-  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-1px); }
   #cheatHoldLabel {
     position: absolute; top: calc(50% + 20px); left: 50%; transform: translateX(-50%);
     color: #ff8080; font-size: 12px; font-weight: bold; text-shadow: 0 0 4px #000, 0 0 4px #000;
@@ -154,6 +148,11 @@
     text-align: right;
   }
   #weaponNameTag { font-size: 11px; color: #ffdd55; letter-spacing: 1px; }
+  #attachmentBadges { font-size: 10px; letter-spacing: 0.5px; margin-top: 2px; min-height: 12px; }
+  #attachmentBadges span {
+    display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px;
+    background: rgba(255,255,255,0.14); color: #cfe8ff; font-weight: bold;
+  }
   #reloadText { color: #ffcc33; font-size: 13px; display: none; }
   #noAmmoText { color: #ff5555; font-size: 13px; display: none; }
   #ammoReserve { color: #bbb; font-size: 15px; }
@@ -184,6 +183,22 @@
     0% { opacity: 0.95; }
     75% { opacity: 0.55; }
     100% { opacity: 0; }
+  }
+  #damageNumbersWrap {
+    position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 15;
+  }
+  .dmgNumber {
+    position: absolute; transform: translate(-50%, -50%);
+    font-weight: bold; font-size: 17px; color: #f4f4f4;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.6);
+    pointer-events: none; white-space: nowrap;
+    animation: dmgNumberRise 0.85s ease-out forwards;
+  }
+  .dmgNumber.headshot { color: #ffdd33; font-size: 25px; text-shadow: 0 2px 6px rgba(0,0,0,0.9), 0 0 8px rgba(255,180,30,0.55); }
+  @keyframes dmgNumberRise {
+    0% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+    20% { transform: translate(-50%, -50%) translateY(-6px) scale(1.12); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), -50%) translateY(-46px) scale(1); }
   }
   #ctfBeaconWrap {
     position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; display: none;
@@ -376,6 +391,25 @@
   .equipSlot.emptySlot { opacity: 0.4; }
   .equipSlot .count { position: absolute; bottom: 1px; right: 3px; font-size: 10px; color: #ffdd55; text-shadow: 0 1px 2px #000; }
   .equipSlot .key { position: absolute; top: 1px; left: 3px; font-size: 9px; color: #aaa; }
+  /* Gun photo + overlay strip, shared by the bottom mini equip boxes and
+     the bigger backpack panel slots. Falls back to the plain text label
+     (already in the markup) whenever no image loads for a gun — the
+     .hasImage class is only added once the <img> actually loads. */
+  .gunSlotImg { display: none; width: 82%; height: 82%; object-fit: contain; }
+  .gunSlotOverlay {
+    display: none; position: absolute; top: 2px; left: 2px; right: 2px;
+    background: rgba(0,0,0,0.55); border-radius: 4px; padding: 1px 3px;
+    justify-content: space-between; align-items: center; gap: 2px;
+    font-size: 8px; font-weight: bold; line-height: 1.3; overflow: hidden;
+  }
+  .gunSlotOverlay .overlayAmmo { color: #ffdd55; white-space: nowrap; }
+  .gunSlotOverlay .overlayAtts { display: flex; gap: 2px; }
+  .gunSlotOverlay .attIcon { font-size: 9px; }
+  .equipSlot.hasImage .gunSlotImg, .equipSlot.hasImage .gunSlotOverlay,
+  .loadoutSlot.hasImage .gunSlotImg, .loadoutSlot.hasImage .gunSlotOverlay { display: flex; }
+  .equipSlot.hasImage .gunSlotImg { display: block; }
+  .loadoutSlot.hasImage .gunSlotImg { display: block; }
+  .equipSlot.hasImage > .textLabel, .loadoutSlot.hasImage > .textLabel { display: none; }
   #invSlot {
     width: calc(58px * var(--ui-scale)); height: calc(58px * var(--ui-scale)); background: rgba(80,55,20,0.6); border: 2px solid rgba(210,170,110,0.6);
     border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: calc(20px * var(--ui-scale)); cursor: pointer;
@@ -407,9 +441,30 @@
     padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
   }
   #invPanel button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #loadoutRow { display: flex; justify-content: center; gap: 14px; margin: 4px 0 16px; }
+  .loadoutSlot {
+    position: relative; width: 92px; height: 92px; background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,255,255,0.25); border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold; color: #fff;
+  }
+  .loadoutSlot.emptySlot { opacity: 0.4; }
+  .loadoutSlot .loadoutSlotName { position: absolute; bottom: 2px; left: 0; right: 0; font-size: 9px; color: #ffdd55; text-shadow: 0 1px 2px #000; }
+  .loadoutSlot .loadoutKey { position: absolute; top: 3px; left: 5px; font-size: 9px; color: #aaa; }
+  .loadoutSlot .gunSlotImg { width: 78%; height: 60%; }
+  .loadoutSlot .gunSlotOverlay { font-size: 9px; }
+  .loadoutSlot .gunSlotOverlay .attIcon { font-size: 10px; }
   #invClose, #settingsClose { margin-top: 10px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
   #settingsPanel input[type=range] { width: 140px; }
   #settingsPanel .val { color: #ffdd55; font-size: 12px; min-width: 32px; text-align: right; }
+  .miniSelect {
+    background: linear-gradient(180deg,#8a6a3b,#5a4222); border: 1px solid #d2aa6e; color: #fff;
+    padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  #crosshairColorPicker {
+    width: 40px; height: 26px; padding: 0; border: 1px solid #d2aa6e; border-radius: 6px;
+    background: none; cursor: pointer;
+  }
   #customizeControlsBtn, #rebindKeysBtn { display: block; width: 100%; margin: 4px 0 10px; }
   .miniToggleBtn { padding: 4px 16px; border-radius: 14px; }
   .miniToggleBtn.off { background: linear-gradient(180deg,#555,#333); border-color: #777; color: #aaa; }
@@ -515,6 +570,25 @@
   }
   .overlayScreen .bigBtn:active { transform: scale(0.97); }
 
+  #deathCamOverlay {
+    position: absolute; inset: 0; z-index: 18; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding: 0 16px max(36px, var(--safe-b));
+  }
+  #deathCamLabel {
+    color: #ff5555; font-size: clamp(18px, 4vw, 28px); font-weight: bold; letter-spacing: 1px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.85); margin-bottom: 16px;
+    opacity: 0; animation: deathCamLabelIn 0.5s ease-out 0.15s forwards;
+  }
+  #deathCamKillerLabel { color: #ffdd55; }
+  @keyframes deathCamLabelIn { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
+  #deathCamSkipBtn {
+    pointer-events: auto; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.35);
+    color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 1px;
+    padding: 9px 22px; border-radius: 24px; cursor: pointer;
+  }
+  #deathCamSkipBtn:active { background: rgba(255,255,255,0.2); }
+
   #winScreen h1 {
     color: #ffe36a; text-shadow: 0 0 24px rgba(255,210,80,0.85), 0 0 48px rgba(255,180,40,0.5);
     animation: winTitlePulse 1.6s ease-in-out infinite;
@@ -567,6 +641,7 @@
     <div id="nukeFlash"></div>
     <div id="damageVignette"></div>
     <div id="damageDirWrap"></div>
+    <div id="damageNumbersWrap"></div>
     <div id="ctfBeaconWrap">
       <div id="ctfBeacon">
         <div id="ctfBeaconArrow"><svg viewBox="0 0 46 46"><polygon points="23,6 34,30 23,24 12,30" fill="#ffd25a" stroke="rgba(0,0,0,0.6)" stroke-width="1.5"/></svg></div>
@@ -630,7 +705,7 @@
 
     <div id="instructions">WASD/Joystick=Move | Mouse/Drag=Look | Click/FIRE=Shoot | RightClick/Scope=Aim | P=View | Ctrl-C/Crouch=Crouch | 1/2/3/4=Weapon | G=Drop | F=Grenade | V=Smoke | M=Molotov | N=Build Mode | B=Build | X=Piece | Z=Material | Tab=Inventory | K=Skip Wave</div>
 
-    <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
+    <div id="ammoDisplay"><div id="weaponNameTag">PISTOL</div><span id="ammoCount">12</span> / <span id="ammoReserve">36</span><div id="attachmentBadges"></div><div id="reloadText">RELOADING...</div><div id="noAmmoText">OUT OF AMMO</div></div>
     <div id="blockText">BLOCKING</div>
 
     <button id="weaponSwitchBtn">SWITCH</button>
@@ -660,14 +735,38 @@
 
     <div id="equipBar">
       <div class="equipSlot" id="slotAxe" data-slot="axe"><span class="key">1</span>AXE</div>
-      <div class="equipSlot emptySlot" id="slotPrimary" data-slot="primary"><span class="key">2</span><span id="primaryLabel">--</span><span class="count" id="primaryAmmoTag"></span></div>
-      <div class="equipSlot selected" id="slotSecondary" data-slot="secondary"><span class="key">3</span><span id="secondaryLabel">PSTL</span><span class="count" id="pistolAmmoTag">12</span></div>
+      <div class="equipSlot emptySlot" id="slotPrimary" data-slot="primary">
+        <span class="key">2</span>
+        <img class="gunSlotImg" id="primaryGunImg" alt="">
+        <div class="gunSlotOverlay" id="primaryGunOverlay"></div>
+        <span class="textLabel" id="primaryLabel">--</span><span class="textLabel count" id="primaryAmmoTag"></span>
+      </div>
+      <div class="equipSlot selected" id="slotSecondary" data-slot="secondary">
+        <span class="key">3</span>
+        <img class="gunSlotImg" id="secondaryGunImg" alt="">
+        <div class="gunSlotOverlay" id="secondaryGunOverlay"></div>
+        <span class="textLabel" id="secondaryLabel">PSTL</span><span class="textLabel count" id="pistolAmmoTag">12</span>
+      </div>
       <div class="equipSlot emptySlot" id="slotMelee" data-slot="melee"><span class="key">4</span><span id="meleeLabel">--</span></div>
       <div id="invSlot" title="Inventory">🎒<span id="woodCount">0</span></div>
     </div>
 
     <div id="invPanel">
-      <h3>INVENTORY</h3>
+      <h3>BACKPACK</h3>
+      <div id="loadoutRow">
+        <div class="loadoutSlot emptySlot" id="loadoutPrimary">
+          <span class="loadoutKey">2 · PRIMARY</span>
+          <img class="gunSlotImg" id="loadoutPrimaryImg" alt="">
+          <div class="gunSlotOverlay" id="loadoutPrimaryOverlay"></div>
+          <span class="textLabel loadoutSlotName" id="loadoutPrimaryName">EMPTY</span>
+        </div>
+        <div class="loadoutSlot" id="loadoutSecondary">
+          <span class="loadoutKey">3 · SECONDARY</span>
+          <img class="gunSlotImg" id="loadoutSecondaryImg" alt="">
+          <div class="gunSlotOverlay" id="loadoutSecondaryOverlay"></div>
+          <span class="textLabel loadoutSlotName" id="loadoutSecondaryName">PISTOL</span>
+        </div>
+      </div>
       <div class="row"><span>🪵 Wood</span><span id="invWoodVal">0</span></div>
       <div class="row"><span>🧱 Build (X = piece, Z = material)</span><button id="buildFromInvBtn">Build</button></div>
       <div class="row" style="font-size:11px;opacity:0.85;">Wall 5 / Ramp 6 / Floor 4 wood (×3 Stone, ×6 Metal)</div>
@@ -693,6 +792,17 @@
     <div class="row"><span>Show Dead Bodies</span><button id="corpseToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row"><span>Shadows</span><button id="shadowToggleBtn" class="miniToggleBtn">ON</button></div>
     <div class="row"><span>Weather</span><button id="weatherModeBtn" class="miniToggleBtn">AUTO</button></div>
+    <h3 style="margin-top:14px;">CROSSHAIR</h3>
+    <div class="row"><span>Shape</span>
+      <select id="crosshairShapeSelect" class="miniSelect">
+        <option value="cross">Cross</option>
+        <option value="cross-dot">Cross + Dot</option>
+        <option value="dot">Dot</option>
+        <option value="circle">Circle</option>
+      </select>
+    </div>
+    <div class="row"><span>Size</span><input type="range" id="crosshairSizeSlider" min="8" max="48" step="1" value="22"><span class="val" id="crosshairSizeVal">22</span></div>
+    <div class="row"><span>Color</span><input type="color" id="crosshairColorPicker" value="#ffffff"></div>
     <h3 style="margin-top:14px;">ACCESSIBILITY</h3>
     <div class="row"><span>Colorblind-Friendly Colors</span><button id="colorblindToggleBtn" class="miniToggleBtn off">OFF</button></div>
     <h3 id="mobileAimHeader" style="margin-top:14px;">MOBILE AIM</h3>
@@ -815,6 +925,11 @@
     </div>
     <div id="altitudeReadout" style="position:absolute; top:16px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,0.4); padding:6px 14px; border-radius:20px; font-size:13px;">ALT: 900m</div>
     <button id="deployChuteBtn" style="position:absolute; bottom:60px; left:50%; transform:translateX(-50%); pointer-events:auto; background:linear-gradient(180deg,#3ba1ff,#1a5fbf); border:none; color:#fff; font-size:16px; font-weight:bold; padding:14px 34px; border-radius:40px; box-shadow:0 6px 16px rgba(30,100,200,0.5); display:none;">DEPLOY PARACHUTE</button>
+  </div>
+
+  <div id="deathCamOverlay" style="display:none;">
+    <div id="deathCamLabel">Killed by <span id="deathCamKillerLabel">Unknown</span></div>
+    <button id="deathCamSkipBtn">SKIP ▶</button>
   </div>
 
   <div class="overlayScreen" id="deathScreen" style="display:none;">
@@ -1392,11 +1507,86 @@
   // buildTreeInstancedMeshes(), after generateTrees() below has finished and
   // the final tree count is known (InstancedMesh needs a fixed count up front).
   let treeTrunkMesh = null, treeLeafMesh = null;
+  // ---- Extreme-mode per-leaf/per-branch detail ----
+  // On top of the cheap trunk+leaf-blob instances above (which stay in the
+  // scene at every graphics level and are what chopping actually raycasts
+  // against), Extreme graphics also builds real individual leaf cards and
+  // branch cylinders per tree so the canopy reads as actual foliage up
+  // close instead of a solid blob. Each tree's leaf/branch placements are
+  // precomputed once (as local-space matrices relative to the tree's base)
+  // so they can cheaply be re-composed with the tree's base position, or a
+  // chop-wobble kick, without re-rolling any randomness.
+  const LEAF_CLUSTERS = 420;
+  const LEAVES_PLANES_PER_CLUSTER = 3; // 3-way fan (60° apart) — fuller from any angle than a 2-plane cross
+  const LEAVES_PER_TREE = LEAF_CLUSTERS * LEAVES_PLANES_PER_CLUSTER;
+  const BRANCHES_PER_TREE = 15;
   function makeTree(x, z) {
     const h = 3 + Math.random()*2.5;
     const leafScale = 1.6 + Math.random()*0.9;
     const gy = terrainHeightAt(x, z);
-    const tree = { x, z, gy, h, leafScale, wood: 5, alive: true, radius: 0.5, hitsLeft: 5, maxHits: 5, index: trees.length, wobbleTimeout: null };
+    const tree = { x, z, gy, h, leafScale, wood: 5, alive: true, radius: 0.5, hitsLeft: 5, maxHits: 5, index: trees.length, wobbleTimeout: null,
+      leafLocalMats: [], branchLocalMats: [] };
+
+    // Canopy center matches the existing leaf-blob's own position/size so
+    // the detail foliage sits right on top of (not floating away from) it.
+    const canopyY = h + leafScale*0.6;
+    const canopyR = leafScale * 1.2;
+    // Each cluster is a 3-plane "fan" spaced 60° apart around a shared axis
+    // (the classic foliage billboard-cross technique, extended to 3 planes
+    // instead of 2) rather than one fully-random flat card — a lone random
+    // plane can shrink to an all-but-invisible sliver depending on the
+    // camera angle, while a 3-way fan always shows solid leaf area from
+    // every direction, so the canopy reads as dense instead of gappy now
+    // that the low-poly blob behind it is hidden on Extreme. r uses a
+    // uniform-volume distribution (cbrt of a uniform random, the standard
+    // trick for evenly filling a sphere) so leaves are packed solidly all
+    // the way through the middle too, not just around the outer shell.
+    for (let c = 0; c < LEAF_CLUSTERS; c++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2*Math.random() - 1);
+      const r = canopyR * Math.cbrt(Math.random());
+      const lx = r * Math.sin(phi) * Math.cos(theta);
+      const ly = canopyY + r * Math.cos(phi) * 0.82; // squash a touch vertically, less egg-shaped
+      const lz = r * Math.sin(phi) * Math.sin(theta);
+      const baseEuler = new THREE.Euler(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2);
+      const leafSize = 1.2 + Math.random()*0.9;
+      const scaleV = new THREE.Vector3(leafSize, leafSize, leafSize);
+      for (let k = 0; k < LEAVES_PLANES_PER_CLUSTER; k++) {
+        const e = k === 0 ? baseEuler : new THREE.Euler(baseEuler.x, baseEuler.y + k*(Math.PI/3), baseEuler.z);
+        const leafQuat = new THREE.Quaternion().setFromEuler(e);
+        // Small per-blade jitter so the 3 fan blades don't all pivot around
+        // the exact same point (which caused them to visibly cut through
+        // one another / z-fight where they crossed).
+        const jitter = leafSize * 0.12;
+        const pos = new THREE.Vector3(
+          lx + (Math.random()*2 - 1) * jitter,
+          ly + (Math.random()*2 - 1) * jitter,
+          lz + (Math.random()*2 - 1) * jitter
+        );
+        const m = new THREE.Matrix4().compose(pos, leafQuat, scaleV);
+        tree.leafLocalMats.push(m);
+      }
+    }
+
+    // Branches now stay mostly inside/at the canopy edge instead of poking
+    // way out past it as bare sticks — length is capped relative to the
+    // canopy radius they're growing into.
+    const branchBaseY = h * 0.55;
+    for (let i = 0; i < BRANCHES_PER_TREE; i++) {
+      const major = i < 6; // first 6 are thicker/longer "major" limbs, the rest are thinner sub-branches
+      const branchY = branchBaseY + Math.random() * (h*0.42);
+      const ang = Math.random() * Math.PI * 2;
+      const tilt = (0.35 + Math.random()*0.55) * (major ? 1 : 1.3);
+      const len = Math.min(canopyR * 0.95, (major ? 0.7 + Math.random()*0.6 : 0.35 + Math.random()*0.35) * (leafScale*0.6 + 0.4));
+      const rad = major ? 0.05 + Math.random()*0.03 : 0.02 + Math.random()*0.015;
+      const dir = new THREE.Vector3(Math.cos(ang), tilt, Math.sin(ang)).normalize();
+      const branchQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+      const center = new THREE.Vector3(0, branchY, 0).addScaledVector(dir, len*0.5);
+      const m = new THREE.Matrix4().compose(center, branchQuat, new THREE.Vector3(rad, len, rad));
+      tree.branchLocalMats.push(m);
+    }
+
+
     trees.push(tree);
     return tree;
   }
@@ -1457,6 +1647,152 @@
     treeLeafMesh.instanceMatrix.needsUpdate = true;
     scene.add(treeTrunkMesh, treeLeafMesh);
   }
+
+  // ---- Extreme-mode detail: individual leaves + branches, GPU wind sway ----
+  let treeExtremeLeafMesh = null, treeExtremeBranchMesh = null;
+  const extremeLeafUnitGeo = new THREE.PlaneGeometry(0.34, 0.42);
+  const extremeBranchUnitGeo = new THREE.CylinderGeometry(0.55, 1, 1, 5);
+  // Draws an actual pointed-oval leaf silhouette (not a rectangle) onto a
+  // canvas, complete with a midrib + branching side veins, then hands it
+  // back as a texture. The plane geometry stays a simple quad; the leaf
+  // *shape* comes from this texture's alpha channel (see alphaTest below),
+  // and the veins are just darker strokes baked into the color.
+  function createLeafTexture() {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    // Pointed-oval leaf outline (tip at top, tip at bottom, bulge in the middle)
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.47);
+    ctx.bezierCurveTo(size * 0.40, -size * 0.30, size * 0.36, size * 0.28, 0, size * 0.47);
+    ctx.bezierCurveTo(-size * 0.36, size * 0.28, -size * 0.40, -size * 0.30, 0, -size * 0.47);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, -size * 0.47, 0, size * 0.47);
+    grad.addColorStop(0, '#5aab48');
+    grad.addColorStop(0.5, '#3d8035');
+    grad.addColorStop(1, '#2b5f26');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // Clip further drawing (veins) to the leaf silhouette we just filled
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(20,45,12,0.55)';
+    ctx.lineCap = 'round';
+    // Midrib
+    ctx.lineWidth = size * 0.022;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.42);
+    ctx.lineTo(0, size * 0.44);
+    ctx.stroke();
+    // Side veins, branching off the midrib in pairs
+    ctx.lineWidth = size * 0.012;
+    const pairs = 6;
+    for (let i = 1; i <= pairs; i++) {
+      const t = i / (pairs + 1);
+      const y = -size * 0.36 + t * size * 0.72;
+      const spread = size * 0.26 * (1 - Math.abs(t - 0.5) * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.quadraticCurveTo(spread * 0.5, y + size * 0.06, spread, y + size * 0.14);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.quadraticCurveTo(-spread * 0.5, y + size * 0.06, -spread, y + size * 0.14);
+      ctx.stroke();
+    }
+    ctx.restore();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+  const extremeLeafTexture = createLeafTexture();
+  const extremeLeafMat = new THREE.MeshStandardMaterial({
+    map: extremeLeafTexture,
+    color: 0xffffff,
+    roughness: 0.72,
+    side: THREE.DoubleSide,
+    transparent: true,
+    alphaTest: 0.4,
+    // Reduces z-fighting/flicker between the many overlapping leaf planes
+    // packed into each canopy now that there are a lot more of them.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1
+  });
+  const extremeBranchMat = new THREE.MeshStandardMaterial({ color: 0x5b3d24, roughness: 0.95 });
+
+  const _extTreeMat4 = new THREE.Matrix4();
+  const _extTreeQuat = new THREE.Quaternion();
+  const _extTreeEuler = new THREE.Euler();
+  const _extBaseMat = new THREE.Matrix4();
+  const _extScale1 = new THREE.Vector3(1, 1, 1);
+  const _extTinyScale = new THREE.Vector3(0.0001, 0.0001, 0.0001);
+  const _extHidePos = new THREE.Vector3();
+
+  // Re-composes every leaf/branch instance belonging to one tree from its
+  // precomputed local matrices, combined with the tree's base position and
+  // an optional chop-wobble kick around Z — mirrors setTreeInstanceMatrices
+  // above so the detail foliage tilts together with the trunk/leaf-blob.
+  function setTreeExtremeDetailMatrices(tree, kickZ) {
+    if (!treeExtremeLeafMesh) return;
+    _extTreeEuler.set(0, 0, kickZ || 0);
+    _extTreeQuat.setFromEuler(_extTreeEuler);
+    _extBaseMat.compose(new THREE.Vector3(tree.x, tree.gy, tree.z), _extTreeQuat, _extScale1);
+    const leafOff = tree.index * LEAVES_PER_TREE;
+    for (let i = 0; i < LEAVES_PER_TREE; i++) {
+      _extTreeMat4.multiplyMatrices(_extBaseMat, tree.leafLocalMats[i]);
+      treeExtremeLeafMesh.setMatrixAt(leafOff + i, _extTreeMat4);
+    }
+    const branchOff = tree.index * BRANCHES_PER_TREE;
+    for (let i = 0; i < BRANCHES_PER_TREE; i++) {
+      _extTreeMat4.multiplyMatrices(_extBaseMat, tree.branchLocalMats[i]);
+      treeExtremeBranchMesh.setMatrixAt(branchOff + i, _extTreeMat4);
+    }
+    treeExtremeLeafMesh.instanceMatrix.needsUpdate = true;
+    treeExtremeBranchMesh.instanceMatrix.needsUpdate = true;
+  }
+  // Tucks a felled tree's detail leaves/branches away the same way
+  // hideTreeInstance() tucks its trunk/leaf-blob — near-zero scale, well
+  // below ground, never a truly-singular zero matrix.
+  function hideTreeExtremeDetail(tree) {
+    if (!treeExtremeLeafMesh) return;
+    _extHidePos.set(tree.x, tree.gy - 40, tree.z);
+    _extTreeMat4.compose(_extHidePos, _extTreeQuat.identity(), _extTinyScale);
+    const leafOff = tree.index * LEAVES_PER_TREE;
+    for (let i = 0; i < LEAVES_PER_TREE; i++) treeExtremeLeafMesh.setMatrixAt(leafOff + i, _extTreeMat4);
+    const branchOff = tree.index * BRANCHES_PER_TREE;
+    for (let i = 0; i < BRANCHES_PER_TREE; i++) treeExtremeBranchMesh.setMatrixAt(branchOff + i, _extTreeMat4);
+    treeExtremeLeafMesh.instanceMatrix.needsUpdate = true;
+    treeExtremeBranchMesh.instanceMatrix.needsUpdate = true;
+  }
+  function buildTreeExtremeDetailMeshes() {
+    const leafCount = Math.max(1, trees.length * LEAVES_PER_TREE);
+    const branchCount = Math.max(1, trees.length * BRANCHES_PER_TREE);
+    treeExtremeLeafMesh = new THREE.InstancedMesh(extremeLeafUnitGeo, extremeLeafMat, leafCount);
+    treeExtremeBranchMesh = new THREE.InstancedMesh(extremeBranchUnitGeo, extremeBranchMat, branchCount);
+    treeExtremeLeafMesh.castShadow = true;
+    treeExtremeBranchMesh.castShadow = true; treeExtremeBranchMesh.receiveShadow = true;
+    // Same reasoning as treeTrunkMesh/treeLeafMesh above: instances are
+    // scattered across the whole map, so per-mesh frustum culling (which
+    // only knows about one unscattered unit shape near the origin) would
+    // make trees flicker; the detail meshes are only built once and are
+    // cheap to render regardless, so culling is disabled outright.
+    treeExtremeLeafMesh.frustumCulled = false;
+    treeExtremeBranchMesh.frustumCulled = false;
+    // Only ever visible on the Extreme graphics tier; applyRenderDistance()
+    // flips this whenever the render-distance slider changes.
+    treeExtremeLeafMesh.visible = settings.renderDistLevel === 3;
+    treeExtremeBranchMesh.visible = settings.renderDistLevel === 3;
+
+    for (const tree of trees) {
+      if (tree.alive) setTreeExtremeDetailMatrices(tree, 0);
+      else hideTreeExtremeDetail(tree);
+    }
+    scene.add(treeExtremeLeafMesh, treeExtremeBranchMesh);
+  }
   // Trees now take 5 chops to fell. Each chop gives a little wood right away
   // (so chopping never feels wasted) and the tree visibly wobbles harder as
   // it gets closer to falling. Only the 5th hit actually fells it.
@@ -1470,6 +1806,7 @@
       setTreeInstanceMatrices(tree, kick);
       treeTrunkMesh.instanceMatrix.needsUpdate = true;
       treeLeafMesh.instanceMatrix.needsUpdate = true;
+      setTreeExtremeDetailMatrices(tree, kick);
       // Clear any wobble-reset already queued from a rapid previous chop, so
       // two quick chops can't race and leave the tree stuck mid-kick.
       if (tree.wobbleTimeout) clearTimeout(tree.wobbleTimeout);
@@ -1479,6 +1816,7 @@
         setTreeInstanceMatrices(tree, 0);
         treeTrunkMesh.instanceMatrix.needsUpdate = true;
         treeLeafMesh.instanceMatrix.needsUpdate = true;
+        setTreeExtremeDetailMatrices(tree, 0);
       }, 120);
       return;
     }
@@ -1487,12 +1825,14 @@
     hideTreeInstance(tree);
     treeTrunkMesh.instanceMatrix.needsUpdate = true;
     treeLeafMesh.instanceMatrix.needsUpdate = true;
+    hideTreeExtremeDetail(tree);
     setTimeout(() => {
       tree.alive = true;
       tree.hitsLeft = tree.maxHits;
       setTreeInstanceMatrices(tree, 0);
       treeTrunkMesh.instanceMatrix.needsUpdate = true;
       treeLeafMesh.instanceMatrix.needsUpdate = true;
+      setTreeExtremeDetailMatrices(tree, 0);
     }, 15000);
   }
 
@@ -1597,7 +1937,7 @@
   // Guns that live in the secondary slot alongside the pistol (as opposed
   // to the primary slot's ak47/smg/shotgun/etc.) — see pickupWeapon().
   const SECONDARY_GUN_TYPES = ['laser'];
-  function spawnWeaponPickup(type, x, y, z, delayActive) {
+  function spawnWeaponPickup(type, x, y, z, delayActive, carryState) {
     const built = WEAPON_BUILDERS[type](1.3);
     let group = built.group;
     group.rotation.z = Math.PI/2.3;
@@ -1607,14 +1947,20 @@
       sniper: 0xb46bff, minigun: 0xff9a3d, shotgun: 0xffcc33, flamethrower: 0xff5a1f,
       smg: 0x7affc4, laser: 0x33ffea,
       knife: 0x8fd3ff, scythe: 0x9d4edd, shield: 0xb8a05a, grenade: 0x6bff7a,
-      smokegrenade: 0xd8d8dc, molotov: 0xff6a2e
+      smokegrenade: 0xd8d8dc, molotov: 0xff6a2e,
+      attach_scope: 0x3ba1ff, attach_suppressor: 0x8a8f96, attach_extmag: 0xc9a15a
     };
     const ringColor = RING_COLOR_MAP[type] !== undefined ? RING_COLOR_MAP[type] : 0xaeb4bb;
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: ringColor, emissive: ringColor, emissiveIntensity: 0.5 }));
     ring.rotation.x = Math.PI/2;
     ring.position.set(x, y + 0.06, z);
     scene.add(ring);
-    const p = { group, ring, type, x, y, z, active: !delayActive };
+    // carryState (only set when the PLAYER drops a gun they were actually
+    // holding) preserves the exact mag/reserve and attachments it had at
+    // the moment it hit the ground, instead of the pickup silently acting
+    // like a fresh, fully-loaded, unmodified gun. World/loot spawns and
+    // bot drops pass no carryState and behave as before (fresh gun).
+    const p = { group, ring, type, x, y, z, active: !delayActive, carryState: carryState || null };
     pickups.push(p);
     // dropped weapons start non-collectible for a moment so the player who just
     // dropped it (standing right on top of it) doesn't instantly re-pick it up
@@ -1662,6 +2008,39 @@
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 30000);
       return;
     }
+    if (p.type === 'attach_scope' || p.type === 'attach_suppressor' || p.type === 'attach_extmag') {
+      const slotName = attachmentTargetSlot();
+      if (!slotName) {
+        // No gun in either slot to attach this to — leave the pickup on
+        // the ground instead of consuming it for nothing.
+        p.active = true; p.group.visible = true; p.ring.visible = true;
+        showPickupToast('NO GUN TO ATTACH');
+        return;
+      }
+      const key = p.type === 'attach_scope' ? 'scope' : (p.type === 'attach_suppressor' ? 'suppressor' : 'extendedMag');
+      const label = p.type === 'attach_scope' ? 'SCOPE' : (p.type === 'attach_suppressor' ? 'SUPPRESSOR' : 'EXTENDED MAG');
+      if (player.attachments[slotName][key]) {
+        // Already have this exact attachment on that gun — leave it be
+        // rather than "picking up" a duplicate for nothing.
+        p.active = true; p.group.visible = true; p.ring.visible = true;
+        showPickupToast('ALREADY EQUIPPED: ' + label);
+        return;
+      }
+      player.attachments[slotName][key] = true;
+      if (key === 'extendedMag') {
+        // Growing the mag mid-carry tops the reserve up by the added
+        // capacity too, so finding one is a real ammo boost, not just a
+        // bigger empty bucket next reload.
+        const oldMax = WEAPON_DEFS[slotName === 'primary' ? player.primaryType : player.secondaryType].maxMag;
+        const newMax = effectiveMaxMag(slotName);
+        if (newMax !== Infinity) player.ammoState[slotName].reserve += (newMax - oldMax);
+      }
+      updateAmmoUI();
+      updateAttachmentHUD();
+      showPickupToast('ATTACHED: ' + label);
+      setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
+      return;
+    }
     if (p.type === 'knife' || p.type === 'scythe' || p.type === 'shield') {
       // Single melee slot — knife, scythe, and shield all share it. Already
       // holding this exact one just re-confirms the toast; picking up a
@@ -1687,15 +2066,29 @@
     const slotName = SECONDARY_GUN_TYPES.includes(p.type) ? 'secondary' : 'primary';
     const fillGunSlot = () => {
       player[slotName + 'Type'] = p.type;
-      player.ammoState[slotName] = { mag: def.maxMag, reserve: def.maxMag === Infinity ? Infinity : def.maxMag * 2 };
+      if (p.carryState) {
+        // This exact gun was dropped (by the player) carrying this ammo/
+        // attachment state — restore it exactly instead of acting like a
+        // brand new, fully-loaded, unmodified gun.
+        player.attachments[slotName] = { ...p.carryState.attachments };
+        player.ammoState[slotName] = { ...p.carryState.ammo };
+      } else {
+        // A different gun taking the slot leaves its old attachments behind —
+        // they were bolted to that gun, not to the slot.
+        player.attachments[slotName] = { scope: false, suppressor: false, extendedMag: false };
+        const maxMag = effectiveMaxMag(slotName);
+        player.ammoState[slotName] = { mag: maxMag, reserve: maxMag === Infinity ? Infinity : maxMag * 2 };
+      }
       setWeapon(slotName);
       showPickupToast('PICKED UP: ' + def.name);
+      updateAttachmentHUD();
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
     };
     if (player[slotName + 'Type'] === p.type) {
       // Already carrying this exact gun in that slot — picking up another
-      // just tops off its ammo instead of doing anything fancier.
-      player.ammoState[slotName] = { mag: def.maxMag, reserve: def.maxMag === Infinity ? Infinity : def.maxMag * 2 };
+      // just tops off its ammo (attachments already on it are kept).
+      const maxMag = effectiveMaxMag(slotName);
+      player.ammoState[slotName] = { mag: maxMag, reserve: maxMag === Infinity ? Infinity : maxMag * 2 };
       updateAmmoUI();
       showPickupToast('REFILLED: ' + def.name);
       setTimeout(() => { p.active = true; p.group.visible = true; p.ring.visible = true; }, 45000);
@@ -1703,11 +2096,13 @@
     }
     if (!player[slotName + 'Type']) { fillGunSlot(); return; }
     // The slot is already full with a different gun — replace it, dropping
-    // the old one on the ground instead of it just vanishing.
+    // the old one on the ground (with its own current ammo/attachments
+    // intact) instead of it just vanishing.
     const forward = getForward(player.yaw);
     const dropX = player.pos.x + forward.x * 1.3;
     const dropZ = player.pos.z + forward.z * 1.3;
-    spawnWeaponPickup(player[slotName + 'Type'], dropX, player.pos.y, dropZ, true);
+    const oldCarryState = { ammo: { ...player.ammoState[slotName] }, attachments: { ...player.attachments[slotName] } };
+    spawnWeaponPickup(player[slotName + 'Type'], dropX, player.pos.y, dropZ, true, oldCarryState);
     fillGunSlot();
   }
   function showPickupToast(text) {
@@ -2046,6 +2441,16 @@
         const shz = (Math.random()-0.5) * (d - 3);
         spawnHousePickup('shield', shx, shz, baseY + 0.25);
       }
+      // Sixth, independent roll: a weapon attachment (scope/suppressor/
+      // extended mag). Similar rarity to the knife/shield rolls — a
+      // welcome find but not guaranteed in every house.
+      if (Math.random() < 0.2) {
+        const attRoll = Math.random();
+        const attType = attRoll < 0.34 ? 'attach_scope' : (attRoll < 0.67 ? 'attach_suppressor' : 'attach_extmag');
+        const ax = (Math.random()-0.5) * (w - 3);
+        const az = (Math.random()-0.5) * (d - 3);
+        spawnHousePickup(attType, ax, az, baseY + 0.25);
+      }
     }
     if (!houseHasGun) {
       const roll = Math.random();
@@ -2340,6 +2745,23 @@
     laser:   { name: 'Laser',   shortName: 'LASR', dmg: 5,  headMult: 1.5, fireRate: 90,  maxMag: Infinity, auto: true, scope: false, scopeFov: BASE_FOV, reloadTime: 0, muzzleColor: 0x33ffea, range: Infinity }
   };
 
+  // Backpack/equip-bar gun photos. Expects a `weapons/` folder next to this
+  // HTML file containing one PNG per gun, named after its display name
+  // above exactly (e.g. "AK-47.png", "Sniper.png"). If your files are
+  // named differently, just edit the strings on the right below — nothing
+  // else needs to change. Any gun whose image fails to load (missing file,
+  // wrong name, 404) automatically falls back to the plain text label
+  // instead of showing a broken image icon.
+  const WEAPON_IMAGE_BASE_PATH = 'weapons/';
+  const WEAPON_IMAGE_FILES = {
+    pistol: 'Pistol.png', ak47: 'AK-47.png', smg: 'SMG.png', minigun: 'Minigun.png',
+    sniper: 'Sniper.png', shotgun: 'Shotgun.png', flamethrower: 'Flamethrower.png', laser: 'Laser.png'
+  };
+  function weaponImageUrl(type) {
+    const file = WEAPON_IMAGE_FILES[type];
+    return file ? (WEAPON_IMAGE_BASE_PATH + file) : null;
+  }
+
   // ---------- Weapon models (blocky, shared material palette) ----------
   const matDarkShared = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.55, metalness: 0.3 });
   const matMidShared = new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.6 });
@@ -2453,7 +2875,63 @@
     g.scale.set(s*BAT_GIANT_MULT, s*BAT_GIANT_MULT, s*BAT_GIANT_MULT);
     return { group: g, muzzleLocal: null };
   }
-  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, scythe: buildScytheMesh, shield: buildShieldMesh, bat: buildBatMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, smg: buildSmgMesh, laser: buildLaserMesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh };
+  // ---------- Attachment pickups (scope, suppressor, extended mag) ----------
+  // Small, distinct blocky shapes — same "held/dropped as a real pickup"
+  // treatment as guns/melee/throwables, just simpler since they're never
+  // actually held or animated, only ever seen sitting on the ground.
+  function buildScopeAttachmentMesh(s) {
+    const g = new THREE.Object3D();
+    const tubeMat = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.35, metalness: 0.65 });
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x3ba1ff, roughness: 0.15, metalness: 0.4, emissive: 0x1a5fbf, emissiveIntensity: 0.4 });
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.34, 12), tubeMat);
+    tube.rotation.z = Math.PI / 2;
+    g.add(tube);
+    const lensFront = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.02, 12), lensMat);
+    lensFront.rotation.z = Math.PI / 2; lensFront.position.set(0.17, 0, 0);
+    g.add(lensFront);
+    const lensBack = lensFront.clone(); lensBack.position.set(-0.17, 0, 0);
+    g.add(lensBack);
+    const mount = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.06), tubeMat);
+    mount.position.set(0, -0.07, 0);
+    g.add(mount);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  function buildSuppressorAttachmentMesh(s) {
+    const g = new THREE.Object3D();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.4, metalness: 0.7 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x55595e, roughness: 0.3, metalness: 0.8 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.36, 12), bodyMat);
+    body.rotation.z = Math.PI / 2;
+    g.add(body);
+    for (const x of [-0.14, -0.02, 0.1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.058, 0.008, 6, 12), ringMat);
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(x, 0, 0);
+      g.add(ring);
+    }
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  function buildExtMagAttachmentMesh(s) {
+    const g = new THREE.Object3D();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a3f22, roughness: 0.55, metalness: 0.3 });
+    const followerMat = new THREE.MeshStandardMaterial({ color: 0xc9a15a, roughness: 0.4, metalness: 0.5 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.34, 0.05), bodyMat);
+    g.add(body);
+    const curve = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.05), bodyMat);
+    curve.position.set(0.02, -0.19, 0); curve.rotation.z = -0.25;
+    g.add(curve);
+    const follower = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.03, 0.055), followerMat);
+    follower.position.set(0, 0.16, 0);
+    g.add(follower);
+    g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+    g.scale.set(s,s,s);
+    return { group: g, muzzleLocal: null };
+  }
+  const WEAPON_BUILDERS = { axe: buildAxeMesh, knife: buildKnifeMesh, scythe: buildScytheMesh, shield: buildShieldMesh, bat: buildBatMesh, pistol: buildPistolMesh, ak47: buildAK47Mesh, smg: buildSmgMesh, laser: buildLaserMesh, minigun: buildMinigunMesh, sniper: buildSniperMesh, shotgun: buildShotgunMesh, flamethrower: buildFlamethrowerMesh, grenade: buildGrenadeMesh, smokegrenade: buildSmokeGrenadeMesh, molotov: buildMolotovMesh, attach_scope: buildScopeAttachmentMesh, attach_suppressor: buildSuppressorAttachmentMesh, attach_extmag: buildExtMagAttachmentMesh };
   function buildPistolMesh(s) {
     const g = new THREE.Object3D();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.11,0.11,0.32), matMidShared); g.add(body);
@@ -3406,6 +3884,14 @@
     meleeType: null, // 'knife' | 'scythe' | 'shield' | null — single melee slot; picking up one replaces whichever is held
     blocking: false, // true while the shield is equipped and the fire button is held — reduces incoming front-facing damage
     ammoState: { secondary: { mag: 12, reserve: 36 }, primary: { mag: 0, reserve: 0 } },
+    // Attachments found as loot and equipped onto whichever gun currently
+    // sits in each slot. Reset to none whenever a *different* gun type
+    // fills that slot (see fillGunSlot in pickupWeapon) — same lifecycle
+    // as ammoState, which also resets on a gun swap.
+    attachments: {
+      secondary: { scope: false, suppressor: false, extendedMag: false },
+      primary: { scope: false, suppressor: false, extendedMag: false }
+    },
     // Grenades, smoke grenades, and molotovs share one combined cap now
     // instead of each having their own max — you can carry any mix of the
     // three as long as the total across all of them doesn't exceed this.
@@ -3541,6 +4027,42 @@
     if (player.weapon === 'primary' && player.primaryType) return WEAPON_DEFS[player.primaryType];
     return null;
   }
+  // ---------- Weapon attachments ----------
+  // Extended mag: +50% capacity on top of the gun's base maxMag. This is
+  // the ONLY place that should be used to decide the player's actual mag
+  // cap — reload()/pickupWeapon()/the ammo HUD all read this instead of
+  // WEAPON_DEFS[type].maxMag directly, so an equipped extended mag is
+  // reflected everywhere ammo capacity matters. Bots never call this (they
+  // don't have attachments), so their maxMag stays exactly WEAPON_DEFS as before.
+  const EXTENDED_MAG_MULT = 1.5;
+  function effectiveMaxMag(slotName) {
+    const type = slotName === 'primary' ? player.primaryType : player.secondaryType;
+    const def = type && WEAPON_DEFS[type];
+    if (!def) return 0;
+    if (def.maxMag === Infinity) return Infinity;
+    const atts = player.attachments[slotName];
+    return atts && atts.extendedMag ? Math.round(def.maxMag * EXTENDED_MAG_MULT) : def.maxMag;
+  }
+  function hasAttachment(slotName, key) {
+    const atts = player.attachments[slotName];
+    return !!(atts && atts[key]);
+  }
+  // Which slot a just-picked-up attachment should apply to: whichever slot
+  // the player is actively holding if it has a gun in it, otherwise
+  // whichever slot has a gun at all (primary preferred), otherwise null if
+  // the player is carrying no guns to attach anything to.
+  function attachmentTargetSlot() {
+    if ((player.weapon === 'primary' || player.weapon === 'secondary') && currentWeaponDef()) return player.weapon;
+    if (player.primaryType) return 'primary';
+    if (player.secondaryType) return 'secondary';
+    return null;
+  }
+  // Suppressor's actual gameplay effect: bots can't spot the player from as
+  // far away while it's attached to whatever gun the player currently has
+  // equipped (see findNearestTarget below).
+  function playerHasSuppressor() {
+    return (player.weapon === 'primary' || player.weapon === 'secondary') && hasAttachment(player.weapon, 'suppressor');
+  }
   function currentMeshType() {
     if (MELEE_DEFS[player.weapon]) return player.weapon;
     if (player.weapon === 'shield') return 'shield';
@@ -3636,6 +4158,13 @@
     if (r < 0.05) return 'elite';
     if (r < 0.20) return 'aggressive';
     return 'normal';
+  }
+  // Builds the { label, weapon } info the death cam shows for a bot kill —
+  // tier-flavored name plus whatever gun they were carrying.
+  function botDeathCamInfo(bot) {
+    const tierLabel = bot.tier === 'elite' ? 'Elite Enemy' : (bot.tier === 'aggressive' ? 'Aggressive Enemy' : 'Enemy');
+    const wdef = WEAPON_DEFS[bot.weaponType];
+    return { pos: bot.pos, label: tierLabel, weapon: wdef ? wdef.name : null };
   }
 
   function spawnBot(idx, ctfTeam) {
@@ -4987,7 +5516,7 @@
     zom.attackCooldown -= dt;
     if (dist <= zom.attackRange && zom.attackCooldown <= 0) {
       zom.attackCooldown = zom.cooldownFn();
-      damagePlayer(zom.dmgFn(), zom.pos);
+      damagePlayer(zom.dmgFn(), zom.pos, { label: zom.isBoss ? 'Zombie Boss' : 'Zombie' });
       addShake(zom.isBoss ? 0.3 : 0.12);
     }
 
@@ -5005,7 +5534,7 @@
         zom.stompCooldown = 5 + Math.random()*1.5;
         zom.stompPulseT = 1;
         if (dist <= BOSS_STOMP_RANGE) {
-          damagePlayer(16 + Math.random()*10, zom.pos);
+          damagePlayer(16 + Math.random()*10, zom.pos, { label: 'Zombie Boss' });
           addShake(0.55);
         }
         playBossStomp();
@@ -5149,15 +5678,17 @@
     return hits.length === 0;
   }
 
+  const SUPPRESSOR_DETECT_MULT = 0.55;
   function findNearestTarget(bot) {
     let best = null, bestDist = ENGAGE_RANGE;
+    const playerEngageR = playerHasSuppressor() ? ENGAGE_RANGE * SUPPRESSOR_DETECT_MULT : ENGAGE_RANGE;
     // CTF is team-based: red guards fight the player and the blue squad,
     // blue teammates fight red guards, and same-team bots never target
     // each other. Every other mode is a plain free-for-all against the player.
     if (gameMode === 'ctf' && bot.ctfTeam) {
       if (bot.ctfTeam === 'red' && player.alive) {
         const d = bot.pos.distanceTo(player.pos);
-        if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
+        if (d < bestDist && d < playerEngageR && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
       }
       for (const other of bots) {
         if (other === bot || !other.alive || other.falling || other.ctfTeam === bot.ctfTeam) continue;
@@ -5168,7 +5699,7 @@
     }
     if (player.alive) {
       const d = bot.pos.distanceTo(player.pos);
-      if (d < bestDist && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
+      if (d < bestDist && d < playerEngageR && hasLineOfSight(bot.pos, player.pos)) { bestDist = d; best = player; }
     }
     for (const other of bots) {
       if (other === bot || !other.alive || other.falling) continue;
@@ -5248,7 +5779,7 @@
     if (isHit) {
       const [dmgMin, dmgMax] = combat.dmg;
       const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
-      if (target.isPlayer) damagePlayer(dmg, bot.pos);
+      if (target.isPlayer) damagePlayer(dmg, bot.pos, botDeathCamInfo(bot));
       else damageBot(target, dmg);
     }
   }
@@ -5655,12 +6186,14 @@
     if (hitBotRef) {
       showHitMarker(hitIsHead);
       playHitConfirm(hitIsHead);
+      const shownDmg = def.dmg * (hitIsHead ? def.headMult : 1);
       if (def.oneShotHeadshot && hitIsHead) {
         hitBotRef.health = 0;
       } else {
-        hitBotRef.health -= def.dmg * (hitIsHead ? def.headMult : 1);
+        hitBotRef.health -= shownDmg;
       }
       updateHealthSprite(hitBotRef);
+      spawnDamageNumber(endPoint, shownDmg, hitIsHead);
       if (hitBotRef.health <= 0) killEnemy(hitBotRef, true);
     }
     // Tracer starts along the crosshair's own sightline instead of the true
@@ -5763,10 +6296,12 @@
               showHitMarker(isHead);
               playHitConfirm(isHead);
             } else {
-              botRef.health -= isHead ? melee.headDmg : melee.bodyDmg;
+              const dmgDealt = isHead ? melee.headDmg : melee.bodyDmg;
+              botRef.health -= dmgDealt;
               updateHealthSprite(botRef);
               showHitMarker(isHead);
               playHitConfirm(isHead);
+              spawnDamageNumber(bh[0].point, dmgDealt, isHead);
               if (botRef.health <= 0) killEnemy(botRef, true);
             }
           }
@@ -5806,7 +6341,8 @@
     const def = currentWeaponDef();
     if (!def) return;
     const st = player.ammoState[player.weapon];
-    if (st.mag === def.maxMag) return;
+    const maxMag = effectiveMaxMag(player.weapon);
+    if (st.mag === maxMag) return;
     if (st.reserve <= 0) {
       playDryFire();
       document.getElementById('noAmmoText').style.display = 'block';
@@ -5818,7 +6354,7 @@
     playReloadClack(1500);
     document.getElementById('reloadText').style.display = 'block';
     setTimeout(() => {
-      const needed = def.maxMag - st.mag;
+      const needed = maxMag - st.mag;
       const take = Math.min(needed, st.reserve);
       st.mag += take; st.reserve -= take;
       player.isReloading = false;
@@ -5856,6 +6392,88 @@
     meleeLabelEl.textContent = player.meleeType === 'knife' ? 'KNFE' : (player.meleeType === 'scythe' ? 'SCYT' : (player.meleeType === 'shield' ? 'SHLD' : '--'));
     const holdingGun = (player.weapon === 'primary' && player.primaryType);
     document.getElementById('dropBtn').classList.toggle('disabled', !holdingGun);
+    updateAttachmentHUD();
+    updateAllGunSlotVisuals();
+  }
+  // ---------- Backpack / equip-bar gun photos ----------
+  function attachmentIconsHtml(atts) {
+    if (!atts) return '';
+    let html = '';
+    if (atts.scope) html += '<span class="attIcon" title="Scope">🔭</span>';
+    if (atts.suppressor) html += '<span class="attIcon" title="Suppressor">🔇</span>';
+    if (atts.extendedMag) html += '<span class="attIcon" title="Extended Mag">📦</span>';
+    return html;
+  }
+  function slotAmmoText(st) {
+    if (!st) return '';
+    const mag = st.mag === Infinity ? '∞' : st.mag;
+    const reserve = st.reserve === Infinity ? '∞' : st.reserve;
+    return mag + '/' + reserve;
+  }
+  // Updates one gun slot's photo plus the thin ammo/attachment overlay
+  // strip on top of it, in whichever UI surface (bottom equip bar or
+  // backpack panel) the given element IDs point to. Falls back to the
+  // slot's plain text label (already in the markup, toggled via the
+  // .hasImage class) whenever the image 404s, so a missing or misnamed
+  // PNG never leaves a broken-image icon on screen.
+  function updateGunSlotVisual(slotName, wrapId, imgId, overlayId) {
+    const wrap = document.getElementById(wrapId);
+    const img = document.getElementById(imgId);
+    const overlay = document.getElementById(overlayId);
+    if (!wrap || !img || !overlay) return;
+    const type = slotName === 'primary' ? player.primaryType : player.secondaryType;
+    if (!type) {
+      wrap.classList.remove('hasImage');
+      img.removeAttribute('src');
+      delete img.dataset.loadedFor;
+      overlay.innerHTML = '';
+      return;
+    }
+    overlay.innerHTML = `<span class="overlayAmmo">${slotAmmoText(player.ammoState[slotName])}</span><span class="overlayAtts">${attachmentIconsHtml(player.attachments[slotName])}</span>`;
+    const url = weaponImageUrl(type);
+    if (!url) { wrap.classList.remove('hasImage'); img.removeAttribute('src'); delete img.dataset.loadedFor; return; }
+    img.onload = () => wrap.classList.add('hasImage');
+    img.onerror = () => { wrap.classList.remove('hasImage'); img.removeAttribute('src'); };
+    // Avoid re-triggering a network request/flicker every time this runs
+    // (ammo ticking down, attachments changing) — only (re)assign src when
+    // the gun in this slot actually changed.
+    if (img.dataset.loadedFor !== url) {
+      img.dataset.loadedFor = url;
+      img.src = url;
+    } else if (img.complete && img.naturalWidth > 0) {
+      wrap.classList.add('hasImage');
+    }
+  }
+  function updateAllGunSlotVisuals() {
+    updateGunSlotVisual('primary', 'slotPrimary', 'primaryGunImg', 'primaryGunOverlay');
+    updateGunSlotVisual('secondary', 'slotSecondary', 'secondaryGunImg', 'secondaryGunOverlay');
+    updateGunSlotVisual('primary', 'loadoutPrimary', 'loadoutPrimaryImg', 'loadoutPrimaryOverlay');
+    updateGunSlotVisual('secondary', 'loadoutSecondary', 'loadoutSecondaryImg', 'loadoutSecondaryOverlay');
+    const loadoutPrimaryNameEl = document.getElementById('loadoutPrimaryName');
+    const loadoutPrimaryEl = document.getElementById('loadoutPrimary');
+    if (player.primaryType) {
+      loadoutPrimaryNameEl.textContent = WEAPON_DEFS[player.primaryType].name.toUpperCase();
+      loadoutPrimaryEl.classList.remove('emptySlot');
+    } else {
+      loadoutPrimaryNameEl.textContent = 'EMPTY';
+      loadoutPrimaryEl.classList.add('emptySlot');
+    }
+    document.getElementById('loadoutSecondaryName').textContent = WEAPON_DEFS[player.secondaryType].name.toUpperCase();
+  }
+  // Small badge row under the ammo counter showing whatever's attached to
+  // the currently-held gun — blank (and takes no vertical space beyond its
+  // reserved min-height) when holding a melee weapon or an unmodified gun.
+  function updateAttachmentHUD() {
+    const el = document.getElementById('attachmentBadges');
+    if (!el) return;
+    const slotName = (player.weapon === 'primary' || player.weapon === 'secondary') ? player.weapon : null;
+    const atts = slotName ? player.attachments[slotName] : null;
+    if (!atts) { el.innerHTML = ''; return; }
+    let html = '';
+    if (atts.scope) html += '<span>SCOPE</span>';
+    if (atts.suppressor) html += '<span>SUPPRESSOR</span>';
+    if (atts.extendedMag) html += '<span>EXT MAG</span>';
+    el.innerHTML = html;
   }
   function updateGrenadeUI() {
     document.getElementById('grenadeCountTag').textContent = player.grenades;
@@ -6251,6 +6869,28 @@
     hm.classList.remove('show'); void hm.offsetWidth; hm.classList.add('show');
   }
 
+  // ---------- Floating damage numbers ----------
+  const damageNumbersWrap = document.getElementById('damageNumbersWrap');
+  const _dmgNumProjVec = new THREE.Vector3();
+  function spawnDamageNumber(worldPos, amount, isHead) {
+    if (!damageNumbersWrap) return;
+    _dmgNumProjVec.copy(worldPos).project(camera);
+    if (_dmgNumProjVec.z > 1) return; // point is behind the camera
+    const x = (_dmgNumProjVec.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-_dmgNumProjVec.y * 0.5 + 0.5) * window.innerHeight;
+    const el = document.createElement('div');
+    el.className = 'dmgNumber' + (isHead ? ' headshot' : '');
+    el.textContent = Math.max(1, Math.round(amount));
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    // Small random horizontal drift so a burst of hits on the same spot
+    // (SMG/minigun/shotgun pellets) doesn't stack every number exactly on
+    // top of the last one.
+    el.style.setProperty('--dx', ((Math.random()*2-1) * 22) + 'px');
+    damageNumbersWrap.appendChild(el);
+    setTimeout(() => el.remove(), 850);
+  }
+
   let shakeTrauma = 0;
   function addShake(amount) { shakeTrauma = Math.min(1, shakeTrauma + amount); }
   // The "true" aim ray, captured each frame BEFORE camera shake is applied.
@@ -6260,7 +6900,12 @@
   const aimOrigin = new THREE.Vector3();
   const aimDir = new THREE.Vector3(0, 0, -1);
 
-  function damagePlayer(amount, sourcePos) {
+  // Remembers what most recently hurt the player — used by the death cam to
+  // know where to point the camera and what label/weapon to show. Cloned
+  // rather than stored by reference since sourcePos is often a live bot/
+  // zombie position that keeps moving after the hit that killed the player.
+  let lastDamageInfo = null;
+  function damagePlayer(amount, sourcePos, attackerInfo) {
     if (!player.alive) return;
     if (cheatState.godMode) return;
     if (cheatState.autoDodge) { triggerPlayerDodge(sourcePos); return; }
@@ -6280,6 +6925,11 @@
     vign.classList.add('show'); setTimeout(()=>vign.classList.remove('show'), 300);
     addShake(0.25);
     if (sourcePos) showDamageDirection(sourcePos);
+    lastDamageInfo = {
+      pos: sourcePos ? sourcePos.clone() : null,
+      label: (attackerInfo && attackerInfo.label) || 'Unknown',
+      weapon: (attackerInfo && attackerInfo.weapon) || null
+    };
     if (player.health <= 0) playerDie();
   }
   function updateHealthUI() { document.getElementById('healthBar').style.width = (player.health/player.maxHealth*100) + '%'; }
@@ -6412,9 +7062,11 @@
     };
     if (player.primaryType) {
       const pos = nextSpot();
-      spawnWeaponPickup(player.primaryType, pos.x, player.pos.y, pos.z, true);
+      const carryState = { ammo: { ...player.ammoState.primary }, attachments: { ...player.attachments.primary } };
+      spawnWeaponPickup(player.primaryType, pos.x, player.pos.y, pos.z, true, carryState);
       player.primaryType = null;
       player.ammoState.primary = { mag: 0, reserve: 0 };
+      player.attachments.primary = { scope: false, suppressor: false, extendedMag: false };
     }
     for (let i = 0; i < player.grenades; i++) {
       const pos = nextSpot();
@@ -6442,8 +7094,67 @@
     if (gameMode === 'ctf' && ctfState.enemyFlag.state === 'carried' && ctfState.enemyFlag.carrier === 'player') dropEnemyFlag(player.pos);
     document.exitPointerLock && document.exitPointerLock();
     document.getElementById('finalKills').textContent = player.kills;
+    startDeathCam(lastDamageInfo);
+  }
+  // Actually shows the "YOU DIED" overlay — pulled out of playerDie() so
+  // the death cam sequence can run first and only reveal the death screen
+  // once it (or a skip) finishes.
+  function showDeathScreenUI() {
     document.getElementById('deathScreen').style.display = 'flex';
   }
+
+  // ---------- Death cam ----------
+  // A short cinematic replay after the player dies: the camera flies from
+  // wherever it was at the moment of death to a spot near whatever killed
+  // the player, looking back toward the player's body, with a "Killed by
+  // X" label. Takes over updateCamera() entirely while active (see the
+  // animate() loop) and hands off to the normal death screen when done.
+  const deathCam = {
+    active: false, t: 0, duration: 2.4,
+    fromPos: new THREE.Vector3(), toPos: new THREE.Vector3(), lookAt: new THREE.Vector3()
+  };
+  function startDeathCam(info) {
+    deathCam.fromPos.copy(camera.position);
+    deathCam.lookAt.set(player.pos.x, player.pos.y + 1.2, player.pos.z);
+    if (info && info.pos) {
+      const away = new THREE.Vector3(info.pos.x - player.pos.x, 0, info.pos.z - player.pos.z);
+      if (away.lengthSq() < 0.01) away.set(1, 0, 0); else away.normalize();
+      deathCam.toPos.set(
+        info.pos.x + away.x * 2.4,
+        info.pos.y + 1.9,
+        info.pos.z + away.z * 2.4
+      );
+    } else {
+      // No specific attacker position (fall damage, storm, fire) — pull
+      // back and up from the player instead of pointing at nothing.
+      const back = getForward(player.yaw).multiplyScalar(-4);
+      deathCam.toPos.set(player.pos.x + back.x, player.pos.y + 3, player.pos.z + back.z);
+    }
+    deathCam.t = 0;
+    deathCam.active = true;
+    const killerLabel = (info && info.label) || 'Unknown';
+    const weaponLabel = info && info.weapon ? ' (' + info.weapon + ')' : '';
+    document.getElementById('deathCamKillerLabel').textContent = killerLabel + weaponLabel;
+    const overlay = document.getElementById('deathCamOverlay');
+    overlay.style.display = 'flex';
+  }
+  function endDeathCam() {
+    if (!deathCam.active) return;
+    deathCam.active = false;
+    document.getElementById('deathCamOverlay').style.display = 'none';
+    showDeathScreenUI();
+  }
+  const _deathCamLookVec = new THREE.Vector3();
+  function tickDeathCam(dt) {
+    deathCam.t += dt;
+    const t = Math.min(1, deathCam.t / deathCam.duration);
+    const eased = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2; // easeInOutQuad
+    camera.position.lerpVectors(deathCam.fromPos, deathCam.toPos, eased);
+    _deathCamLookVec.copy(deathCam.lookAt);
+    camera.lookAt(_deathCamLookVec);
+    if (t >= 1) endDeathCam();
+  }
+  bindTap(document.getElementById('deathCamSkipBtn'), endDeathCam);
   function respawnPlayer() {
     player.alive = true; player.health = player.maxHealth;
     if (player.charAnim) { player.charAnim.mode = 'loop'; player.charAnim.loopState = null; player.charAnim.activeLoopAction = null; }
@@ -6451,6 +7162,10 @@
     player.ammoState.secondary = { mag: 12, reserve: 36 };
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
+    player.attachments = {
+      secondary: { scope: false, suppressor: false, extendedMag: false },
+      primary: { scope: false, suppressor: false, extendedMag: false }
+    };
     player.weapon = 'secondary';
     player.meleeType = null;
     player.grenades = 0;
@@ -6461,7 +7176,7 @@
     updateMolotovUI();
     player.kills = 0; player.wood = 0; player.pos.set(0,0,0); player.velY=0;
     document.getElementById('kills').textContent = 0;
-    updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
+    updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility(); updateAttachmentHUD();
     document.getElementById('deathScreen').style.display = 'none';
   }
 
@@ -6789,6 +7504,10 @@
     player.ammoState.secondary = { mag: 12, reserve: 36 };
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
+    player.attachments = {
+      secondary: { scope: false, suppressor: false, extendedMag: false },
+      primary: { scope: false, suppressor: false, extendedMag: false }
+    };
     player.weapon = 'secondary';
     player.meleeType = null;
     player.grenades = 0; updateGrenadeUI();
@@ -6797,7 +7516,7 @@
     player.wood = 50;
     player.pos.set(CTF_HOME_BASE.x + 6, 0, CTF_HOME_BASE.z);
     player.velY = 0;
-    updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility();
+    updateHealthUI(); updateAmmoUI(); updateWoodUI(); updateWeaponVisibility(); updateAttachmentHUD();
     document.getElementById('deathScreen').style.display = 'none';
   }
 
@@ -6979,7 +7698,7 @@
     const stageDps = 4 + zone.stage * 2;
     if (player.alive && !matchWon) {
       const d = Math.hypot(player.pos.x - zone.centerX, player.pos.z - zone.centerZ);
-      if (d > zone.radius) damagePlayer(stageDps);
+      if (d > zone.radius) damagePlayer(stageDps, null, { label: 'The Storm' });
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
@@ -7284,6 +8003,7 @@
   // currentBuildPiece is shown, and it's recolored green/red each frame
   // depending on whether the player can currently afford it.
   const ghostMatGreen = new THREE.MeshBasicMaterial({ color: 0x5fff7a, transparent: true, opacity: 0.4, depthWrite: false });
+  const ghostMatGreenCB = new THREE.MeshBasicMaterial({ color: 0x3da5ff, transparent: true, opacity: 0.4, depthWrite: false });
   const ghostMatRed = new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.4, depthWrite: false });
 
   const ghostWallMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 0.3), ghostMatGreen);
@@ -7300,7 +8020,7 @@
   ghostRampPivot.add(ghostRampMesh);
   scene.add(ghostRampPivot);
 
-  function setGhostMat(mesh, ok) { mesh.material = ok ? ghostMatGreen : ghostMatRed; }
+  function setGhostMat(mesh, ok) { mesh.material = ok ? (settings.colorblindMode ? ghostMatGreenCB : ghostMatGreen) : ghostMatRed; }
 
   // Build mode is OFF by default so the ghost preview doesn't just hover in
   // front of you all the time — it (and the piece/material buttons) only
@@ -7373,7 +8093,7 @@
   bindTap(document.getElementById('invClose'), toggleInventory);
 
   // ---------- Settings panel ----------
-  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true, fov: BASE_FOV, invertY: false, colorblindMode: false, shakeAmount: 1.0, weatherMode: 'auto' };
+  const settings = { sens: 1.0, scopeSensMult: 0.35, showCorpses: true, shadows: true, renderDistLevel: 2, aimAssist: true, autoShoot: true, fov: BASE_FOV, invertY: false, colorblindMode: false, shakeAmount: 1.0, weatherMode: 'auto', crosshairShape: 'cross', crosshairSize: 22, crosshairColor: '#ffffff' };
   const settingsPanel = document.getElementById('settingsPanel');
   let settingsOpen = false;
   function toggleSettings() {
@@ -7579,6 +8299,18 @@
     }
 
     updateGrassVisibleDist(level);
+    // Individual tree leaves/branches are only worth the extra draw calls
+    // and shader work on the Extreme tier — every other level just shows
+    // the cheap trunk+leaf-blob trees like before.
+    if (treeExtremeLeafMesh) {
+      treeExtremeLeafMesh.visible = extreme;
+      treeExtremeBranchMesh.visible = extreme;
+    }
+    // On Extreme, the coarse low-poly leaf-blob would otherwise sit right
+    // on top of (and completely swallow) the individual leaf cards, so hide
+    // it there — the trunk mesh stays visible and remains a chop-raycast
+    // target either way, so chopping still works exactly the same.
+    if (treeLeafMesh) treeLeafMesh.visible = !extreme;
   }
   const renderDistSlider = document.getElementById('renderDistSlider');
   renderDistSlider.addEventListener('input', () => {
@@ -7600,6 +8332,57 @@
     // once shadowMap.enabled flips, otherwise stale shadows can linger.
     scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });    shadowToggleBtn.textContent = settings.shadows ? 'ON' : 'OFF';
     shadowToggleBtn.classList.toggle('off', !settings.shadows);
+  });
+  // ---------- Custom crosshair ----------
+  // Rebuilds the crosshair's visual content from settings.crosshair* —
+  // called once at load and again any time a control changes. Built from
+  // plain positioned divs (not CSS pseudo-elements) so more than one shape
+  // can be composed (e.g. cross-dot needs both the arms and the center dot).
+  const crosshairEl = document.getElementById('crosshair');
+  function renderCrosshair() {
+    const color = settings.crosshairColor;
+    const size = settings.crosshairSize;
+    const shape = settings.crosshairShape;
+    const thickness = Math.max(1, Math.round(size * 0.09));
+    const gap = Math.round(size * 0.22);
+    crosshairEl.style.width = size + 'px';
+    crosshairEl.style.height = size + 'px';
+    const lineStyle = `background:${color}; box-shadow:0 0 2px rgba(0,0,0,0.85); position:absolute;`;
+    let html = '';
+    if (shape === 'cross' || shape === 'cross-dot') {
+      const armLen = Math.max(2, (size - gap) / 2);
+      html += `<div style="${lineStyle} left:50%; top:0; width:${thickness}px; height:${armLen}px; transform:translateX(-50%);"></div>`;
+      html += `<div style="${lineStyle} left:50%; bottom:0; width:${thickness}px; height:${armLen}px; transform:translateX(-50%);"></div>`;
+      html += `<div style="${lineStyle} top:50%; left:0; height:${thickness}px; width:${armLen}px; transform:translateY(-50%);"></div>`;
+      html += `<div style="${lineStyle} top:50%; right:0; height:${thickness}px; width:${armLen}px; transform:translateY(-50%);"></div>`;
+    }
+    if (shape === 'dot' || shape === 'cross-dot') {
+      const dotSize = Math.max(2, Math.round(thickness * 1.8));
+      html += `<div style="${lineStyle} left:50%; top:50%; width:${dotSize}px; height:${dotSize}px; border-radius:50%; transform:translate(-50%,-50%);"></div>`;
+    }
+    if (shape === 'circle') {
+      html += `<div style="position:absolute; left:50%; top:50%; width:${size}px; height:${size}px; border-radius:50%; border:${thickness}px solid ${color}; box-shadow:0 0 2px rgba(0,0,0,0.85); transform:translate(-50%,-50%); background:transparent;"></div>`;
+    }
+    crosshairEl.innerHTML = html;
+  }
+  renderCrosshair();
+  const crosshairShapeSelect = document.getElementById('crosshairShapeSelect');
+  crosshairShapeSelect.value = settings.crosshairShape;
+  crosshairShapeSelect.addEventListener('change', () => {
+    settings.crosshairShape = crosshairShapeSelect.value;
+    renderCrosshair();
+  });
+  const crosshairSizeSlider = document.getElementById('crosshairSizeSlider');
+  const crosshairSizeVal = document.getElementById('crosshairSizeVal');
+  crosshairSizeSlider.addEventListener('input', () => {
+    settings.crosshairSize = parseInt(crosshairSizeSlider.value, 10);
+    crosshairSizeVal.textContent = crosshairSizeSlider.value;
+    renderCrosshair();
+  });
+  const crosshairColorPicker = document.getElementById('crosshairColorPicker');
+  crosshairColorPicker.addEventListener('input', () => {
+    settings.crosshairColor = crosshairColorPicker.value;
+    renderCrosshair();
   });
   const colorblindToggleBtn = document.getElementById('colorblindToggleBtn');
   bindTap(colorblindToggleBtn, () => {
@@ -8254,7 +9037,22 @@
   let isScoped = false;
   function canScope() {
     const def = currentWeaponDef();
-    return !!(def && def.scope);
+    if (!def) return false;
+    // A scope attachment grants basic ADS even to guns that don't
+    // normally have one, on top of boosting guns that already do.
+    return !!(def.scope || ((player.weapon === 'primary' || player.weapon === 'secondary') && hasAttachment(player.weapon, 'scope')));
+  }
+  // The actual FOV to zoom to while scoped: a scope attachment tightens
+  // whatever the gun would normally zoom to (or, on a gun with no scope of
+  // its own, grants a modest fixed zoom) rather than replacing it outright.
+  const SCOPE_ATTACHMENT_ZOOM_MULT = 0.7;
+  const SCOPE_ATTACHMENT_BASE_FOV = 28;
+  function effectiveScopeFov() {
+    const def = currentWeaponDef();
+    const slotName = (player.weapon === 'primary' || player.weapon === 'secondary') ? player.weapon : null;
+    const hasScopeAtt = slotName && hasAttachment(slotName, 'scope');
+    if (def && def.scope) return hasScopeAtt ? def.scopeFov * SCOPE_ATTACHMENT_ZOOM_MULT : def.scopeFov;
+    return hasScopeAtt ? SCOPE_ATTACHMENT_BASE_FOV : (def ? def.scopeFov : BASE_FOV);
   }
   // While scoped, the scope button slides over to sit right on the fire
   // button so a thumb doesn't have to travel between "keep firing" and
@@ -8294,7 +9092,7 @@
   function startScope() {
     if (!canScope() || drop.active || invOpen || layoutEditMode || matchWon || player.inCar) return;
     isScoped = true;
-    camera.fov = currentWeaponDef().scopeFov;
+    camera.fov = effectiveScopeFov();
     camera.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'block';
     document.getElementById('scopeBtn').classList.add('active');
@@ -8366,15 +9164,18 @@
     const forward = getForward(player.yaw);
     const dropX = player.pos.x + forward.x * 1.6;
     const dropZ = player.pos.z + forward.z * 1.6;
-    spawnWeaponPickup(type, dropX, player.pos.y, dropZ, true);
+    const carryState = { ammo: { ...player.ammoState.primary }, attachments: { ...player.attachments.primary } };
+    spawnWeaponPickup(type, dropX, player.pos.y, dropZ, true, carryState);
 
     player.primaryType = null;
     player.ammoState.primary = { mag: 0, reserve: 0 };
+    player.attachments.primary = { scope: false, suppressor: false, extendedMag: false };
     setWeapon('secondary');
     firing = false;
     document.getElementById('fireBtn').classList.remove('engaged');
     updateWeaponVisibility();
     updateAmmoUI();
+    updateAttachmentHUD();
     showPickupToast('DROPPED: ' + def.name);
   }
 
@@ -8501,7 +9302,7 @@
     if (player.alive) {
       const d = pos.distanceTo(player.pos);
       if (d < RADIUS && hasLineOfSight(pos, player.pos)) {
-        damagePlayer(MAXDMG * (1 - d / RADIUS), pos);
+        damagePlayer(MAXDMG * (1 - d / RADIUS), pos, { label: 'Your Own Grenade' });
       }
     }
     for (const bot of bots) {
@@ -8633,7 +9434,7 @@
     const p = fz.group.position;
     if (player.alive && !fz.noPlayerDamage) {
       const d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
-      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG, p);
+      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG, p, { label: 'Fire' });
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
@@ -9071,6 +9872,7 @@
   generateHouses();
   generateTrees();
   buildTreeInstancedMeshes();
+  buildTreeExtremeDetailMeshes();
   generateAmmoCrates();
   buildAmmoCrateInstancedMeshes();
   generateCars();
@@ -9261,7 +10063,7 @@
       if (!wasGrounded && fallPeakY !== null) {
         const fallDist = fallPeakY - floorY;
         if (fallDist > SAFE_FALL_DISTANCE) {
-          damagePlayer(Math.round((fallDist - SAFE_FALL_DISTANCE) * FALL_DAMAGE_PER_UNIT));
+          damagePlayer(Math.round((fallDist - SAFE_FALL_DISTANCE) * FALL_DAMAGE_PER_UNIT), null, { label: 'Fall Damage' });
         }
         fallPeakY = null;
       }
@@ -9568,7 +10370,7 @@
       updateFallingHouses(dt);
       updateCheatHoldLabel();
       updateCheatHitboxes();
-      updateCamera();
+      if (deathCam.active) tickDeathCam(dt); else updateCamera();
       updateMobileAimSystems(dt);
       updateWeaponAnim(dt);
       updateFX(dt);
