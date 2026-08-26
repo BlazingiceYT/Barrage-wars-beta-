@@ -153,10 +153,7 @@ Fixed game thinking that ur on mac if ur on ipad, now deletes everything between
 ai has become smarte
 
 
-Attachments (and ammo) persist through drop/pickup — fixed last turn.
-The "reloads" issue — also fixed last turn (dropped guns keep their exact ammo instead of refilling).
-Backpack system with gun photos + ammo/attachment overlay — done this turn.
-Colorblind mode expanded to the build-ghost indicator, and custom crosshair (shape/size/color) — done last turn.   death cam hitbox numbers 
+
 
 **Update0.59** - *Commited by BlazingiceYT on 19 Aug 2026*
 Balance changes
@@ -166,5 +163,12 @@ fixed character clipping into the ground
 
 **Update0.61** - *Commited by BlazingiceYT on 24 Aug 2026*
 Added flag race mode and addded extreme graphics
+
+**Update0.61** - *Commited by BlazingiceYT on 26 Aug 2026*
+Added setting to customize crosshair, show damage dealt on top of hitmarker, and expanded support for colour blind people. Attachments (and ammo) persist through drop/pickup 
+The reload issue fixed where you can drop weapon for more ammo aft pickup
+Backpack system with gun photos + ammo/attachment overlay 
+Colorblind mode expanded to the build-ghost indicator, and custom crosshair (shape/size/color) — done last turn.   death cam hitbox numbers 
+
 
 
