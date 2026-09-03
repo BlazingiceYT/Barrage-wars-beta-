@@ -164,11 +164,15 @@ fixed character clipping into the ground
 **Update0.61** - *Commited by BlazingiceYT on 24 Aug 2026*
 Added flag race mode and addded extreme graphics
 
-**Update0.61** - *Commited by BlazingiceYT on 26 Aug 2026*
+**Update0.62** - *Commited by BlazingiceYT on 26 Aug 2026*
 Added setting to customize crosshair, show damage dealt on top of hitmarker, and expanded support for colour blind people. Attachments (and ammo) persist through drop/pickup 
 The reload issue fixed where you can drop weapon for more ammo aft pickup
 Backpack system with gun photos + ammo/attachment overlay 
 Colorblind mode expanded to the build-ghost indicator, and custom crosshair (shape/size/color) — done last turn.   death cam hitbox numbers 
 
+**Update0.63** - *Commited by BlazingiceYT on 3 Sep 2026*
+Bots now use pathfinding and are smarter.
+
+Game in major phase: Upgrading three.js version
 
 
