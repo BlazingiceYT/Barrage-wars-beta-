@@ -594,6 +594,18 @@
     animation: winTitlePulse 1.6s ease-in-out infinite;
   }
   #winScreen .bigBtn { background: linear-gradient(180deg,#ffd25a,#ff9a1f); box-shadow: 0 6px 18px rgba(255,160,20,0.45); }
+
+  #ffaMatchmakingScreen #matchmakingCount {
+    font-size: clamp(40px, 10vw, 72px); font-weight: bold; color: #ffdd55;
+    text-shadow: 0 0 20px rgba(255,180,40,0.6); margin: 16px 0 6px; letter-spacing: 1px; font-variant-numeric: tabular-nums;
+  }
+  #ffaMatchmakingScreen #matchmakingStatus { font-size: 14px; color: #cfd8dc; min-height: 20px; }
+  .mmSpinner {
+    width: 40px; height: 40px; border-radius: 50%; margin: 6px 0 2px;
+    border: 4px solid rgba(255,221,85,0.25); border-top-color: #ffdd55;
+    animation: mmSpin 0.9s linear infinite;
+  }
+  @keyframes mmSpin { to { transform: rotate(360deg); } }
   @keyframes winTitlePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
   @keyframes winPopIn { 0% { opacity:0; transform: scale(0.7); } 60% { opacity:1; transform: scale(1.08); } 100% { transform: scale(1); } }
   #winScreen.show > * { animation: winPopIn 0.5s cubic-bezier(.2,1.4,.4,1) both; }
@@ -889,6 +901,13 @@
       <button class="bigBtn" id="startBtnTraining" style="background:linear-gradient(180deg,#c9a15a,#8a6a3b); margin-top:10px;">TRAINING GROUND</button>
       <button class="bigBtn" id="startBtnCTF" style="background:linear-gradient(180deg,#3a7bd5,#1e4a8f); margin-top:10px;">CAPTURE THE FLAG</button>
     </div>
+  </div>
+
+  <div class="overlayScreen" id="ffaMatchmakingScreen" style="display:none;">
+    <h1>FINDING PLAYERS</h1>
+    <div class="mmSpinner"></div>
+    <div id="matchmakingCount">1 / 50</div>
+    <p id="matchmakingStatus">Building world&hellip;</p>
   </div>
 
   <div class="overlayScreen" id="trainingIntroScreen" style="display:none;">
@@ -2263,7 +2282,18 @@
     // walls/roof/windows are children of `group` and move for free, but
     // solids/floors/ramps/loot pickups are separate absolute-position data
     // (created below) that has to be dragged along by hand.
-    const house = { group, solids: [], floors: [], ramps: [], pickups: [], collisionMeshes: [], pos: { x: cx, y: 0, z: cz }, heldByCheat: false };
+    // w/d/rotY/doorPos let bot movement (see findHouseContaining) route
+    // through the actual door opening instead of walking a straight line
+    // into a wall — the front wall below is built with a real gap at local
+    // (0, d/2) on every floor, so that's exactly where a bot needs to aim
+    // to walk in or out.
+    const houseDoorLocalZ = d/2 + 0.6; // just outside the threshold, not on the wall line
+    const house = {
+      group, solids: [], floors: [], ramps: [], pickups: [], collisionMeshes: [],
+      pos: { x: cx, y: 0, z: cz }, heldByCheat: false,
+      w, d, rotY: rotY || 0,
+      doorPos: { x: cx + houseDoorLocalZ * sinR, z: cz + houseDoorLocalZ * cosR }
+    };
     houses.push(house);
     function spawnHousePickup(type, lx, lz, y) {
       const wx = cx + lx*cosR + lz*sinR;
@@ -2619,6 +2649,7 @@
     const solidRef = addSolid(pos.x, pos.z, eff_hw, eff_hd, 0, h);
     const entry = { type: 'wall', mesh, tier, health: TIERS[tier].hp, solidRef };
     builtPieces.push(entry);
+    updateNavGraphForNewWall(entry, pos, yaw);
     return entry;
   }
 
@@ -2661,6 +2692,7 @@
     ramps.push(rampRef);
     const entry = { type: 'ramp', mesh, pivot, tier, health: TIERS[tier].hp, rampRef };
     builtPieces.push(entry);
+    updateNavGraphForNewRamp(entry, rampRef);
     return entry;
   }
 
@@ -2680,6 +2712,7 @@
       const sIdx = solids.indexOf(entry.solidRef);
       if (sIdx !== -1) solids.splice(sIdx, 1);
     }
+    if (entry.navObstacleBox) updateNavGraphForRemovedWall(entry);
     if (entry.floorRef) {
       const fIdx = floors.indexOf(entry.floorRef);
       if (fIdx !== -1) floors.splice(fIdx, 1);
@@ -2687,6 +2720,7 @@
     if (entry.rampRef) {
       const rIdx = ramps.indexOf(entry.rampRef);
       if (rIdx !== -1) ramps.splice(rIdx, 1);
+      updateNavGraphForRemovedRamp(entry);
     }
     const bIdx = builtPieces.indexOf(entry);
     if (bIdx !== -1) builtPieces.splice(bIdx, 1);
@@ -3115,15 +3149,27 @@
   // ammo that they replenish from ammo crates. Tiers rank guns so bots only
   // bother picking up a strict upgrade over what they're already carrying.
   const BOT_WEAPON_TIER = { pistol: 0, shotgun: 1, ak47: 1, smg: 1, laser: 1, flamethrower: 2, sniper: 2, minigun: 2 };
+  // Ammo-less close-range weapons a bot can loot and switch to at point-blank
+  // range (see updateBotWeaponChoice) — shield is deliberately excluded here
+  // since it's a passive perk (see damageBot), not something a bot attacks with.
+  const BOT_MELEE_TYPES = { knife: true, scythe: true };
+  const BOT_MAX_THROWABLE = 3; // per-type cap so a bot can't stockpile endlessly by revisiting spawns
+  // Damage values matched to the player's own WEAPON_DEFS dmg for each gun
+  // (min===max — a flat number, not a random range) so a bot's shot hits
+  // exactly as hard as the player's would, no tier or per-shot variance.
+  // Shotgun/flamethrower are multi-pellet for the player but resolve as one
+  // hit-or-miss roll for a bot, so their numbers approximate "a solid hit
+  // where most pellets connect" (shotgun: ~4 of 8 pellets @ 15 each;
+  // flamethrower: both pellets @ 6 each) rather than a literal per-pellet copy.
   const BOT_WEAPON_COMBAT = {
-    pistol:  { dmg: [7, 14],  cooldown: [0.7, 1.2] },
-    shotgun: { dmg: [28, 52], cooldown: [0.9, 1.5] },
-    ak47:    { dmg: [10, 18], cooldown: [0.4, 0.75] },
-    smg:     { dmg: [6, 11],  cooldown: [0.2, 0.4] },
-    laser:   { dmg: [3, 6],   cooldown: [0.25, 0.45] },
-    flamethrower: { dmg: [3, 7], cooldown: [0.06, 0.14] },
-    minigun: { dmg: [5, 9],   cooldown: [0.13, 0.26] },
-    sniper:  { dmg: [42, 68], cooldown: [1.4, 2.1] },
+    pistol:  { dmg: [22, 22], cooldown: [0.7, 1.2] },
+    shotgun: { dmg: [60, 60], cooldown: [0.9, 1.5] },
+    ak47:    { dmg: [19, 19], cooldown: [0.4, 0.75] },
+    smg:     { dmg: [12, 12], cooldown: [0.2, 0.4] },
+    laser:   { dmg: [5, 5],   cooldown: [0.25, 0.45] },
+    flamethrower: { dmg: [12, 12], cooldown: [0.06, 0.14] },
+    minigun: { dmg: [10, 10], cooldown: [0.13, 0.26] },
+    sniper:  { dmg: [95, 95], cooldown: [1.4, 2.1] },
   };
   function setBotGunMesh(bot, type) {
     if (bot.gunMesh) {
@@ -3155,7 +3201,9 @@
     setBotGunMesh(bot, type);
     if (bot.weaponType === bot.primaryType) bot.primaryAmmo = bot.ammo; // stash the primary's current ammo before leaving it
     bot.weaponType = type;
-    bot.ammo = type === 'pistol' ? { mag: Infinity, reserve: Infinity } : bot.primaryAmmo;
+    if (type === 'pistol') bot.ammo = { mag: Infinity, reserve: Infinity };
+    else if (MELEE_DEFS[type]) bot.ammo = { mag: Infinity, reserve: Infinity }; // melee needs no ammo bookkeeping
+    else bot.ammo = bot.primaryAmmo;
   }
   // Bots with a close-range-only primary (shotgun/flamethrower) or a
   // long-range-only one (sniper) swap to the pistol outside their weapon's
@@ -3164,6 +3212,17 @@
   const BOT_CLOSE_RANGE_ONLY = { shotgun: true, flamethrower: true };
   const BOT_LONG_RANGE_ONLY = { sniper: true };
   function updateBotWeaponChoice(bot, dist) {
+    // Melee at point-blank range once the bot has found one (knife/scythe)
+    // — a free, ammo-less option that hits harder than the pistol fallback.
+    if (bot.meleeType && dist < (MELEE_DEFS[bot.meleeType].range + 0.6)) {
+      if (bot.weaponType !== bot.meleeType) switchBotActiveWeapon(bot, bot.meleeType);
+      return;
+    }
+    if (bot.meleeType && bot.weaponType === bot.meleeType) {
+      // just moved back out of melee range — go back to a gun
+      switchBotActiveWeapon(bot, (bot.primaryType && bot.primaryAmmo.mag + bot.primaryAmmo.reserve > 0) ? bot.primaryType : 'pistol');
+      return;
+    }
     if (!bot.primaryType || bot.primaryAmmo.mag + bot.primaryAmmo.reserve <= 0) return;
     const wantsPistol = (BOT_CLOSE_RANGE_ONLY[bot.primaryType] && dist > 16) || (BOT_LONG_RANGE_ONLY[bot.primaryType] && dist < 9);
     if (wantsPistol && bot.weaponType !== 'pistol') switchBotActiveWeapon(bot, 'pistol');
@@ -4149,9 +4208,14 @@
   // Elite: much more HP and a far gentler accuracy falloff with range, so they
   // stay dangerous at distance instead of becoming harmless once you back off.
   const BOT_TIERS = {
-    normal:     { health: 120,  speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null,       reaction: [0.45, 0.85] },
-    aggressive: { health: 170,  speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522,   reaction: [0.25, 0.5]  },
-    elite:      { health: 300, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f,   reaction: [0.08, 0.22] }
+    // health/damage are deliberately identical across tiers and match the
+    // player exactly (200 HP, and BOT_WEAPON_COMBAT above mirrors the
+    // player's own gun damage) — "skill" here is entirely about how well a
+    // bot fights (accuracy, reaction speed, how readily it presses an
+    // engagement), never about being tankier or hitting harder.
+    normal:     { health: 200,  dmgMult: 1, speedMult: 1.0,  hitBase: 0.65, hitFalloff: 70,  hitFloor: 0.20, cooldownMult: 1.0,  retreatFrac: 0.30, scale: 1.0,  glow: null,       reaction: [0.45, 0.85] },
+    aggressive: { health: 200,  dmgMult: 1, speedMult: 1.2,  hitBase: 0.70, hitFalloff: 80,  hitFloor: 0.28, cooldownMult: 0.8,  retreatFrac: 0.20, scale: 1.0,  glow: 0xff5522,   reaction: [0.25, 0.5]  },
+    elite:      { health: 200,  dmgMult: 1, speedMult: 1.12, hitBase: 0.78, hitFalloff: 160, hitFloor: 0.48, cooldownMult: 0.65, retreatFrac: 0.12, scale: 1.16, glow: 0xffd23f,   reaction: [0.08, 0.22] }
   };
   const SQUAD_SIZE = 4;
   function pickBotTier() {
@@ -4270,7 +4334,20 @@
       stuckSamplePos: null, stuckSampleTimer: 0.4, sidestepTimer: 0, sidestepDir: 1,
       // ---- CTF team/objective state (unused outside gameMode 'ctf') ----
       ctfTeam: gameMode === 'ctf' ? (ctfTeam || 'red') : null,
-      flagRunner: gameMode === 'ctf' ? Math.random() < 0.35 : false
+      flagRunner: gameMode === 'ctf' ? Math.random() < 0.35 : false,
+      // ---- looted throwables/melee/shield (see botCollectLoot) ----
+      meleeType: null, hasShield: false,
+      grenades: 0, smokeGrenades: 0, molotovs: 0,
+      throwCooldown: 3 + Math.random()*4,
+      // ---- cover peek/duck cycle (see updateBot) ----
+      isPeeking: false, peekTimer: 1 + Math.random(), peekPoint: null,
+      // ---- combat memory: keeps a fight "live" for a few seconds after
+      // losing direct line-of-sight (e.g. just ducked into cover) instead
+      // of instantly forgetting the enemy and wandering off ----
+      memoryTarget: null, memoryTimer: 0,
+      inCombat: false, combatEnemyPos: null,
+      // ---- pathfinding (see buildNavGraph/findNavPath) ----
+      navPath: null, navTarget: null
     };
     eBody.userData.botRef = bot;
     eHead.userData.botRef = bot;
@@ -5658,7 +5735,18 @@
   const losRaycaster = new THREE.Raycaster();
   const ENGAGE_RANGE = 30;
 
-  function damageBot(bot, amount) {
+  // sourcePos is optional — when given and the bot is carrying a shield
+  // (see botCollectLoot), a hit arriving from roughly the direction the bot
+  // is facing gets softened, mirroring the player's own shield-block rule.
+  function damageBot(bot, amount, sourcePos) {
+    if (bot.hasShield && sourcePos) {
+      const toSrc = new THREE.Vector3(sourcePos.x - bot.pos.x, 0, sourcePos.z - bot.pos.z);
+      if (toSrc.lengthSq() > 0.0001) {
+        toSrc.normalize();
+        const forward = getForward(bot.yaw);
+        if (forward.dot(toSrc) > 0.3) amount *= 0.5;
+      }
+    }
     bot.health -= amount;
     updateHealthSprite(bot);
     if (bot.health <= 0) killBot(bot, false);
@@ -5724,7 +5812,35 @@
   }
   function botCollectLoot(bot, item) {
     if (item.type) {
-      // weapon pickup
+      // Grenades/smoke/molotovs: added to the bot's own throwable counts
+      // (see updateBotThrowable) rather than "equipped" like a gun — these
+      // are consumable stock, not a held weapon.
+      if (item.type === 'grenade' || item.type === 'smokegrenade' || item.type === 'molotov') {
+        item.active = false; item.group.visible = false; item.ring.visible = false;
+        if (item.type === 'grenade') bot.grenades = Math.min(BOT_MAX_THROWABLE, bot.grenades + 2);
+        else if (item.type === 'smokegrenade') bot.smokeGrenades = Math.min(BOT_MAX_THROWABLE, bot.smokeGrenades + 1);
+        else bot.molotovs = Math.min(BOT_MAX_THROWABLE, bot.molotovs + 2);
+        setTimeout(() => { item.active = true; item.group.visible = true; item.ring.visible = true; }, 45000);
+        return;
+      }
+      // Shield: a passive perk (see damageBot's block check) rather than a
+      // held weapon — bots don't have a dedicated block animation, so this
+      // just quietly softens incoming frontal hits once carried.
+      if (item.type === 'shield') {
+        item.active = false; item.group.visible = false; item.ring.visible = false;
+        bot.hasShield = true;
+        setTimeout(() => { item.active = true; item.group.visible = true; item.ring.visible = true; }, 45000);
+        return;
+      }
+      // Knife/scythe: an ammo-less close-range option — see
+      // updateBotWeaponChoice for when the bot actually switches to it.
+      if (BOT_MELEE_TYPES[item.type]) {
+        item.active = false; item.group.visible = false; item.ring.visible = false;
+        bot.meleeType = item.type;
+        setTimeout(() => { item.active = true; item.group.visible = true; item.ring.visible = true; }, 45000);
+        return;
+      }
+      // weapon pickup (gun)
       item.active = false;
       item.group.visible = false;
       item.ring.visible = false;
@@ -5779,10 +5895,378 @@
 
     if (isHit) {
       const [dmgMin, dmgMax] = combat.dmg;
-      const dmg = dmgMin + Math.random()*(dmgMax - dmgMin);
+      const dmg = (dmgMin + Math.random()*(dmgMax - dmgMin)) * tier.dmgMult;
       if (target.isPlayer) damagePlayer(dmg, bot.pos, botDeathCamInfo(bot));
-      else damageBot(target, dmg);
+      else damageBot(target, dmg, bot.pos);
     }
+  }
+
+  // ---------- CTF teamwork helpers ----------
+  // A flag's *own* side (the one this team defends) vs the one it's trying
+  // to steal — matches the "theirFlag" convention already used for
+  // huntFlag/carryFlag below, just spelled out for the defend/escort logic.
+  function ctfOwnFlag(team) { return team === 'red' ? ctfState.enemyFlag : ctfState.homeFlag; }
+  function flagCarrierPos(flag) {
+    if (!flag.carrier) return null;
+    return flag.carrier === 'player' ? player.pos : flag.carrier.pos;
+  }
+  function flagCarrierTeam(flag) {
+    if (!flag.carrier) return null;
+    return flag.carrier === 'player' ? 'blue' : flag.carrier.ctfTeam;
+  }
+
+  // Looks for a short lean-out spot near a chosen cover point that actually
+  // has a sightline to the target — unlike a blind fixed step toward the
+  // enemy, which can walk the bot straight into the very wall that made the
+  // spot cover in the first place (collision then fights the movement code
+  // every frame, which is what caused bots to jitter in place — reading as
+  // "stuck" from far away, or as a wild spin when a close target made that
+  // tiny jitter swing the facing angle wildly). Returns null if none of the
+  // samples had a sightline, so the caller can just skip peeking that cycle.
+  // ---------- Indoor routing (see updateBot) ----------
+  // Bot movement is a straight line to a target with no real pathfinding
+  // around walls, so a target on the other side of a house wall used to
+  // just wedge the bot against that wall — most visibly, a bot that ended
+  // up inside a house had no way to route itself back out through the
+  // door. These use each house's known door opening (see makeHouse) as a
+  // waypoint whenever the straight line would otherwise have to cross a
+  // wall to get in or out.
+  function worldToHouseLocal(house, wx, wz) {
+    const dx = wx - house.pos.x, dz = wz - house.pos.z;
+    const cosR = Math.cos(house.rotY), sinR = Math.sin(house.rotY);
+    return { lx: dx*cosR - dz*sinR, lz: dx*sinR + dz*cosR };
+  }
+  function isInsideHouseFootprint(house, wx, wz, margin) {
+    const { lx, lz } = worldToHouseLocal(house, wx, wz);
+    const m = margin || 0;
+    return Math.abs(lx) < house.w/2 + m && Math.abs(lz) < house.d/2 + m;
+  }
+  function findHouseContaining(wx, wz) {
+    for (const h of houses) {
+      if (h.heldByCheat) continue;
+      if (isInsideHouseFootprint(h, wx, wz, 0.3)) return h;
+    }
+    return null;
+  }
+
+  // ---------- Bot pathfinding (visibility graph + A*) ----------
+  // Bot movement is otherwise a straight line to a target, which regularly
+  // walked bots into walls around anything more complex than open field
+  // (see the door-routing fix above, which this supersedes and subsumes).
+  // Real navigation here means: build a graph of waypoints a bot can
+  // usefully stand at (each house's door, plus its four corners so a route
+  // can go *around* a building it doesn't need to enter), connect any two
+  // waypoints that have a clear line between them, then A* across that
+  // graph whenever a bot's actual destination isn't a clear straight line
+  // away. Built once per match (see buildNavGraph) rather than per-frame —
+  // it only depends on the static map, not on where bots currently are.
+  let navGraph = null;
+
+  // Standard Liang-Barsky segment-vs-AABB clip, used as a boolean test:
+  // does the segment (x1,z1)-(x2,z2) pass through the box at all. This is
+  // the same shape of obstacle resolveCollisions already uses, so a path
+  // that avoids these boxes avoids exactly what would otherwise shove a
+  // bot around.
+  function segmentIntersectsAABB(x1, z1, x2, z2, box) {
+    let t0 = 0, t1 = 1;
+    const dx = x2 - x1, dz = z2 - z1;
+    const p = [-dx, dx, -dz, dz];
+    const q = [x1 - (box.x - box.hw), (box.x + box.hw) - x1, z1 - (box.z - box.hd), (box.z + box.hd) - z1];
+    for (let i = 0; i < 4; i++) {
+      if (p[i] === 0) {
+        if (q[i] < 0) return false;
+      } else {
+        const r = q[i] / p[i];
+        if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+        else { if (r < t0) return false; if (r < t1) t1 = r; }
+      }
+    }
+    return true;
+  }
+  function navLineClear(x1, z1, x2, z2, obstacles) {
+    for (let i = 0; i < obstacles.length; i++) {
+      if (segmentIntersectsAABB(x1, z1, x2, z2, obstacles[i])) return false;
+    }
+    return true;
+  }
+  // The actual walkable height at a point, ignoring any cap — used to tell
+  // whether two points are on the same effective level or a ramp is needed
+  // to get between them. groundHeightAt normally takes a maxY cutoff (so a
+  // climbing entity doesn't snap up onto something above its reach); a huge
+  // cutoff here means "just tell me what's really there".
+  function navHeightAt(x, z) { return groundHeightAt(x, z, 100000); }
+  // A direct walk between two points is only "clear" if nothing's in the
+  // way AND they're close enough in height to just walk between — a flat
+  // line with no obstacle in it can still be impossible if it requires
+  // scaling a ledge, which only a ramp actually allows (see the forced
+  // base/top edge in buildNavGraph). 1.5 is comfortably above a single
+  // stair step but well under a house floor's ~2.2-3.2 unit rise.
+  function navPathClear(x1, z1, y1, x2, z2, y2, obstacles) {
+    if (Math.abs(y1 - y2) > 1.5) return false;
+    return navLineClear(x1, z1, x2, z2, obstacles);
+  }
+
+  // Builds a fresh visibility graph for whichever map is currently active
+  // (FFA's world is centered on 0,0; CTF's is a separate area far off at
+  // CTF_CX/CTF_CZ — both live in the same shared `houses`/`solids`/`ramps`
+  // arrays for the whole page session, so this filters to houses/ramps
+  // within the current boundCenterX/Z/boundHalf rather than graphing
+  // everything that has ever existed this session). Deliberately snapshots
+  // `solids` at this moment rather than keeping a live reference — walls
+  // placed with Build Mode are added incrementally afterward instead (see
+  // updateNavGraphForNewWall).
+  function buildNavGraph() {
+    const margin = 20;
+    const inBounds = (x, z) => Math.abs(x - boundCenterX) < boundHalf + margin && Math.abs(z - boundCenterZ) < boundHalf + margin;
+    const relevantHouses = houses.filter(h => !h.heldByCheat && inBounds(h.pos.x, h.pos.z));
+    const obstacles = solids.slice();
+    const waypoints = [];
+    const cornerPad = 1.3;
+    for (const h of relevantHouses) {
+      const doorY = navHeightAt(h.doorPos.x, h.doorPos.z);
+      waypoints.push({ x: h.doorPos.x, z: h.doorPos.z, y: doorY });
+      const cosR = Math.cos(h.rotY), sinR = Math.sin(h.rotY);
+      const localCorners = [
+        [-h.w/2 - cornerPad, -h.d/2 - cornerPad], [h.w/2 + cornerPad, -h.d/2 - cornerPad],
+        [h.w/2 + cornerPad,  h.d/2 + cornerPad],  [-h.w/2 - cornerPad, h.d/2 + cornerPad]
+      ];
+      for (const [lx, lz] of localCorners) {
+        const wx = h.pos.x + lx*cosR + lz*sinR, wz = h.pos.z - lx*sinR + lz*cosR;
+        waypoints.push({ x: wx, z: wz, y: navHeightAt(wx, wz) });
+      }
+    }
+    // Ramps (both a house's own stairs and anything the player has built)
+    // get a waypoint at the bottom and one at the top, force-connected to
+    // each other — that edge is the one place a big height difference is
+    // expected and allowed, since walking the ramp's own length is exactly
+    // what bridges it.
+    const relevantRamps = ramps.filter(r => inBounds(r.cx, r.cz));
+    const rampPairs = [];
+    for (const r of relevantRamps) {
+      const bx = r.cx + r.localX*r.cosR + r.zStart*r.sinR, bz = r.cz - r.localX*r.sinR + r.zStart*r.cosR;
+      const tx = r.cx + r.localX*r.cosR + (r.zStart+r.len)*r.sinR, tz = r.cz - r.localX*r.sinR + (r.zStart+r.len)*r.cosR;
+      const baseIdx = waypoints.length; waypoints.push({ x: bx, z: bz, y: r.baseY });
+      const topIdx = waypoints.length; waypoints.push({ x: tx, z: tz, y: r.baseY + r.floorH });
+      rampPairs.push([baseIdx, topIdx]);
+    }
+    const n = waypoints.length;
+    const adj = new Array(n);
+    for (let i = 0; i < n; i++) adj[i] = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i+1; j < n; j++) {
+        if (navPathClear(waypoints[i].x, waypoints[i].z, waypoints[i].y, waypoints[j].x, waypoints[j].z, waypoints[j].y, obstacles)) {
+          const d = Math.hypot(waypoints[i].x-waypoints[j].x, waypoints[i].z-waypoints[j].z);
+          adj[i].push({ to: j, d });
+          adj[j].push({ to: i, d });
+        }
+      }
+    }
+    for (const [baseIdx, topIdx] of rampPairs) {
+      const d = Math.hypot(waypoints[baseIdx].x-waypoints[topIdx].x, waypoints[baseIdx].z-waypoints[topIdx].z);
+      adj[baseIdx].push({ to: topIdx, d });
+      adj[topIdx].push({ to: baseIdx, d });
+    }
+    navGraph = { waypoints, adj, obstacles };
+  }
+
+  // A* from an arbitrary point to an arbitrary point across navGraph,
+  // entering/exiting the graph via whichever waypoints the start/end can
+  // each reach directly (line AND height, same rule as every other edge —
+  // see navPathClear). Returns an array of {x,z} points to walk through in
+  // order (the destination itself is always the last entry), or null if
+  // there's no way to help (no graph yet, or start/end are fully boxed in —
+  // callers fall back to a direct line in that case, same as before).
+  function findNavPath(sx, sz, tx, tz) {
+    if (!navGraph || !navGraph.waypoints.length) return null;
+    const wps = navGraph.waypoints, obstacles = navGraph.obstacles;
+    const sy = navHeightAt(sx, sz), ty = navHeightAt(tx, tz);
+    const startLinks = [], endLinks = [];
+    for (let i = 0; i < wps.length; i++) {
+      if (wps[i].disabled) continue;
+      if (navPathClear(sx, sz, sy, wps[i].x, wps[i].z, wps[i].y, obstacles)) startLinks.push(i);
+      if (navPathClear(tx, tz, ty, wps[i].x, wps[i].z, wps[i].y, obstacles)) endLinks.push(i);
+    }
+    if (!startLinks.length || !endLinks.length) return null;
+    const endSet = new Set(endLinks);
+    const open = new Set(startLinks);
+    const gScore = new Map(), fScore = new Map(), cameFrom = new Map();
+    const h = i => Math.hypot(wps[i].x - tx, wps[i].z - tz);
+    for (const i of startLinks) {
+      const g = Math.hypot(wps[i].x - sx, wps[i].z - sz);
+      gScore.set(i, g); fScore.set(i, g + h(i));
+    }
+    let guard = 0;
+    while (open.size && guard++ < 2000) {
+      let current = -1, best = Infinity;
+      for (const i of open) { const f = fScore.get(i); if (f < best) { best = f; current = i; } }
+      if (endSet.has(current)) {
+        const path = [{ x: tx, z: tz }];
+        let c = current;
+        while (c !== undefined) { path.unshift({ x: wps[c].x, z: wps[c].z }); c = cameFrom.get(c); }
+        return path;
+      }
+      open.delete(current);
+      for (const edge of navGraph.adj[current]) {
+        const tentative = gScore.get(current) + edge.d;
+        if (tentative < (gScore.has(edge.to) ? gScore.get(edge.to) : Infinity)) {
+          cameFrom.set(edge.to, current);
+          gScore.set(edge.to, tentative);
+          fScore.set(edge.to, tentative + h(edge.to));
+          open.add(edge.to);
+        }
+      }
+    }
+    return null;
+  }
+
+  // ---------- Incremental pathfinding updates for player-built walls ----------
+  // Rebuilding the whole visibility graph (buildNavGraph) is an all-pairs
+  // check across every waypoint — cheap once per match, too slow to redo on
+  // every single wall someone drops mid-fight. These update navGraph in
+  // place instead: add the new wall as an obstacle, drop any existing edges
+  // it now cuts through, and give the wall its own corner waypoints (same
+  // idea as a house's four corners) connected to whatever they can actually
+  // see — all without touching anything the wall doesn't affect.
+  function updateNavGraphForNewWall(entry, pos, yaw) {
+    if (!navGraph || !entry.solidRef) return;
+    const box = entry.solidRef;
+    navGraph.obstacles.push(box);
+    entry.navObstacleBox = box;
+
+    // Any existing edge this new wall now passes through only worked
+    // because the wall wasn't there yet — drop those. Each unordered pair
+    // is only tested once, from its lower-indexed side; the mirrored entry
+    // on the other side is removed alongside it.
+    const wps = navGraph.waypoints, adj = navGraph.adj;
+    for (let i = 0; i < adj.length; i++) {
+      adj[i] = adj[i].filter(edge => {
+        if (edge.to < i) return true;
+        const blocked = segmentIntersectsAABB(wps[i].x, wps[i].z, wps[edge.to].x, wps[edge.to].z, box);
+        if (blocked) adj[edge.to] = adj[edge.to].filter(e2 => e2.to !== i);
+        return !blocked;
+      });
+    }
+
+    // New waypoints at this wall's four corners, padded out the same way a
+    // house's are — lets a bot go around either end instead of just
+    // treating the whole area as a dead end.
+    const halfW = 1.2, halfT = 0.15, pad = 1.0;
+    const cosR = Math.cos(yaw), sinR = Math.sin(yaw);
+    const localCorners = [
+      [-halfW-pad, -halfT-pad], [halfW+pad, -halfT-pad],
+      [halfW+pad,  halfT+pad],  [-halfW-pad, halfT+pad]
+    ];
+    entry.navWaypointIndices = [];
+    for (const [lx, lz] of localCorners) {
+      const wx = pos.x + lx*cosR + lz*sinR, wz = pos.z - lx*sinR + lz*cosR;
+      const idx = wps.length;
+      wps.push({ x: wx, z: wz, y: navHeightAt(wx, wz) });
+      adj.push([]);
+      entry.navWaypointIndices.push(idx);
+      for (let j = 0; j < idx; j++) {
+        if (wps[j].disabled) continue;
+        if (navPathClear(wx, wz, wps[idx].y, wps[j].x, wps[j].z, wps[j].y, navGraph.obstacles)) {
+          const d = Math.hypot(wx-wps[j].x, wz-wps[j].z);
+          adj[idx].push({ to: j, d });
+          adj[j].push({ to: idx, d });
+        }
+      }
+    }
+  }
+  // Called when a built wall breaks. Its own waypoints are disabled (never
+  // physically removed from the array — that would shift every later
+  // index) and its obstacle box comes back out, so the space it occupied
+  // is genuinely open again. What this deliberately does NOT do: retroactively
+  // restore an edge between two OTHER waypoints that only this wall used to
+  // block — that's rare, self-correcting at the next full rebuild (every
+  // match start), and not worth the extra bookkeeping it'd take to track
+  // precisely which edges each wall was responsible for removing.
+  function updateNavGraphForRemovedWall(entry) {
+    if (!navGraph || !entry.navObstacleBox) return;
+    const oIdx = navGraph.obstacles.indexOf(entry.navObstacleBox);
+    if (oIdx !== -1) navGraph.obstacles.splice(oIdx, 1);
+    if (entry.navWaypointIndices) {
+      for (const idx of entry.navWaypointIndices) {
+        navGraph.waypoints[idx].disabled = true;
+        navGraph.adj[idx] = [];
+      }
+      for (let i = 0; i < navGraph.adj.length; i++) {
+        navGraph.adj[i] = navGraph.adj[i].filter(e => !navGraph.waypoints[e.to].disabled);
+      }
+    }
+  }
+
+  // A player-built ramp gets a waypoint at its bottom and one at its top,
+  // force-connected to each other (that's the edge meant to bridge the
+  // height difference — everything else still goes through the normal
+  // line+height check), and each end wired to whatever else it can reach —
+  // e.g. an existing house door, or the ground near it. This is what lets a
+  // bot actually reach a target standing on a shelf/platform the player
+  // just built, instead of walking up to the base and stopping (see chat —
+  // this was the specific gap ramps had that walls didn't).
+  function updateNavGraphForNewRamp(entry, r) {
+    if (!navGraph) return;
+    const bx = r.cx + r.localX*r.cosR + r.zStart*r.sinR, bz = r.cz - r.localX*r.sinR + r.zStart*r.cosR;
+    const tx = r.cx + r.localX*r.cosR + (r.zStart+r.len)*r.sinR, tz = r.cz - r.localX*r.sinR + (r.zStart+r.len)*r.cosR;
+    const wps = navGraph.waypoints, adj = navGraph.adj;
+    const existingCount = wps.length;
+    const baseIdx = wps.length; wps.push({ x: bx, z: bz, y: r.baseY }); adj.push([]);
+    const topIdx = wps.length; wps.push({ x: tx, z: tz, y: r.baseY + r.floorH }); adj.push([]);
+    entry.navWaypointIndices = [baseIdx, topIdx];
+    for (const idx of [baseIdx, topIdx]) {
+      for (let j = 0; j < existingCount; j++) {
+        if (wps[j].disabled) continue;
+        if (navPathClear(wps[idx].x, wps[idx].z, wps[idx].y, wps[j].x, wps[j].z, wps[j].y, navGraph.obstacles)) {
+          const d = Math.hypot(wps[idx].x-wps[j].x, wps[idx].z-wps[j].z);
+          adj[idx].push({ to: j, d });
+          adj[j].push({ to: idx, d });
+        }
+      }
+    }
+    const d = Math.hypot(bx-tx, bz-tz);
+    adj[baseIdx].push({ to: topIdx, d });
+    adj[topIdx].push({ to: baseIdx, d });
+  }
+  function updateNavGraphForRemovedRamp(entry) {
+    if (!navGraph || !entry.navWaypointIndices) return;
+    for (const idx of entry.navWaypointIndices) {
+      navGraph.waypoints[idx].disabled = true;
+      navGraph.adj[idx] = [];
+    }
+    for (let i = 0; i < navGraph.adj.length; i++) {
+      navGraph.adj[i] = navGraph.adj[i].filter(e => !navGraph.waypoints[e.to].disabled);
+    }
+  }
+
+  function findBotPeekSpot(coverPos, target) {
+    let best = null, bestDist = Infinity;
+    for (let i = 0; i < 8; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const d = 1.5 + Math.random() * 2;
+      const px = coverPos.x + Math.cos(ang) * d;
+      const pz = coverPos.z + Math.sin(ang) * d;
+      const py = groundHeightAt(px, pz, coverPos.y);
+      const point = new THREE.Vector3(px, py, pz);
+      if (!hasLineOfSight(point, target.pos)) continue;
+      const dd = Math.hypot(px - coverPos.x, pz - coverPos.z);
+      if (dd < bestDist) { bestDist = dd; best = point; }
+    }
+    return best;
+  }
+
+  // Direct melee damage roll — no raycast, just a range/cooldown gate (same
+  // pattern as the zombies' contact attack) since a bot swinging a found
+  // knife/scythe doesn't aim the way a gun does.
+  function botMeleeAttack(bot, target, dist) {
+    const def = MELEE_DEFS[bot.weaponType];
+    if (!def || dist > def.range) return;
+    triggerCharOneShot(bot.charAnim, 'attack', { durationSeconds: def.rate / 1000 });
+    const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
+    const hitChance = Math.min(0.95, tier.hitBase + 0.25); // melee connects more reliably than gunfire at range
+    if (Math.random() >= hitChance) return;
+    const dmg = def.bodyDmg * (0.85 + Math.random()*0.3) * tier.dmgMult;
+    if (target.isPlayer) { damagePlayer(dmg, bot.pos, botDeathCamInfo(bot)); addShake(0.1); }
+    else damageBot(target, dmg, bot.pos);
   }
 
   // Samples points in a ring around the bot and keeps ones that actually
@@ -5858,13 +6342,57 @@
       const needsAmmo = bot.primaryType && (bot.primaryAmmo.mag + bot.primaryAmmo.reserve) < maxMag * 0.5;
       if (needsAmmo) bot.lootTarget = findNearestLoot(bot.pos, ammoCrates, LOOT_SEARCH_RADIUS);
       if (!bot.lootTarget) {
-        const myTier = BOT_WEAPON_TIER[bot.weaponType] || 0;
+        // Compare against the primary's tier, not whatever's momentarily
+        // active (a bot tactically holding its pistol at range still has
+        // its real primary equipped, and shouldn't think it needs an
+        // upgrade it already has).
+        const myTier = BOT_WEAPON_TIER[bot.primaryType || bot.weaponType] || 0;
         bot.lootTarget = findNearestLoot(bot.pos, pickups, LOOT_SEARCH_RADIUS, p => BOT_WEAPON_TIER[p.type] > myTier);
+      }
+      // Nothing better nearby — fall back to stocking up on a melee option,
+      // a shield, or throwables the bot is missing/low on, so bots actually
+      // pick these up instead of only ever looting guns.
+      if (!bot.lootTarget) {
+        bot.lootTarget = findNearestLoot(bot.pos, pickups, LOOT_SEARCH_RADIUS, p =>
+          (BOT_MELEE_TYPES[p.type] && p.type !== bot.meleeType) ||
+          (p.type === 'shield' && !bot.hasShield) ||
+          (p.type === 'grenade' && bot.grenades < BOT_MAX_THROWABLE) ||
+          (p.type === 'smokegrenade' && bot.smokeGrenades < BOT_MAX_THROWABLE) ||
+          (p.type === 'molotov' && bot.molotovs < BOT_MAX_THROWABLE)
+        );
       }
     }
 
-    const { target: combatTarget, dist: combatDist } = findNearestTarget(bot);
+    const rawTarget = findNearestTarget(bot);
     const tier = BOT_TIERS[bot.tier] || BOT_TIERS.normal;
+    const hasRawTarget = !!rawTarget.target; // an actual, current sighting (not a memory of one)
+
+    // ---- combat memory: a target found this frame refreshes the memory;
+    // otherwise, if the bot had eyes on someone recently (default 3.5s),
+    // keep treating the fight as live — using their last known position —
+    // instead of instantly forgetting them the moment cover (or a corner)
+    // breaks direct line-of-sight. Without this, ducking into cover made a
+    // bot immediately lose its target, drop the cover spot, and wander off
+    // mid-fight, which is exactly the "poor cover use" this fixes. ----
+    let combatTarget, combatDist;
+    if (hasRawTarget) {
+      combatTarget = rawTarget.target; combatDist = rawTarget.dist;
+      bot.memoryTarget = combatTarget; bot.memoryTimer = 3.5;
+    } else if (bot.memoryTimer > 0 && bot.memoryTarget && bot.memoryTarget.alive) {
+      bot.memoryTimer -= dt;
+      combatTarget = bot.memoryTarget;
+      combatDist = bot.pos.distanceTo(combatTarget.pos);
+    } else {
+      combatTarget = null; combatDist = Infinity;
+      bot.memoryTarget = null;
+    }
+    // "inCombat"/combatEnemyPos (used below for CTF teammates deciding
+    // whether to rush in and where) reflect an actual current sighting only
+    // — not the fading memory above. Otherwise a single fleeting glimpse of
+    // the enemy could snowball into a squad permanently clustering around
+    // wherever that glimpse happened, instead of pushing the fight.
+    bot.inCombat = hasRawTarget;
+    if (hasRawTarget) bot.combatEnemyPos = combatTarget.pos;
 
     // ---- reaction time: a target isn't fired on until this tier's random
     // reaction delay elapses after first being spotted, so lower tiers
@@ -5887,11 +6415,40 @@
     // ---- cover-seeking: urgent (prefers distance) while retreating,
     // otherwise a periodic tactical reposition mid-fight ----
     bot.coverTimer -= dt;
-    if (combatTarget && (bot.retreating || bot.coverTimer <= 0) && bot.squadRole !== 'suppress') {
+    if (hasRawTarget && (bot.retreating || bot.coverTimer <= 0) && bot.squadRole !== 'suppress') {
       bot.coverTimer = bot.retreating ? 0.8 : (2.5 + Math.random()*2);
       bot.coverPos = findCoverSpot(bot, combatTarget, bot.retreating);
     }
-    if (!combatTarget) bot.coverPos = null;
+    if (!combatTarget) { bot.coverPos = null; bot.isPeeking = false; }
+
+    // ---- peek-and-fire: once tucked into a non-urgent cover spot (chosen
+    // specifically because it blocks LOS to the target), don't just sit
+    // there blind — lean out to a fixed point on a timer to get a shot,
+    // then duck back to the blocked spot, instead of either standing fully
+    // exposed or hiding uselessly the whole fight. ----
+    const atCover = !!(combatTarget && bot.coverPos && bot.pos.distanceTo(bot.coverPos) < 1.8);
+    if (atCover && !bot.retreating) {
+      bot.peekTimer -= dt;
+      if (bot.peekTimer <= 0) {
+        if (!bot.isPeeking) {
+          const spot = findBotPeekSpot(bot.coverPos, combatTarget);
+          if (spot) {
+            bot.isPeeking = true;
+            bot.peekPoint = spot;
+            bot.peekTimer = 0.7 + Math.random()*0.5;
+          } else {
+            // No nearby spot had a sightline this try — stay hunkered down
+            // and just check again shortly rather than forcing a bad lean.
+            bot.peekTimer = 0.5 + Math.random()*0.4;
+          }
+        } else {
+          bot.isPeeking = false;
+          bot.peekTimer = 1.0 + Math.random()*1.2;
+        }
+      }
+    } else {
+      bot.isPeeking = false;
+    }
 
     // ---- CTF objective state: is this bot currently carrying the flag it
     // stole, or should it be hunting for one to steal? ----
@@ -5902,6 +6459,36 @@
       else if (bot.flagRunner && theirFlag.state !== 'carried') huntFlag = theirFlag;
     }
 
+    // ---- CTF teamwork: only considered when this bot has no fight of its
+    // own to handle right now. In priority order — defend a stolen flag,
+    // escort a teammate who's carrying one, or (for assistPos, lowest
+    // priority) back up a teammate already in a fight. Deliberately ranked
+    // below huntFlag in the final chain below: generic backup shouldn't
+    // permanently pull a designated flag-runner off the actual objective
+    // just because a fight is happening somewhere — that starved out
+    // offense entirely, which is what "bots aren't going for the flag" was. ----
+    let defendPos = null, escortPos = null, assistPos = null;
+    if (!combatTarget && gameMode === 'ctf' && bot.ctfTeam) {
+      const ownFlag = ctfOwnFlag(bot.ctfTeam);
+      if (ownFlag.state === 'carried' && flagCarrierTeam(ownFlag) && flagCarrierTeam(ownFlag) !== bot.ctfTeam) {
+        defendPos = flagCarrierPos(ownFlag);
+      }
+      if (!defendPos && !carryFlag) {
+        const theirFlagNow = bot.ctfTeam === 'red' ? ctfState.homeFlag : ctfState.enemyFlag;
+        if (theirFlagNow.state === 'carried' && theirFlagNow.carrier !== bot && flagCarrierTeam(theirFlagNow) === bot.ctfTeam) {
+          escortPos = flagCarrierPos(theirFlagNow);
+        }
+      }
+      if (!defendPos && !escortPos) {
+        let bestD = 40;
+        for (const other of bots) {
+          if (other === bot || !other.alive || other.ctfTeam !== bot.ctfTeam || !other.inCombat || !other.combatEnemyPos) continue;
+          const d = bot.pos.distanceTo(other.pos);
+          if (d < bestD) { bestD = d; assistPos = other.combatEnemyPos; }
+        }
+      }
+    }
+
     if (carryFlag) {
       // Beeline for the scoring base with the flag, ignoring cover/loot —
       // getting it home matters more than a clean fight.
@@ -5910,9 +6497,16 @@
     } else if (outsideZone && !(combatTarget && combatDist < 6)) {
       bot.target.set(zone.centerX, 0, zone.centerZ);
     } else if (combatTarget) {
-      bot.target.copy(bot.coverPos || combatTarget.pos);
+      if (bot.coverPos && bot.isPeeking) bot.target.copy(bot.peekPoint);
+      else bot.target.copy(bot.coverPos || combatTarget.pos);
+    } else if (defendPos) {
+      bot.target.set(defendPos.x, 0, defendPos.z);
+    } else if (escortPos) {
+      bot.target.set(escortPos.x, 0, escortPos.z);
     } else if (huntFlag) {
       bot.target.set(huntFlag.pos.x, 0, huntFlag.pos.z);
+    } else if (assistPos) {
+      bot.target.set(assistPos.x, 0, assistPos.z);
     } else if (bot.lootTarget && bot.lootTarget.active) {
       bot.target.set(bot.lootTarget.x, 0, bot.lootTarget.z);
       if (Math.hypot(bot.pos.x - bot.lootTarget.x, bot.pos.z - bot.lootTarget.z) < 1.8) {
@@ -5929,7 +6523,29 @@
     }
 
     bot.moving = false;
-    const dir = new THREE.Vector3().subVectors(bot.target, bot.pos); dir.y = 0;
+    // Real pathfinding: recompute a route only when the actual destination
+    // has moved meaningfully (not every frame — the graph doesn't change
+    // frame to frame, only where the bot wants to go does), and only when a
+    // direct line to it is actually blocked (by geometry OR by a height gap
+    // only a ramp bridges — see navPathClear) — most movement is open field
+    // and skips this entirely, same cost as before. See buildNavGraph.
+    if (!bot.navTarget || Math.hypot(bot.navTarget.x - bot.target.x, bot.navTarget.z - bot.target.z) > 2) {
+      bot.navTarget = { x: bot.target.x, z: bot.target.z };
+      if (!navGraph || navPathClear(bot.pos.x, bot.pos.z, bot.pos.y, bot.target.x, bot.target.z, navHeightAt(bot.target.x, bot.target.z), navGraph.obstacles)) {
+        bot.navPath = null;
+      } else {
+        const path = findNavPath(bot.pos.x, bot.pos.z, bot.target.x, bot.target.z);
+        bot.navPath = (path && path.length > 1) ? path.slice(0, -1) : null; // last entry is bot.target itself — already the fallback below
+      }
+    }
+    let moveTarget = bot.target;
+    if (bot.navPath && bot.navPath.length) {
+      while (bot.navPath.length && Math.hypot(bot.pos.x - bot.navPath[0].x, bot.pos.z - bot.navPath[0].z) < 1.2) {
+        bot.navPath.shift();
+      }
+      if (bot.navPath.length) moveTarget = new THREE.Vector3(bot.navPath[0].x, bot.pos.y, bot.navPath[0].z);
+    }
+    const dir = new THREE.Vector3().subVectors(moveTarget, bot.pos); dir.y = 0;
     // Squad flanking: a non-anchor squadmate closing straight on a live
     // combat target (no cover point chosen) approaches from its assigned
     // offset angle instead of the same line as the rest of the squad.
@@ -6023,9 +6639,19 @@
     bot.healthSprite.quaternion.copy(camera.quaternion);
     if (gameMode === 'ctf' && bot.ctfTeam) updateBotFlagInteraction(bot);
     bot.attackCooldown -= dt;
-    if (combatTarget) updateBotWeaponChoice(bot, combatDist);
+    if (combatTarget) {
+      updateBotWeaponChoice(bot, combatDist);
+      updateBotThrowable(bot, combatTarget, combatDist, dt);
+    }
     if (canEngage && bot.attackCooldown <= 0) {
-      if (bot.ammo.mag <= 0 && bot.weaponType !== 'pistol') {
+      const isMeleeActive = MELEE_DEFS[bot.weaponType] !== undefined;
+      if (isMeleeActive) {
+        if (combatDist <= MELEE_DEFS[bot.weaponType].range) {
+          bot.attackCooldown = MELEE_DEFS[bot.weaponType].rate / 1000;
+          botMeleeAttack(bot, combatTarget, combatDist);
+        }
+        // else: too far to swing yet — keep closing, don't burn the cooldown
+      } else if (bot.ammo.mag <= 0 && bot.weaponType !== 'pistol') {
         // Out of ammo on the current gun: reload from reserve if possible,
         // otherwise fall back to the infinite-ammo pistol.
         if (bot.ammo.reserve > 0) {
@@ -6038,13 +6664,16 @@
           equipBotWeapon(bot, 'pistol');
           bot.attackCooldown = 0.4;
         }
-      } else {
+      } else if (hasLineOfSight(bot.pos, combatTarget.pos)) {
         const combat = BOT_WEAPON_COMBAT[bot.weaponType] || BOT_WEAPON_COMBAT.pistol;
         const [cMin, cMax] = combat.cooldown;
         bot.attackCooldown = (cMin + Math.random()*(cMax - cMin)) * tier.cooldownMult;
         botShootAtTarget(bot, combatTarget, combatDist);
         if (combatTarget.isPlayer) addShake(0.08);
       }
+      // else: no clean shot right now (e.g. hunkered in cover on memory) —
+      // hold fire without spending the cooldown, so the bot fires immediately
+      // once it regains a sightline (e.g. mid-peek).
     }
   }
 
@@ -7239,7 +7868,10 @@
   // player and left every previous bot dead, so playing again (or hitting
   // Play Again after a win) dropped you into an already-empty lobby. This
   // clears out the old bots and spawns a fresh set alongside the player.
-  function resetFFAMatch() {
+  // Teardown shared by every FFA (re)start — no bots left over from a
+  // previous match, and every transient effect (grenades/fire/smoke/
+  // corpses) cleared so the new match starts on a clean slate.
+  function disposeFFABots() {
     for (const bot of bots) {
       scene.remove(bot.group);
       disposeSprite(bot.healthSprite);
@@ -7271,8 +7903,11 @@
     smokeClouds.length = 0;
     for (const fz of fireZones) scene.remove(fz.group);
     fireZones.length = 0;
-    aliveBotCount = BOT_COUNT;
-    for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
+  }
+  // The part of starting an FFA match that happens once every bot exists —
+  // unchanged from what resetFFAMatch used to do in one shot, just now run
+  // after the matchmaking sequence below finishes instead of immediately.
+  function finishFFAMatchStart() {
     document.getElementById('aliveCount').textContent = aliveBotCount + 1;
     matchWon = false;
     const winEl = document.getElementById('winScreen');
@@ -7283,6 +7918,57 @@
     respawnPlayer();
     beginPlaneIntro();
   }
+  let ffaMatchmakingActive = false;
+  // Shown for every FFA start — first launch, respawn after death, and
+  // Play Again after a win. The "players found" count climbing is real
+  // work, not just an animation: each tick actually spawns one more bot,
+  // and the world's pathfinding graph (see buildNavGraph) is rebuilt fresh
+  // for this match during the same window, before any bot needs it.
+  function runFFAMatchmaking() {
+    if (ffaMatchmakingActive) return;
+    ffaMatchmakingActive = true;
+    disposeFFABots();
+    // Defensive only — nothing in the current UI reaches FFA with bounds
+    // still pointing at CTF/City's area, but it's a one-line guard against
+    // it happening anyway (see chat).
+    boundCenterX = 0; boundCenterZ = 0; boundHalf = WORLD_SIZE/2 - 2;
+
+    const mmScreen = document.getElementById('ffaMatchmakingScreen');
+    const countEl = document.getElementById('matchmakingCount');
+    const statusEl = document.getElementById('matchmakingStatus');
+    const total = BOT_COUNT + 1; // + the player
+    // Whichever screen led here (start menu, death, or a win) needs to be
+    // hidden now, not just at the end — otherwise it stacks on top of this
+    // one for the whole matchmaking window instead of being replaced by it.
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('deathScreen').style.display = 'none';
+    document.getElementById('winScreen').style.display = 'none';
+    mmScreen.style.display = 'flex';
+    countEl.textContent = '1 / ' + total;
+    statusEl.textContent = 'Building world\u2026';
+
+    buildNavGraph();
+    statusEl.textContent = 'Loading pathfinding\u2026';
+
+    aliveBotCount = 0;
+    let spawned = 0;
+    const timer = setInterval(() => {
+      spawnBot(spawned);
+      spawned++;
+      aliveBotCount++;
+      countEl.textContent = (spawned + 1) + ' / ' + total;
+      if (spawned >= BOT_COUNT) {
+        clearInterval(timer);
+        statusEl.textContent = 'Match ready';
+        setTimeout(() => {
+          mmScreen.style.display = 'none';
+          ffaMatchmakingActive = false;
+          finishFFAMatchStart();
+        }, 250);
+      }
+    }, 45);
+  }
+  function resetFFAMatch() { runFFAMatchmaking(); }
 
   // ---------- Capture The Flag ----------
   function updateCTFHud() {
@@ -7534,6 +8220,7 @@
 
     boundCenterX = CTF_CX; boundCenterZ = CTF_CZ; boundHalf = CTF_HALF - 2;
     buildCTFMap();
+    buildNavGraph(); // fresh graph for the CTF area's houses now that buildCTFMap has placed them
 
     ctfState.captures = 0;
     ctfState.enemyCaptures = 0;
@@ -7597,6 +8284,7 @@
     returnEnemyFlagToBase();
     returnHomeFlagToBase();
     updateCTFHud();
+    buildNavGraph(); // fresh graph each match, in case Build Mode from the previous match left anything behind (see chat)
     matchWon = false;
     const winEl = document.getElementById('winScreen');
     winEl.style.display = 'none';
@@ -9202,7 +9890,7 @@
     mesh.castShadow = true;
     mesh.position.copy(startPos);
     scene.add(mesh);
-    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.7, isSmoke: false });
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.7, isSmoke: false, thrower: player });
   }
   function throwSmokeGrenade() {
     if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.smokeGrenades <= 0) return;
@@ -9219,7 +9907,7 @@
     mesh.castShadow = true;
     mesh.position.copy(startPos);
     scene.add(mesh);
-    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.5, isSmoke: true });
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 1.5, isSmoke: true, thrower: player });
   }
   function throwMolotov() {
     if (!player.alive || drop.active || invOpen || layoutEditMode || matchWon || player.molotovs <= 0) return;
@@ -9236,7 +9924,72 @@
     const mesh = built.group;
     mesh.position.copy(startPos);
     scene.add(mesh);
-    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 4, isSmoke: false, isMolotov: true });
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse: 4, isSmoke: false, isMolotov: true, thrower: player });
+  }
+
+  // ---------- Bot throwables (grenade/smoke/molotov AI) ----------
+  // Shares the same activeGrenades pool/physics/explosion code as the
+  // player's throws above — a bot's grenade arcs, bounces, and detonates
+  // exactly the same way, it's just aimed at a computed point instead of
+  // the camera direction.
+  function botThrowGrenade(bot, targetPos, type) {
+    const startPos = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.3, bot.pos.z);
+    const flat = new THREE.Vector3(targetPos.x - bot.pos.x, 0, targetPos.z - bot.pos.z);
+    const dist = flat.length();
+    if (dist < 0.01) return;
+    flat.normalize();
+    // Same lob-arc idea as the player's throws: enough forward speed to
+    // roughly cover the distance, plus a fixed vertical toss so it arcs in
+    // instead of firing flat into whatever's directly in front of the bot.
+    const throwSpeed = Math.min(22, 8 + dist * 0.55);
+    const vel = flat.clone().multiplyScalar(throwSpeed);
+    vel.y += type === 'smokegrenade' ? 6 : 6.5;
+    let mesh;
+    if (type === 'grenade') mesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshStandardMaterial({ color: 0x3f4a34, roughness: 0.7 }));
+    else if (type === 'smokegrenade') mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.6 }));
+    else mesh = buildMolotovMesh(1).group;
+    mesh.castShadow = true;
+    mesh.position.copy(startPos);
+    scene.add(mesh);
+    const fuse = type === 'grenade' ? 1.7 : (type === 'smokegrenade' ? 1.5 : 4);
+    activeGrenades.push({ mesh, pos: startPos.clone(), vel, fuse, isSmoke: type === 'smokegrenade', isMolotov: type === 'molotov', thrower: bot });
+    if (type === 'grenade') bot.grenades--;
+    else if (type === 'smokegrenade') bot.smokeGrenades--;
+    else bot.molotovs--;
+  }
+
+  // Called every frame a bot has a combat target. Decides whether this is a
+  // good moment to burn one of its throwables, and on what.
+  function updateBotThrowable(bot, target, dist, dt) {
+    bot.throwCooldown -= dt;
+    if (bot.throwCooldown > 0) return;
+    if (!target || !target.alive) return;
+    // Never lob one at something basically on top of the bot — explodeGrenade's
+    // blast radius would just as likely catch the thrower as the target.
+    if (dist < 10) return;
+    const hasLOS = hasLineOfSight(bot.pos, target.pos);
+    // Frag: best used to flush a target the bot can't currently draw a bead
+    // on (behind cover) rather than one it's already trading shots with.
+    if (bot.grenades > 0 && !hasLOS && dist < 26 && Math.random() < 0.5) {
+      botThrowGrenade(bot, target.pos, 'grenade');
+      bot.throwCooldown = 4 + Math.random() * 3;
+      return;
+    }
+    // Smoke: cover a retreat — thrown to the midpoint between bot and
+    // target so it screens the target's view of the bot as it pulls back,
+    // rather than just marking the bot's own position.
+    if (bot.smokeGrenades > 0 && bot.retreating && hasLOS && dist < 20 && Math.random() < 0.6) {
+      const midX = (bot.pos.x + target.pos.x) / 2, midZ = (bot.pos.z + target.pos.z) / 2;
+      botThrowGrenade(bot, new THREE.Vector3(midX, 0, midZ), 'smokegrenade');
+      bot.throwCooldown = 6 + Math.random() * 3;
+      return;
+    }
+    // Molotov: area denial against a target close enough that the fire will
+    // reach it quickly, used sparingly.
+    if (bot.molotovs > 0 && hasLOS && dist >= 10 && dist < 18 && Math.random() < 0.12) {
+      botThrowGrenade(bot, target.pos, 'molotov');
+      bot.throwCooldown = 7 + Math.random() * 4;
+    }
   }
 
   function updateGrenades(dt) {
@@ -9251,7 +10004,7 @@
         // instead of bouncing like the frag/smoke canisters do.
         if (g.isMolotov) {
           g.mesh.position.copy(g.pos);
-          spawnFireZone(g.pos, g.lightweight, g.noPlayerDamage);
+          spawnFireZone(g.pos, g.lightweight, g.noPlayerDamage, g.thrower);
           scene.remove(g.mesh);
           activeGrenades.splice(i, 1);
           continue;
@@ -9263,11 +10016,30 @@
       g.mesh.rotation.x += dt * 6;
       g.fuse -= dt;
       if (g.fuse <= 0) {
-        if (g.isSmoke) spawnSmokeCloud(g.pos); else if (g.isMolotov) spawnFireZone(g.pos, g.lightweight, g.noPlayerDamage); else explodeGrenade(g.pos);
+        if (g.isSmoke) spawnSmokeCloud(g.pos); else if (g.isMolotov) spawnFireZone(g.pos, g.lightweight, g.noPlayerDamage, g.thrower); else explodeGrenade(g.pos, g.thrower);
         scene.remove(g.mesh);
         activeGrenades.splice(i, 1);
       }
     }
+  }
+  // ---- friendly-fire helper shared by grenades and fire zones ----
+  // A bot never catches its own blast (it has far less situational care
+  // than a human aiming a throw, so this avoids bots looking like they
+  // randomly suicide); the player's own throws can still hurt the player,
+  // matching the existing "Your Own Grenade" death message/feature. In CTF,
+  // an explosion never hurts anyone on the thrower's own team.
+  function ctfTeamOf(entity) {
+    if (!entity) return null;
+    if (entity.isPlayer) return 'blue';
+    return entity.ctfTeam || null;
+  }
+  function blockedByFriendlyFire(thrower, victim) {
+    if (!thrower) return false;
+    if (victim === thrower && !thrower.isPlayer) return true;
+    if (gameMode !== 'ctf') return false;
+    const tTeam = ctfTeamOf(thrower), vTeam = ctfTeamOf(victim);
+    if (!tTeam || !vTeam) return false;
+    return tTeam === vTeam;
   }
   function spawnExplosionFX(pos) {
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9 }));
@@ -9294,21 +10066,22 @@
       if (t >= 1) { scene.remove(fx.mesh); explosionFX.splice(i, 1); }
     }
   }
-  function explodeGrenade(pos) {
+  function explodeGrenade(pos, thrower) {
     spawnExplosionFX(pos);
     const camDist = pos.distanceTo(camera.position);
     playExplosionSound(camDist);
     if (camDist < 45) addShake(0.55);
     const RADIUS = 9, MAXDMG = 95;
-    if (player.alive) {
+    if (player.alive && !blockedByFriendlyFire(thrower, player)) {
       const d = pos.distanceTo(player.pos);
       if (d < RADIUS && hasLineOfSight(pos, player.pos)) {
-        damagePlayer(MAXDMG * (1 - d / RADIUS), pos, { label: 'Your Own Grenade' });
+        const info = (thrower && !thrower.isPlayer) ? botDeathCamInfo(thrower) : { label: 'Your Own Grenade' };
+        damagePlayer(MAXDMG * (1 - d / RADIUS), pos, info);
       }
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
-      if (gameMode === 'ctf' && bot.ctfTeam === 'blue') continue; // never hurt your own CTF teammates
+      if (blockedByFriendlyFire(thrower, bot)) continue;
       const d = pos.distanceTo(bot.pos);
       if (d < RADIUS && hasLineOfSight(pos, bot.pos)) {
         const dmg = MAXDMG * (1 - d / RADIUS);
@@ -9391,7 +10164,7 @@
   // since fire on the ground doesn't care what's between you and its source.
   const fireZones = [];
   const FIRE_RADIUS = 5.6, FIRE_DURATION = 5.5, FIRE_TICK = 0.5, FIRE_TICK_DMG = 9;
-  function spawnFireZone(pos, lightweight, noPlayerDamage) {
+  function spawnFireZone(pos, lightweight, noPlayerDamage, thrower) {
     const floorY = groundHeightAt(pos.x, pos.z, pos.y + 2);
     const group = new THREE.Object3D();
     group.position.set(pos.x, floorY, pos.z);
@@ -9429,17 +10202,17 @@
     const camDist = pos.distanceTo(camera.position);
     playMolotovShatter(camDist);
     if (camDist < 30) addShake(0.2);
-    fireZones.push({ group, scorch, flames, light, life: 0, nextTickAt: FIRE_TICK, noPlayerDamage: !!noPlayerDamage });
+    fireZones.push({ group, scorch, flames, light, life: 0, nextTickAt: FIRE_TICK, noPlayerDamage: !!noPlayerDamage, thrower });
   }
   function applyFireDamage(fz) {
     const p = fz.group.position;
-    if (player.alive && !fz.noPlayerDamage) {
+    if (player.alive && !fz.noPlayerDamage && !blockedByFriendlyFire(fz.thrower, player)) {
       const d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
-      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG, p, { label: 'Fire' });
+      if (d < FIRE_RADIUS) damagePlayer(FIRE_TICK_DMG, p, (fz.thrower && !fz.thrower.isPlayer) ? botDeathCamInfo(fz.thrower) : { label: 'Fire' });
     }
     for (const bot of bots) {
       if (!bot.alive || bot.falling) continue;
-      if (gameMode === 'ctf' && bot.ctfTeam === 'blue') continue; // never hurt your own CTF teammates
+      if (blockedByFriendlyFire(fz.thrower, bot)) continue;
       const d = Math.hypot(p.x - bot.pos.x, p.z - bot.pos.z);
       if (d < FIRE_RADIUS) {
         bot.health -= FIRE_TICK_DMG;
@@ -9766,10 +10539,9 @@
     if (creditsOpen) toggleCredits();
     if (settingsOpen) toggleSettings();
     gameMode = 'ffa';
-    document.getElementById('startScreen').style.display = 'none';
     if (!isMobile) canvas.requestPointerLock && canvas.requestPointerLock();
     ensureAudio();
-    beginPlaneIntro();
+    runFFAMatchmaking();
   });
   bindTap(document.getElementById('startBtnZombie'), () => {
     if (creditsOpen) toggleCredits();
@@ -9893,6 +10665,7 @@
 
   for (let i=0;i<BOT_COUNT;i++) spawnBot(i);
   document.getElementById('aliveCount').textContent = aliveBotCount + 1;
+  buildNavGraph(); // rebuilt now that boundary walls exist too; real match starts always rebuild this fresh anyway (see chat)
 
   updateWeaponVisibility();
   document.getElementById('loadingText').style.display = 'none';
