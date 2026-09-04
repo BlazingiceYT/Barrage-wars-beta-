@@ -173,6 +173,6 @@ Colorblind mode expanded to the build-ghost indicator, and custom crosshair (sha
 **Update0.63** - *Commited by BlazingiceYT on 3 Sep 2026*
 Bots now use pathfinding and are smarter.
 
-Game in major phase: Upgrading three.js version
-
+**Update0.64** - *Commited by BlazingiceYT on 4 Sep 2026*
+Ugraded three.js version from r128 to 182
 
