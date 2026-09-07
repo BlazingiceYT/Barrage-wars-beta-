@@ -3808,10 +3808,17 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
       // closing exactly rather than guessing at import time.
       rawFootY = toePos.y - rawHeight * 0.025;
       usedBones = true;
+      console.log('[character][diag] bones found — head y=' + headPos.y.toFixed(4) + ' toe y=' + toePos.y.toFixed(4) + ' rawHeight=' + rawHeight.toFixed(4) + ' rawFootY=' + rawFootY.toFixed(4));
     } else {
       const box = new THREE.Box3().setFromObject(model);
       rawHeight = box.max.y - box.min.y;
       rawFootY = box.min.y;
+      // TEMPORARY DIAGNOSTIC — lists every bone name actually present in
+      // this model so a naming mismatch (e.g. 'mixamorig:Head' instead of
+      // 'Head') can be confirmed or ruled out directly, instead of guessed.
+      const allBoneNames = [];
+      model.traverse(o => { if (o.isBone) allBoneNames.push(o.name); });
+      console.warn('[character][diag] head/toe bone NOT found by exact name — headBone=' + !!headBone + ' toeBone=' + !!toeBone + '. Falling back to Box3 (unreliable right after cloning, per comment above). All bone names in this model: ' + JSON.stringify(allBoneNames));
     }
 
     let scaleFactor = (rawHeight > 0 && isFinite(rawHeight)) ? (CHARACTER_TARGET_HEIGHT / rawHeight) : 1;
@@ -3829,6 +3836,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     model.scale.setScalar(scaleFactor);
     model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
     model.updateMatrixWorld(true);
+    console.log('[character][diag] final: usedBones=' + usedBones + ' CHARACTER_TARGET_HEIGHT=' + CHARACTER_TARGET_HEIGHT + ' scaleFactor=' + scaleFactor.toFixed(4) + ' model.position.y=' + model.position.y.toFixed(4) + ' rootGroup.position=(' + rootGroup.position.x.toFixed(2) + ',' + rootGroup.position.y.toFixed(2) + ',' + rootGroup.position.z.toFixed(2) + ')');
 
     // Real head height (rootGroup-local) — used below to rescale the
     // invisible hit-test proxies to this character's actual measured size
