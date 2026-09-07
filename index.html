@@ -894,6 +894,11 @@
       <div><b>B</b><br>Build Wall</div>
     </div>
     <div id="loadingText">Generating world...</div>
+    <!-- TEMPORARY — purely to confirm the browser is running this exact
+         file and not a cached older copy, given brightness changes weren't
+         showing up across several rounds of adjustment. Safe to delete
+         once that's confirmed either way; doesn't affect gameplay. -->
+    <div id="dbgBuildTag" style="position:fixed; bottom:4px; left:4px; z-index:99999; font:11px monospace; color:#0f0; background:rgba(0,0,0,0.6); padding:2px 6px; border-radius:4px; pointer-events:none;">build-check: lighting-v5</div>
     <div id="modeButtons" style="display:none;">
       <button class="bigBtn" id="startBtnFFA">FREE FOR ALL</button>
       <button class="bigBtn" id="startBtnZombie" style="background:linear-gradient(180deg,#5fae3d,#2f6b1f); margin-top:10px;">ZOMBIE MODE</button>
@@ -986,16 +991,17 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
   // r152 turned color management on by default: THREE.Color now decodes
   // hex/CSS colors (e.g. 0xfff2d8) from sRGB to linear space on input, and
   // that's meant to be paired with the renderer re-encoding linear back to
-  // sRGB on output (see the renderer setup below) — the two are designed to
-  // cancel out for plain hex colors. This file's colors were never written
-  // with that pairing in mind, and (more importantly) real lighting/shading
-  // math happening in between means that round-trip isn't actually
-  // lossless — it comes out darker. Disabling this outright, paired with
-  // the LinearSRGBColorSpace output set below, is the more literal way to
-  // reproduce pre-upgrade behavior: colors used exactly as written, with no
-  // conversion anywhere in the pipeline, matching how every color/light
-  // value in this file was originally tuned.
-  THREE.ColorManagement.enabled = false;
+  // sRGB on output (see outputColorSpace below) — the two cancel out for
+  // plain hex colors. An earlier attempt disabled this outright instead,
+  // reasoning that the round-trip isn't perfectly lossless once real
+  // lighting math happens in between — true for this file's own hex colors,
+  // but wrong for the character/weapon .glb models: glTF as a format is
+  // designed assuming this exact pairing is active, and GLTFLoader relies
+  // on it to correctly decode each model's textures. Disabling it broke
+  // that — which is almost certainly why the character specifically
+  // rendered far darker than the environment. Leaving this at its default
+  // (true) and pairing it with SRGBColorSpace output below is the
+  // combination Three.js actually designed for this situation.
 
   const canvas = document.getElementById('c');
   // If a text input (cheat PIN, key-rebind capture, etc.) was focused and
@@ -1059,14 +1065,17 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
   // a console warning). Since that's what actually runs either way, this
   // sets it directly rather than requesting a mode that gets downgraded.
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  // r152 made SRGBColorSpace the renderer's default output — an extra
-  // gamma-encode pass on the final image that never happened under r128.
-  // Every color/material value in this file was tuned against the old,
-  // uncorrected output (including the many CanvasTexture-based sprites and
-  // UI elements), so defaulting to the new behavior would wash all of it
-  // out. This opts back into the old "write pixels as computed" behavior
-  // to keep everything looking the same as before the upgrade.
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  // Paired with ColorManagement staying at its default (true, see above) —
+  // together these are the intended modern setup: colors decode sRGB->linear
+  // on input and re-encode linear->sRGB on output, which cancels out for
+  // this file's own plain hex colors and correctly renders the loaded
+  // character/weapon .glb textures at the same time. This will look a
+  // little different from pixel-exact r128 parity for things like the
+  // canvas-texture UI elements (the output re-encode touches the whole
+  // framebuffer, not just texture-tagged colors) — given the ask has been
+  // for brighter/clearer rather than pixel-identical, that's an acceptable
+  // trade for correctly-lit models.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x8fc6f0);
@@ -1113,14 +1122,17 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 
   // ---------- Lighting ----------
   // r155 changed the default lighting model to a physically-based one
-  // (WebGLRenderer.useLegacyLights, since fully removed) — non-decaying
-  // lights like these got dimmer by a factor of pi under the new model, so
-  // the * Math.PI below restores the old, pre-upgrade look. The extra
-  // * 1.4 on top of that is a deliberate brightness increase past the old
-  // look, at request — the map read as hazy/dim even back at parity.
-  const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75 * Math.PI * 1.4);
+  // (WebGLRenderer.useLegacyLights, since fully removed) — the * Math.PI
+  // below restores parity with the pre-upgrade lighting math. The extra
+  // * 2 on top is a deliberate boost past pure parity, at request. Note:
+  // an earlier attempt pushed these much further (up to flat 8/9) while
+  // still using a broken color pipeline (see the ColorManagement/
+  // outputColorSpace comments above) — now that the pipeline itself is
+  // fixed, those same huge numbers would likely overshoot into blown-out,
+  // so this resets to a more modest, considered boost as the new baseline.
+  const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.75 * Math.PI * 2);
   scene.add(hemiLight);
-  const sun = new THREE.DirectionalLight(0xfff2d8, 1.15 * Math.PI * 1.4);
+  const sun = new THREE.DirectionalLight(0xfff2d8, 1.15 * Math.PI * 2);
   sun.position.set(80, 120, 40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(isMobileOrTablet ? 1024 : 2048, isMobileOrTablet ? 1024 : 2048);
@@ -3806,7 +3818,13 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 50 || scaleFactor < 0.001) {
       console.warn('[character] Auto-fit produced an unreasonable scale (' + scaleFactor + ') — falling back to a fixed 1.3x, which matched this export when inspected directly.');
       scaleFactor = 1.3;
-      rawFootY = usedBones ? rawFootY : 0;
+      // rawFootY was measured assuming the auto-computed scaleFactor we're
+      // now discarding — keeping it here (as this used to, for the
+      // bones-succeeded case) applies a foot offset computed for one scale
+      // to a completely different one, which sinks or floats the model by
+      // whatever that mismatch works out to. Always reset it alongside the
+      // scale fallback, not just when bone lookup itself failed.
+      rawFootY = 0;
     }
     model.scale.setScalar(scaleFactor);
     model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
