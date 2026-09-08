@@ -899,6 +899,11 @@
          showing up across several rounds of adjustment. Safe to delete
          once that's confirmed either way; doesn't affect gameplay. -->
     <div id="dbgBuildTag" style="position:fixed; bottom:4px; left:4px; z-index:99999; font:11px monospace; color:#0f0; background:rgba(0,0,0,0.6); padding:2px 6px; border-radius:4px; pointer-events:none;">build-check: lighting-v5</div>
+    <!-- TEMPORARY — character auto-fit diagnostic, shown on screen because
+         iPad Safari has no console access without a Mac to pair with.
+         Take a screenshot of this once it appears (right after spawning)
+         and send it back. Safe to delete once the clipping issue is fixed. -->
+    <div id="dbgCharDiag" style="display:none; position:fixed; top:4px; left:4px; right:4px; z-index:99999; font:11px monospace; color:#0f0; background:rgba(0,0,0,0.75); padding:4px 8px; border-radius:4px; pointer-events:none; word-break:break-all;"></div>
     <div id="modeButtons" style="display:none;">
       <button class="bigBtn" id="startBtnFFA">FREE FOR ALL</button>
       <button class="bigBtn" id="startBtnZombie" style="background:linear-gradient(180deg,#5fae3d,#2f6b1f); margin-top:10px;">ZOMBIE MODE</button>
@@ -3795,6 +3800,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     const toeBone = findBone('LeftToeBase') || findBone('RightToeBase') || findBone('LeftFoot') || findBone('RightFoot');
 
     let rawHeight = 0, rawFootY = 0, usedBones = false;
+    let diagText = '';
     if (headBone && toeBone) {
       const headPos = new THREE.Vector3(), toePos = new THREE.Vector3();
       headBone.getWorldPosition(headPos);
@@ -3808,6 +3814,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
       // closing exactly rather than guessing at import time.
       rawFootY = toePos.y - rawHeight * 0.025;
       usedBones = true;
+      diagText = 'bones OK head_y=' + headPos.y.toFixed(3) + ' toe_y=' + toePos.y.toFixed(3) + ' rawH=' + rawHeight.toFixed(3) + ' rawFootY=' + rawFootY.toFixed(3);
       console.log('[character][diag] bones found — head y=' + headPos.y.toFixed(4) + ' toe y=' + toePos.y.toFixed(4) + ' rawHeight=' + rawHeight.toFixed(4) + ' rawFootY=' + rawFootY.toFixed(4));
     } else {
       const box = new THREE.Box3().setFromObject(model);
@@ -3818,12 +3825,14 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
       // 'Head') can be confirmed or ruled out directly, instead of guessed.
       const allBoneNames = [];
       model.traverse(o => { if (o.isBone) allBoneNames.push(o.name); });
+      diagText = 'BONES NOT FOUND head=' + !!headBone + ' toe=' + !!toeBone + ' boxH=' + rawHeight.toFixed(3) + ' names=' + allBoneNames.join(',');
       console.warn('[character][diag] head/toe bone NOT found by exact name — headBone=' + !!headBone + ' toeBone=' + !!toeBone + '. Falling back to Box3 (unreliable right after cloning, per comment above). All bone names in this model: ' + JSON.stringify(allBoneNames));
     }
 
     let scaleFactor = (rawHeight > 0 && isFinite(rawHeight)) ? (CHARACTER_TARGET_HEIGHT / rawHeight) : 1;
     if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 50 || scaleFactor < 0.001) {
       console.warn('[character] Auto-fit produced an unreasonable scale (' + scaleFactor + ') — falling back to a fixed 1.3x, which matched this export when inspected directly.');
+      diagText += ' | REJECTED scale=' + scaleFactor + ' ->1.3';
       scaleFactor = 1.3;
       // rawFootY was measured assuming the auto-computed scaleFactor we're
       // now discarding — keeping it here (as this used to, for the
@@ -3836,7 +3845,16 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     model.scale.setScalar(scaleFactor);
     model.position.y = -rawFootY * scaleFactor; // scaling is linear and uniform from the model's own origin, so the scaled foot height is just the unscaled one times the same factor
     model.updateMatrixWorld(true);
+    diagText += ' | scale=' + scaleFactor.toFixed(3) + ' model.y=' + model.position.y.toFixed(3);
     console.log('[character][diag] final: usedBones=' + usedBones + ' CHARACTER_TARGET_HEIGHT=' + CHARACTER_TARGET_HEIGHT + ' scaleFactor=' + scaleFactor.toFixed(4) + ' model.position.y=' + model.position.y.toFixed(4) + ' rootGroup.position=(' + rootGroup.position.x.toFixed(2) + ',' + rootGroup.position.y.toFixed(2) + ',' + rootGroup.position.z.toFixed(2) + ')');
+    // TEMPORARY — same diagnostic, shown directly on screen instead of only
+    // the browser console, since iPad Safari has no easy console access
+    // without a Mac to pair with. Only for the player's own model (holder
+    // === player), not every bot, to avoid spamming this with 49 lines.
+    if (holder === player) {
+      const el = document.getElementById('dbgCharDiag');
+      if (el) { el.style.display = 'block'; el.textContent = 'char-diag: ' + diagText; }
+    }
 
     // Real head height (rootGroup-local) — used below to rescale the
     // invisible hit-test proxies to this character's actual measured size
