@@ -150,10 +150,7 @@ Used instnaced mesh more for higher fps
 Fixed game thinking that ur on mac if ur on ipad, now deletes everything between games so ur phone dont go boom
 
 **Update0.58** - *Commited by BlazingiceYT on 18 Aug 2026*
-ai has become smarte
-
-
-
+ai has become smarter
 
 **Update0.59** - *Commited by BlazingiceYT on 19 Aug 2026*
 Balance changes
@@ -175,4 +172,6 @@ Bots now use pathfinding and are smarter.
 
 **Update0.64** - *Commited by BlazingiceYT on 4 Sep 2026*
 Ugraded three.js version from r128 to 182
+
+Currently fixing charcter clipping in floor
 
