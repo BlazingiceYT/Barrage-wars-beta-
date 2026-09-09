@@ -3847,14 +3847,6 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     model.updateMatrixWorld(true);
     diagText += ' | scale=' + scaleFactor.toFixed(3) + ' model.y=' + model.position.y.toFixed(3);
     console.log('[character][diag] final: usedBones=' + usedBones + ' CHARACTER_TARGET_HEIGHT=' + CHARACTER_TARGET_HEIGHT + ' scaleFactor=' + scaleFactor.toFixed(4) + ' model.position.y=' + model.position.y.toFixed(4) + ' rootGroup.position=(' + rootGroup.position.x.toFixed(2) + ',' + rootGroup.position.y.toFixed(2) + ',' + rootGroup.position.z.toFixed(2) + ')');
-    // TEMPORARY — same diagnostic, shown directly on screen instead of only
-    // the browser console, since iPad Safari has no easy console access
-    // without a Mac to pair with. Only for the player's own model (holder
-    // === player), not every bot, to avoid spamming this with 49 lines.
-    if (holder === player) {
-      const el = document.getElementById('dbgCharDiag');
-      if (el) { el.style.display = 'block'; el.textContent = 'char-diag: ' + diagText; }
-    }
 
     // Real head height (rootGroup-local) — used below to rescale the
     // invisible hit-test proxies to this character's actual measured size
@@ -3870,6 +3862,18 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
       const hp = new THREE.Vector3();
       headBone.getWorldPosition(hp);
       realHeadY = hp.y;
+    }
+    // TEMPORARY — same diagnostic, shown directly on screen instead of only
+    // the browser console, since iPad Safari has no easy console access
+    // without a Mac to pair with. Only for the player's own model (holder
+    // === player), not every bot, to avoid spamming this with 49 lines.
+    if (holder === player) {
+      const wp = new THREE.Vector3();
+      tpWeaponRig.updateMatrixWorld(true);
+      tpWeaponRig.getWorldPosition(wp);
+      diagText += ' | weaponWorldY=' + wp.y.toFixed(3) + ' (vs realHeadY=' + (realHeadY!=null?realHeadY.toFixed(3):'n/a') + ')';
+      const el = document.getElementById('dbgCharDiag');
+      if (el) { el.style.display = 'block'; el.textContent = 'char-diag: ' + diagText; }
     }
 
     model.traverse(o => {
@@ -4162,7 +4166,13 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
   playerGroup.add(torso, head, legs);
   loadSoldierModel((gltf) => attachCharacterModel(player, playerGroup, [torso, head, legs], gltf));
 
-  tpWeaponRig.position.set(0.32, 1.15, 0.15);
+  // Best-estimate fix, unconfirmed — see chat: diagnostic numbers showed the
+  // real measured head sits around y=1.7, while this rig (at torso.y=1.0 +
+  // local 1.15 = 2.15) sits at the SAME height used for the floating health
+  // bar above a bot's head — appropriate for a floating indicator, not for
+  // a held weapon. Lowered toward a chest/hand-height position. Needs a
+  // fresh screenshot to confirm it actually looks right, not just closer.
+  tpWeaponRig.position.set(0.32, 0.2, 0.15);
   torso.add(tpWeaponRig);
 
   function currentWeaponDef() {
@@ -4335,7 +4345,8 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
     group.add(eBody, eHead, eLegs);
 
     const wRig = new THREE.Object3D();
-    wRig.position.set(0.32, 1.15, 0.15);
+    // Same best-estimate lowering as the player's tpWeaponRig — see chat.
+    wRig.position.set(0.32, 0.2, 0.15);
     eBody.add(wRig);
 
     const healthSprite = createHealthSprite();
